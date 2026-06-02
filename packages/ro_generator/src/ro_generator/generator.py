@@ -184,7 +184,7 @@ def _generate(request: DocumentRequest) -> GenerationResult:
         # segment_messages 已是 needs_input 形态
         return _needs_input(segment_messages, [INPUT_SELLER, INPUT_BUYER], request, lines)
 
-    # 5. 推断 invoice_month（INVOICE / PL 有月份要求时可自动选定单月）
+    # 5. 推断 invoice_month
     invoice_month = request.invoice_month
     needs_month = any(d in ("INVOICE", "PL") for d in documents)
     if needs_month and invoice_month is None:
@@ -205,6 +205,31 @@ def _generate(request: DocumentRequest) -> GenerationResult:
                 warnings=warnings_resolver,
             )
         invoice_month = candidates[0]["value"]
+
+    # 6. 同一 (po, month) 多个 INV# → needs_input
+    invoiced_docs = [d for d in documents if d in ("INVOICE", "PL")]
+    if invoiced_docs:
+        distinct_invs = _collect_distinct_invoice_nos(lines, invoice_month)
+        if len(distinct_invs) > 1 and request.invoice_no is None:
+            return GenerationResult(
+                status="needs_input",
+                missing_inputs=("invoice_no",),
+                options={"invoice_no": distinct_invs},
+                warnings=warnings_resolver,
+            )
+        if request.invoice_no is not None:
+            inv_values = {item["value"] for item in distinct_invs}
+            if request.invoice_no not in inv_values:
+                return _error_result(
+                    ValidationMessage(
+                        kind="blocking_error",
+                        code="INVOICE_NO_NOT_FOUND",
+                        message=(
+                            f"指定的 INVOICE# {request.invoice_no!r} 在 PO"
+                            f" {request.po_no} 中不存在"
+                        ),
+                    )
+                )
 
     # 6. 逐个装配单据
     rendered_files: list[tuple[str, Path]] = []  # (filename, absolute_path)
@@ -445,10 +470,6 @@ def _segments_with_full_coverage(lines: tuple) -> list[tuple[str, str]]:  # type
 
 
 def _collect_month_candidates(lines: tuple) -> tuple[dict[str, str], ...]:  # type: ignore[type-arg]
-    """收集所有有出货数据的月份，按月份代码排序。
-
-    返回 [{"value": "2601", "label": "2026 年 1 月（出货 240 件）"}, ...]。
-    """
     totals: dict[str, int] = {}
     for line in lines:
         for month, qty in line.monthly_shipments.items():
@@ -457,11 +478,32 @@ def _collect_month_candidates(lines: tuple) -> tuple[dict[str, str], ...]:  # ty
     for month in MONTH_COLUMNS:
         if month not in totals:
             continue
-        year = "2026"  # MVP 仅 2026 年
+        year = "2026"
         month_num = int(month[2:])
         label = f"{year} 年 {month_num} 月（出货 {totals[month]} 件）"
         candidates.append({"value": month, "label": label})
     return tuple(candidates)
+
+
+def _collect_distinct_invoice_nos(
+    lines: tuple,  # type: ignore[type-arg]
+    invoice_month: str | None,
+) -> tuple[dict[str, str], ...]:
+    """收集 (po, month) 范围内所有不同的 INV#。
+
+    返回 [{"value": "INV-001", "label": "INV-001"}, ...]。
+    """
+    seen: list[str] = []
+    for line in lines:
+        inv = line.invoice_no
+        if not inv or inv in seen:
+            continue
+        # 如果有 invoice_month，只统计该月有出货的行的 INV#
+        if invoice_month is not None:
+            if invoice_month not in line.monthly_shipments:
+                continue
+        seen.append(inv)
+    return tuple({"value": inv, "label": inv} for inv in seen)
 
 
 def _load_mapping(seller: str, document: str) -> TemplateMapping | None:
