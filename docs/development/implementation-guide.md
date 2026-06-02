@@ -418,18 +418,84 @@ GitHub Actions，三个独立 job 并行：
 
 ### 6.12 收尾
 
-- [ ] 黄金 PO 装配的 Invoice 与人工模板逐字段对比，达到 §14.2 一致性
-- [ ] CI 中 Python 包测试覆盖率 ≥ 80%
-- [ ] 在 CLAUDE.md 中标记 Phase 1 完成
-- [ ] 把 Phase 2 的细粒度任务清单写入本文档 §7（覆盖当前占位）
+- [ ] 黄金 PO `4500030844` 装配的 Invoice 与人工模板逐字段对比，达到 §14.2 一致性
+  - 现状：合成 fixture（含 PO `4500030844` 三行跨月数据）端到端装配通过，自动化断言验证了样式保留、合并单元格、列宽、公式平移、数据正确写入。逐字段视觉对比依赖真实 `RO DATA BASE.xlsx`，**Phase 2 真实模板接入时一并验证**。
+- [x] CI 中 Python 包测试覆盖率 ≥ 80%（实测 92%，245 项测试通过）
+- [x] 在 CLAUDE.md 中标记 Phase 1 完成
+- [x] 把 Phase 2 的细粒度任务清单写入本文档 §7（覆盖当前占位）
 
 ---
 
-## 7. Phase 2 任务清单
+## 7. Phase 2 任务清单（多单据 + 多主体模板 + 模板预览 CLI）
 
-> 占位：等 Phase 1 完成后追加。
+> 目标：在 Phase 1 已实现的 Invoice + GS PTE 基础上，扩展到四类单据 × 四个主体的全套模板矩阵，并提供模板预览工具供模板维护者使用。
 >
-> Phase 2 目标见产品方案 §16：四类单据 + GS/EMAX/SK/YM 多主体模板 + 模板预览 CLI。
+> 入口条件：Phase 1 完成。
+>
+> 退出条件：
+> - 14 份 mapping（产品方案 §13.1 模板矩阵）全部通过自动加载校验
+> - 装配 PI / PO / Invoice / PL 四类单据均能写到 GS、EMAX、SK、YM 主体的对应模板（SK/YM 无 PO）
+> - 真实 `RO DATA BASE.xlsx`（如团队同意入库）或扩展合成 fixture 在所有合法链段下端到端装配成功
+> - SK/YM 主体请求 PO 单据时返回阻断错误
+
+### 7.1 .xls 模板转换（Phase 0 遗留）
+
+- [ ] 安装 LibreOffice 或等效工具，把 `templates/_legacy_xls/EMAX PTE-RO INVOICE template.xls` 和 `EMAX PTE-RO PL template.xls` 转换为 `.xlsx`
+- [ ] 转换后放入 `templates/emax/invoice.xlsx` 与 `templates/emax/pl.xlsx`
+- [ ] `_legacy_xls/` 目录中的原文件保留，作为业务方今后只在 `.xlsx` 上修改的留底基线
+
+### 7.2 PI / PO / PL document model
+
+- [ ] `document_model.py` 增加 `build_pi_model()` / `build_po_model()` / `build_pl_model()`
+- [ ] PI / PO 使用完整 PO 数量（不依赖 invoice_month），不要求 INV# / FACTORY DOC NO.
+- [ ] PL 在 Invoice 字段基础上必须填充：`carton_count` / `net_weight` / `gross_weight` / `cbm`，以及合计字段 `total_*`
+- [ ] PL 缺装箱字段时返回阻断错误（产品方案 §11）
+- [ ] 单元测试覆盖每类单据的字段集与必填校验
+
+### 7.3 多 mapping × 多模板
+
+- [ ] 为每个 (entity, document) 组合编写 mapping YAML（参考 `templates/gs/mappings/invoice.yaml`）：
+  - GS PTE：pi.yaml / po.yaml / invoice.yaml ✅ / pl.yaml
+  - EMAX PTE：pi.yaml / po.yaml / invoice.yaml / pl.yaml（依赖 §7.1 转换完成）
+  - SK：pi.yaml / invoice.yaml / pl.yaml（无 PO）
+  - YM：pi.yaml / invoice.yaml / pl.yaml（无 PO）
+- [ ] 每份 mapping 都通过 `load_template_mapping` 的引用校验
+- [ ] 每份 mapping 含正确的 `template_version`
+
+### 7.4 Generator 多文档支持
+
+- [ ] `generator.py` 解除 "Phase 1 仅支持 INVOICE" 限制
+- [ ] 一次请求多种单据类型时，对每种调用对应 `build_*_model` + 对应 mapping，输出多个文件
+- [ ] 多文件场景按 `output_format`：xlsx 时各自输出，zip 时调用 `package_zip` 打包
+- [ ] SK / YM 主体请求 PO 时立即返回 `MAPPING_NOT_FOUND` 阻断（产品方案 §13.1）
+- [ ] 把 `_builtin_mapping_path` 替换为按 `templates/<entity>/mappings/<doc>.yaml` 约定的目录扫描，方便扩展新主体
+
+### 7.5 多 INV# needs_input 支持
+
+- [ ] resolver 收集每个 PO 行的 `INV#`，generator 检测同一 `(po, invoice_month)` 多个 INV# 时返回 `needs_input` + `options`
+- [ ] CLI 接受 `--invoice-no` 参数（已支持），同时填充 request 时优先用之
+- [ ] 单元测试：`PO 4500099999` 跨两个 INV# 触发 needs_input
+
+### 7.6 模板预览 CLI 工具
+
+- [ ] 新建命令 `ro-template-preview`（或子命令 `ro-generate preview-mapping`）
+- [ ] 输入：base 文件 + mapping YAML 路径（多份）
+- [ ] 输出：每份 mapping 的所有引用单元格 + 模板内对应位置摘要，便于模板维护者排查漂移
+- [ ] 错误用 high-severity 标识：mapping 引用了不存在的单元格、`template_version` 缺失、列字母超界
+- [ ] 单元测试覆盖每类诊断输出
+
+### 7.7 跨链段一致性回归
+
+- [ ] 扩展合成 fixture：包含 combo/rod/reel 三类的 PO，覆盖三段链路（SK/YM→GS、GS→EMAX、EMAX→PF）
+- [ ] 端到端测试：每段 × 每类单据 装配成功
+- [ ] 真实 `RO DATA BASE.xlsx` 接入决策落地（团队确认是否可入库）；不能入库时确保合成 fixture 等效覆盖
+
+### 7.8 收尾
+
+- [ ] CI 测试覆盖率仍 ≥ 80%
+- [ ] CLAUDE.md 模板矩阵表更新为"全部完成"
+- [ ] 标记 Phase 2 完成
+- [ ] 把 Phase 3 的细粒度任务清单写入本文档 §8（覆盖当前占位）
 
 ---
 
