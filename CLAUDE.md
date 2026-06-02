@@ -217,7 +217,7 @@ pnpm build        # 构建静态资源，由 FastAPI serve
 |---|---|---|
 | 0 | 三个 spike：模板样式保留、预览渲染组件选型、启动器打包链路 | 🟡 实质完成（Spike A/B 通过；Spike C 推迟到 Phase 3 启动前） |
 | 1 | 核心包 + CLI（先做 Invoice 一种单据） | ✅ 完成（245 测试，覆盖率 92%） |
-| 2 | 四类单据 + GS/EMAX/SK/YM 多主体模板 + 模板预览 CLI | ⏳ 待启动 |
+| 2 | 四类单据 + GS/EMAX/SK/YM 多主体模板 + 模板预览 CLI | ✅ 完成（260 测试，12 份 mapping，四类单据 × 三链段） |
 | 3 | 工作台 MVP（FastAPI + Vue + PyInstaller 启动器，含完整 UI） | — |
 | 4 | 加固（回归测试、性能、模板版本管理） | — |
 

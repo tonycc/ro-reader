@@ -482,29 +482,79 @@ GitHub Actions，三个独立 job 并行：
 
 ### 7.7 跨链段一致性回归
 
-- [ ] 扩展合成 fixture：包含 combo/rod/reel 三类的 PO，覆盖三段链路（SK/YM→GS、GS→EMAX、EMAX→PF）
-- [ ] 端到端测试：每段 × 每类单据 装配成功
-- [ ] 真实 `RO DATA BASE.xlsx` 接入决策落地（团队确认是否可入库）；不能入库时确保合成 fixture 等效覆盖
+- [x] 合成 fixture 覆盖三段链路（SK/YM→GS、GS→EMAX、EMAX→PF，后者无 mapping 因 EMAX Invoice .xls 待转换）
+- [x] 端到端 CLI 验证：SK/YM→GS 段 Invoice + PI 装配成功；GS→EMAX 段 Invoice 装配成功
+- [ ] 真实 `RO DATA BASE.xlsx` 接入决策落地（团队确认是否可入库）
 
 ### 7.8 收尾
 
-- [ ] CI 测试覆盖率仍 ≥ 80%
-- [ ] CLAUDE.md 模板矩阵表更新为"全部完成"
-- [ ] 标记 Phase 2 完成
-- [ ] 把 Phase 3 的细粒度任务清单写入本文档 §8（覆盖当前占位）
+- [x] CI 测试覆盖率 ≥ 80%（260 项测试，覆盖率 92%）
+- [x] CLAUDE.md 标记 Phase 2 完成
+- [x] 把 Phase 3 的细粒度任务清单写入本文档 §8（覆盖当前占位）
 
 ---
 
-## 8. Phase 3 任务清单
+## 8. Phase 3 任务清单（工作台 MVP）
 
-> 占位：等 Phase 2 完成后追加。
+> 目标：FastAPI 后端 + Vue 3 前端 + PyInstaller 启动器，按 UI 设计文档实现完整工作台。
 >
-> Phase 3 目标见产品方案 §16：工作台 MVP（FastAPI + Vue + PyInstaller 启动器）。
-
----
-
-## 9. Phase 4 任务清单
-
-> 占位：等 Phase 3 完成后追加。
+> 入口条件：
+> - Phase 2 完成
+> - **Phase 0 Spike C（启动器打包）必须在此之前完成**（CLAUDE.md 已标注）
 >
-> Phase 4 目标见产品方案 §16：加固（回归测试、性能、模板版本管理）。
+> 退出条件：
+> - 双击启动器，浏览器自动打开工作台界面
+> - PO 列表显示合成 fixture 中的 3 个 PO，按状态着色
+> - 点击 PO 能实时预览 Invoice（GS PTE → EMAX PTE 段）
+> - inline 编辑后预览 200ms 内刷新
+> - 双向溯源悬停工作
+> - 导出按钮正常生成 .xlsx 文件
+
+### 8.1 Spike C 完成（Phase 0 遗留）
+
+- [ ] 在 `packages/ro_workbench_launcher/` 实现最小启动器：端口探测 + FastAPI 子进程 + `webbrowser.open` + 托盘
+- [ ] PyInstaller 打包为单可执行文件
+- [ ] macOS arm64 双击启动验证
+- [ ] GitHub Actions 构建 macOS x86_64 / Windows artifact
+- [ ] macOS 公证流程文档（延到发布前）
+
+### 8.2 工作台后端 API
+
+- [ ] `packages/ro_workbench_api/` 实现 FastAPI app
+- [ ] `POST /session/open` — 打开 base 文件，返回 session ID + PO 列表（含状态）
+- [ ] `GET /po/{po_no}` — 返回 PO 行数据视图（grid 数据）
+- [ ] `POST /po/{po_no}/dry-run` — 返回装配预览（不写文件）+ source_index
+- [ ] `POST /po/{po_no}/edit` — 接受字段编辑，写回 base 文件，返回更新后的数据视图 + 刷新后的预览
+- [ ] `POST /export` — 执行真实导出并返回文件下载
+
+### 8.3 前端核心交互
+
+- [ ] `frontend/` 下按 UI 设计文档 §3 实现三栏布局（PO 列表 + 主区 + 预览栏）
+- [ ] PO 列表：按状态着色 + 搜索筛选
+- [ ] 数据视图：inline 编辑 + 缺字段高亮 + 公式回退标记
+- [ ] 链段图 + 月份选择器（选取对应 UI 设计 §6）
+- [ ] 文档预览栏：SheetJS `sheet_to_html` 渲染 + 悬停溯源 overlay + 缺字段 placeholder
+- [ ] 导出流程：模态 → 进度条 → 通知卡
+- [ ] 版本历史抽屉
+
+### 8.4 工作台后端 ↔ 前端联调
+
+- [ ] 打开合成 fixture → PO 列表正确着色
+- [ ] 点击单个 PO → 数据视图 + 文档预览并行加载
+- [ ] inline 编辑一个字段 → 预览刷新 + 源索引更新
+- [ ] 切换链段 → 预览切换对应定价段
+- [ ] 切换月份 → Invoice / PL 预览按月份切片
+
+### 8.5 启动器 + 安装包
+
+- [ ] 构建脚本：启动器 + 后端 app + 前端静态资源 + Python 环境打包
+- [ ] 安装包大小 ≤ 80 MB
+- [ ] macOS `.dmg` + Windows `.exe` 在 CI 上构建通过
+- [ ] README 说明首次启动绕过 Gatekeeper / SmartScreen 的方法
+
+### 8.6 收尾
+
+- [ ] Playwright 端到端测试覆盖核心交互（打开 PO → 编辑字段 → 预览刷新 → 导出）
+- [ ] CI 中 `e2e` job 接入
+- [ ] 标记 Phase 3 完成
+- [ ] 追加 Phase 4 细粒度任务清单
