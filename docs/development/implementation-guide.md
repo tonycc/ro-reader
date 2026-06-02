@@ -569,10 +569,10 @@ GitHub Actions，三个独立 job 并行：
 
 ### 9.1 Playwright 端到端测试
 
-- [ ] 核心场景：打开 base → 选 PO → 看预览 → 编辑字段 → 预览刷新 → 导出
-- [ ] 阻断错误场景：缺 SAP 的 PO 正确显示 blocked
-- [ ] needs_input 场景：多月 PO 未指定月份时返回月份候选
-- [ ] CI 中接入 e2e job
+- [x] 核心场景：打开 base → 选 PO → 看预览 → 编辑字段 → 预览刷新 → 导出
+- [x] 阻断错误场景：缺 SAP 的 PO 正确显示 blocked
+- [x] CI 中接入 e2e job（frontend.yml 新增 e2e job）
+- [ ] needs_input 场景 E2E 测试（延后）
 
 ### 9.2 性能优化
 
