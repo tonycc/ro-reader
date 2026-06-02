@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+.coverage
+htmlcov/
+
+# uv
+# uv.lock IS committed for reproducible builds.
+
+# Node
+node_modules/
+.pnpm-store/
+*.log
+npm-debug.log*
+
+# Vue / Vite
+frontend/dist/
+frontend/.vite/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Test outputs
+tests/_output/
+outputs/
+
+# Build artifacts (PyInstaller)
+*.spec
+launcher-build/
+
+# Local environment
+.env
+.env.local
+
+# Sensitive source data (待团队确认是否可入库)
+/RO DATA BASE.xlsx

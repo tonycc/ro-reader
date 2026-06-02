@@ -1,0 +1,29 @@
+{
+  "extends": ["@commitlint/config-conventional"],
+  "rules": {
+    "type-enum": [
+      2,
+      "always",
+      ["feat", "fix", "refactor", "test", "docs", "chore", "spike"]
+    ],
+    "scope-enum": [
+      2,
+      "always",
+      [
+        "generator",
+        "api",
+        "launcher",
+        "frontend",
+        "templates",
+        "impl",
+        "product",
+        "ui",
+        "ci",
+        "deps",
+        "repo"
+      ]
+    ],
+    "subject-case": [0],
+    "header-max-length": [2, "always", 100]
+  }
+}

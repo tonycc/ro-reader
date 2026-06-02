@@ -1,0 +1,19 @@
+[project]
+name = "ro-generator"
+version = "0.0.0"
+description = "RO 单据装配核心包：业务规则唯一源"
+requires-python = ">=3.11"
+dependencies = [
+    "openpyxl>=3.1.5",
+    "PyYAML>=6.0",
+]
+
+[project.scripts]
+ro-generate = "ro_generator.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ro_generator"]

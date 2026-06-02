@@ -1,0 +1,25 @@
+[project]
+name = "ro-workbench-launcher"
+version = "0.0.0"
+description = "工作台启动器：拉起后端 + 自动开浏览器 + 托盘集成"
+requires-python = ">=3.11"
+dependencies = [
+    "ro-workbench-api",
+    "pystray>=0.19",
+    "Pillow>=10.0",
+]
+
+[project.optional-dependencies]
+build = [
+    "pyinstaller>=6.0",
+]
+
+[tool.uv.sources]
+ro-workbench-api = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ro_workbench_launcher"]
