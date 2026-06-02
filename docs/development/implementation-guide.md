@@ -380,9 +380,9 @@ GitHub Actions，三个独立 job 并行：
 
 ### 6.6 Template Mapping
 
-- [ ] 实现 `template_mapping.py`：从 YAML 加载 mapping、校验 `template_version`、校验所有引用单元格在模板中存在
-- [ ] 创建 `templates/gs/mappings/invoice.yaml`（用 spike A 验证过的模板）
-- [ ] 单元测试覆盖：mapping 引用了不存在的单元格、mapping 缺 `template_version`、mapping 字段缺失
+- [x] 实现 `template_mapping.py`：从 YAML 加载 mapping、校验 `template_version`、校验所有引用单元格在模板中存在
+- [x] 创建 `templates/gs/mappings/invoice.yaml`（用 spike A 验证过的模板）
+- [x] 单元测试覆盖：mapping 引用了不存在的单元格、mapping 缺 `template_version`、mapping 字段缺失
 
 ### 6.7 Renderer + Packager
 
