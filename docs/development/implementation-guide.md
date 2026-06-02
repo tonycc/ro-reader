@@ -446,11 +446,11 @@ GitHub Actions，三个独立 job 并行：
 
 ### 7.2 PI / PO / PL document model
 
-- [ ] `document_model.py` 增加 `build_pi_model()` / `build_po_model()` / `build_pl_model()`
-- [ ] PI / PO 使用完整 PO 数量（不依赖 invoice_month），不要求 INV# / FACTORY DOC NO.
-- [ ] PL 在 Invoice 字段基础上必须填充：`carton_count` / `net_weight` / `gross_weight` / `cbm`，以及合计字段 `total_*`
-- [ ] PL 缺装箱字段时返回阻断错误（产品方案 §11）
-- [ ] 单元测试覆盖每类单据的字段集与必填校验
+- [x] `document_model.py` 增加 `build_pi_model()` / `build_po_model()` / `build_pl_model()`
+- [x] PI / PO 使用完整 PO 数量（不依赖 invoice_month），不要求 INV# / FACTORY DOC NO.
+- [x] PL 在 Invoice 字段基础上必须填充：`carton_count` / `net_weight` / `gross_weight` / `cbm`，以及合计字段 `total_*`
+- [x] PL 缺装箱字段时返回阻断错误（产品方案 §11）
+- [x] 单元测试覆盖每类单据的字段集与必填校验
 
 ### 7.3 多 mapping × 多模板
 
