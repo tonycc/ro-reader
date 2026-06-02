@@ -9,7 +9,7 @@ dependencies = [
 ]
 
 [project.scripts]
-ro-generate = "ro_generator.cli:main"
+ro-generate = "ro_generator.cli:cli_entry"
 
 [build-system]
 requires = ["hatchling"]

@@ -405,9 +405,9 @@ GitHub Actions，三个独立 job 并行：
 
 ### 6.10 CLI
 
-- [ ] 实现 `cli.py`：参数解析、JSON 输入、JSON 输出、稳定退出码（CLAUDE.md "CLI 契约"）
-- [ ] 注册 `ro-generate` entry point
-- [ ] 命令行测试：黄金 PO 端到端、阻断错误、`needs_input`
+- [x] 实现 `cli.py`：argparse 参数 + `--input request.json` + `--json` + 稳定退出码
+- [x] 注册 `ro-generate` entry point（`pyproject.toml`：`ro_generator.cli:cli_entry`）
+- [x] 命令行测试：成功路径、JSON 输出 schema、参数错误、阻断错误、needs_input
 
 ### 6.11 测试 fixture
 
