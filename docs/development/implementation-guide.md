@@ -346,10 +346,10 @@ GitHub Actions，三个独立 job 并行：
 
 ### 6.1 核心包基础
 
-- [ ] 在 `packages/ro_generator/` 创建包骨架
-- [ ] 定义领域模型 `models.py`：`Product` / `OrderLine` / `DocumentRequest` / `GenerationResult` / `ValidationMessage`（冻结 dataclass，金额 `Decimal`、日期 `date`）
-- [ ] 定义错误类 `errors.py`：`BlockingError` / `ValidationError` / `MappingError` 等
-- [ ] 定义 `schema.py`：必需 sheet、必需表头、表头别名、`MONTH_COLUMNS`、`normalize_header()` 函数
+- [x] 在 `packages/ro_generator/` 创建包骨架
+- [x] 定义领域模型 `models.py`：`Product` / `OrderLine` / `DocumentRequest` / `GenerationResult` / `ValidationMessage`（冻结 dataclass，金额 `Decimal`、日期 `date`）
+- [x] 定义错误类 `errors.py`：`RoGeneratorError`（根） / `WorkbookOpenError` / `MappingError` / `TemplateError` / `InvalidRequestError` / `InternalError`，每个都有稳定 `code`
+- [x] 定义 `schema.py`：必需 sheet、必需表头、表头别名、`MONTH_COLUMNS`、`HEADER_ROW`、`LEGAL_CHAIN_SEGMENTS`、`normalize_header()` 函数
 
 ### 6.2 Workbook Reader
 
