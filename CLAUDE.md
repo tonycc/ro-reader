@@ -4,13 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 仓库当前状态
 
-仓库目前**没有源代码**，只包含：
+四个 Phase 全部完成，项目可运行。
 
-- `RO DATA BASE.xlsx`：业务源数据（产品主数据 + PO 订单）。
-- 14 个 Excel 模板（`*.xls` / `*.xlsx`），按主体（EMAX/GS/SK/YM）和单据类型（PI/PO/Invoice/PL）组织。
+```
+packages/
+  ro_generator/        核心包（Python）：13 模块，261 测试，92% 覆盖
+  ro_workbench_api/    工作台后端（FastAPI）：6 端点
+  ro_workbench_launcher/  启动器（PyInstaller .app 24 MB）
+frontend/              Vue 3 + TypeScript + Pinia + SheetJS
+templates/             14 个 .xlsx 模板 + 14 份 YAML mapping
+tests/fixtures/        合成 base 文件生成脚本
+```
+
 - `docs/product/ro-document-generator-product-plan.md`：**产品方案**（最权威，所有产品决策以此为准）。
 - `docs/development/ro-document-workbench-ui-design.md`：**前端 UI 与交互设计**。
-- `docs/development/implementation-guide.md`：**工程实施指南**。仓库结构、工作流约定、Phase 0 spike 验收标准、当前 Phase 与下一 Phase 的细粒度任务清单。
+- `docs/development/implementation-guide.md`：**工程实施指南**（含各 Phase 细粒度任务清单与状态）。
+- `docs/development/phase-0-spike-results.md`：Phase 0 spike 结论。
 
 > 当 docs 文件之间冲突时，优先级为：产品方案 > UI 设计 > 实施指南 > CLAUDE.md。
 
@@ -29,8 +38,9 @@ MVP 形态为**本地启动器 + 浏览器**：双击 PyInstaller 打包的可�
 ```
 ┌────────────────────────────────────────────────────────────┐
 │  ro_generator（核心包，Python）                              │
-│  schema / validator / resolver / document_model /          │
-│  template_mapping / renderer / 双向溯源索引                  │
+│  models / errors / schema / workbook_reader / validator    │
+│  resolver / document_model / template_mapping              │
+│  renderer / packager / generator / cli / source_index      │
 │  —— 业务规则只写在这里 ——                                   │
 └────────────────────────────────────────────────────────────┘
               ▲                          ▲
@@ -48,6 +58,7 @@ MVP 形态为**本地启动器 + 浏览器**：双击 PyInstaller 打包的可�
                                   ┌──────┴──────┐
                                   │   启动器    │
                                   │ PyInstaller │
+                                  │(内嵌FastAPI)│
                                   └─────────────┘
 ```
 
@@ -62,19 +73,19 @@ MVP 形态为**本地启动器 + 浏览器**：双击 PyInstaller 打包的可�
 
 | 层 | 选型 |
 |---|---|
-| 核心包 | Python 3.11+ |
-| Excel 读写 | `openpyxl` |
+| 核心包 | Python 3.11+ / uv workspace |
+| Excel 读写 | `openpyxl`（`.xls` 转 `.xlsx` 用 `xlrd<2`，一次性转换后不再依赖） |
 | 配置 | `PyYAML`（模板 mapping） |
-| CLI | `argparse` 或 `typer` |
-| 工作台后端 | FastAPI |
-| 启动器 | PyInstaller 打包 + 端口探测 + 自动开浏览器 + 托盘集成 |
+| CLI | `argparse`（薄包装，业务逻辑都在核心包） |
+| 工作台后端 | FastAPI + uvicorn |
+| 启动器 | PyInstaller 打包（内嵌 FastAPI 后台线程）+ pystray 托盘 |
 | 前端框架 | **Vue 3 + TypeScript**（不使用 React） |
 | 前端构建 | Vite |
-| 前端样式 | CSS Modules + token 文件（CSS 变量） |
+| 前端样式 | CSS 变量 token 文件（无 CSS-in-JS，无 Tailwind） |
 | 前端状态 | Pinia |
-| 数据网格 | `@tanstack/vue-table` |
-| 预览组件 | SheetJS 或 Luckysheet（Phase 0 spike 选定） |
-| 测试 | pytest（后端） / Vitest + Vue Test Utils（前端） / Playwright（端到端） |
+| 数据网格 | 自研 `<table>` + inline 编辑（未引入重型 grid 库） |
+| 预览组件 | **SheetJS**（`xlsx` 包，Phase 0 spike 选定，bundle 111 KB gzip） |
+| 测试 | pytest（后端） / Playwright（E2E，5 场景） |
 
 **禁用清单**：
 
@@ -89,7 +100,8 @@ MVP 形态为**本地启动器 + 浏览器**：双击 PyInstaller 打包的可�
 - **领域模型与 Excel 解耦**。`Product` / `OrderLine` / `DocumentModel` 是冻结 dataclass，金额用 `Decimal`，日期用 `date`。
 - **校验三类输出**：`blocking_errors`（阻断装配）、`warnings`（带 `severity: high | low`）、`missing_inputs`（信息不足，UI 直接呈现候选）。
 - **公式回退**：当 `data_only` 读到 None 时核心包按公式现算，并在数据视图中以橙色边框标记。
-- **双向溯源**：核心包构建索引，前端可点文档预览定位到源字段，反之亦然。
+- **双向溯源**：核心包构建 `SourceIndex`，前端可点文档预览定位到源字段，反之亦然。
+- **openpyxl `insert_rows` 陷阱**：该函数只平移单元格内容和公式，**不平移 `row_dimensions`**。不修复会导致插入行之后所有行的高度错位。修复方法：调用 `insert_rows` 之前，倒序把 `row_dimensions` 的行号 += 1（详见 `renderer._insert_styled_row` 和 Phase 0 Spike A 结论）。
 
 ## 源数据结构（`RO DATA BASE.xlsx`）
 
@@ -174,56 +186,62 @@ zip：`RO-<PO>-<MONTH>.zip`。`<MONTH>` 已含年份信息（`2601` = 2026-01）
 
 ## 开发命令
 
-代码尚未实现。后续命令将分别用于核心包、工作台后端、前端：
-
 ```bash
-# 核心包 + CLI（pyproject.toml 建好后）
-pip install -e ".[dev]"
-pytest                                          # 跑全部 Python 测试
-pytest tests/test_resolver.py -v                # 单文件
-pytest tests/test_resolver.py::test_known_po -v # 单用例
-ro-generate --base "RO DATA BASE.xlsx" --po 4500030844 \
-  --docs pi,po,invoice,pl --invoice-month 2601 --json
+# === 核心包 ===
+uv sync --all-packages                          # 安装所有依赖
+uv run pytest                                   # 全部 Python 测试（261 项）
+uv run pytest packages/ro_generator/tests/test_resolver.py -v
+uv run pytest packages/ro_generator/tests/test_resolver.py::test_known_po_resolves -v
 
-# 工作台后端
-uvicorn ro_workbench.api:app --reload --port 0  # 0 = 端口探测
+# CLI 端到端（用合成 fixture）
+uv run ro-generate \
+  --base tests/fixtures/synthetic_base.xlsx --po 4500099999 \
+  --docs invoice --seller "GS PTE" --buyer "EMAX PTE" \
+  --invoice-month 2603 --output-dir /tmp/out --json
 
-# 前端（在 frontend/ 子目录）
+# === 工作台后端 ===
+uv run uvicorn ro_workbench_api.app:app --reload --host 127.0.0.1 --port 54321
+
+# === 前端（在 frontend/ 子目录执行） ===
 pnpm install
-pnpm dev          # 开发服务器
-pnpm test         # Vitest
-pnpm e2e          # Playwright
-pnpm build        # 构建静态资源，由 FastAPI serve
+pnpm run dev                                    # Vite 开发服务器 :5173
+pnpm run build                                  # vue-tsc + vite build → dist/
+pnpm run test:e2e                               # Playwright E2E（5 场景）
 
-# 启动器（打包后）
-./dist/RO\ Workbench.app   # macOS
-./dist/RO\ Workbench.exe   # Windows
+# === 启动器（macOS） ===
+uv run pyinstaller packages/ro_workbench_launcher/ro-workbench.spec --noconfirm
+# .app 产物在 dist/RO Workbench.app（24 MB）
+
+# === Lint ===
+uv run ruff check . && uv run ruff format --check . && uv run mypy packages
 ```
 
 ## 测试 fixture
 
-- 黄金回归 PO：**`4500030844`**。Resolver、Document Model、Renderer、CLI、工作台 E2E 都应覆盖。
-- 真实 `RO DATA BASE.xlsx` 是否能作为 fixture 提交到仓库**待与团队确认**（数据敏感性）。在确认前，测试 fixture 使用脱敏或合成的最小 workbook。
-- 合成 fixture 必须覆盖：combo / rod / reel 三种类别、跨多个月份、多个 INV# 触发 `needs_input`、缺 SAP 触发阻断、SK 主体请求 PO 触发阻断。
+- 黄金回归 PO：**`4500030844`**。
+- 合成 fixture 路径：`tests/fixtures/synthetic_base.xlsx`（由 `tests/fixtures/generate_synthetic_base.py` 生成，已加入 `.gitignore`）。
+- 合成 fixture 覆盖：combo / rod / reel 三种类别、跨多月份（2601/2602）、多 INV#、缺 SAP 阻断、SK/YM 请求 PO 阻断。
+- 真实 `RO DATA BASE.xlsx` 未入库（`.gitignore` 已排除），待与团队确认数据敏感性。
 
 ## 模板处理注意
 
-- `.xls`（老格式）模板 `openpyxl` 处理不稳定，**MVP 前统一手工转换为 `.xlsx`**，作为受控资产放到 `templates/<entity>/`。原 `.xls` 一并保留留底。业务方今后只在 `.xlsx` 模板上修改。
-- 当 PO 行数超过模板默认区域时，renderer 必须**插入新行并复制上一行样式**，保留打印布局，并返回 `severity: high` warning。
-- 优先写入最终计算值，公式只保留必要的本表内引用，避免不同 Excel 环境重算行为不一致。
+- `.xls` 老格式已通过 `xlrd` 一次性转换为 `.xlsx`（EMAX Invoice、EMAX PL），原始 `.xls` 保留在 `templates/_legacy_xls/` 留底。业务方今后只在 `.xlsx` 模板上修改。
+- 当 PO 行数超过模板默认区域时，renderer 必须**插入新行并复制上一行样式**（先倒序平移 `row_dimensions` 再 `insert_rows`——这是 openpyxl 的已知陷阱，Phase 0 Spike A 已验证），返回 `severity: high` warning。
+- 优先写入最终计算值，公式只保留必要的本表内引用（如 `=E18*F18`），避免不同 Excel 环境重算行为不一致。
 - mapping 文件必须含 `template_version` 字段，加载时校验所有引用单元格在模板中存在。
+- 模板文件较小（~20-80 KB/个），随 git 跟踪。`templates/_legacy_xls/` 中的原 `.xls` 不再参与构建。
 
 ## 实施顺序（产品方案 §16）
 
 | Phase | 内容 | 状态 |
 |---|---|---|
-| 0 | 三个 spike：模板样式保留、预览渲染组件选型、启动器打包链路 | 🟡 实质完成（Spike A/B 通过；Spike C 推迟到 Phase 3 启动前） |
-| 1 | 核心包 + CLI（先做 Invoice 一种单据） | ✅ 完成（245 测试，覆盖率 92%） |
-| 2 | 四类单据 + GS/EMAX/SK/YM 多主体模板 + 模板预览 CLI | ✅ 完成（260 测试，12 份 mapping，四类单据 × 三链段） |
-| 3 | 工作台 MVP（FastAPI + Vue + PyInstaller 启动器，含完整 UI） | ✅ 完成（260 测试，前后端联调通过，.app 24 MB） |
-| 4 | 加固（回归测试、性能、模板版本管理） | ✅ 完成（E2E 5 场景、前端缺字段高亮、README） |
+| 0 | 三个 spike：模板样式保留、预览渲染组件选型、启动器打包链路 | ✅ 完成（Spike A/B Phase 0 通过；Spike C Phase 3 完成） |
+| 1 | 核心包 + CLI（先做 Invoice 一种单据） | ✅ 完成（261 测试，覆盖率 92%） |
+| 2 | 四类单据 + GS/EMAX/SK/YM 多主体模板 + 模板预览 CLI | ✅ 完成（14 份 mapping，四类单据 × 三链段） |
+| 3 | 工作台 MVP（FastAPI + Vue + PyInstaller 启动器，含完整 UI） | ✅ 完成（前后端联调通过，.app 24 MB） |
+| 4 | 加固（回归测试、性能、模板版本管理） | ✅ 完成（E2E 5 场景、261 测试、README） |
 
-> Phase 0 的实质性结论见 [`docs/development/phase-0-spike-results.md`](docs/development/phase-0-spike-results.md)。Spike C 不阻塞 Phase 1 / 2，但**必须在 Phase 3 启动器开发前完成**。
+> Phase 0 spike 结论见 [`docs/development/phase-0-spike-results.md`](docs/development/phase-0-spike-results.md)。
 
 ### 文档增量规则
 
