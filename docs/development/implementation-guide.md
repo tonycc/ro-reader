@@ -386,9 +386,9 @@ GitHub Actions，三个独立 job 并行：
 
 ### 6.7 Renderer + Packager
 
-- [ ] 实现 `renderer.py`：用 spike A 验证过的方案写入模板、超行时插入并复制样式
-- [ ] 实现 `packager.py`：按命名规则（产品方案 §12.1）输出文件
-- [ ] 集成测试：用 spike A 的断言验证装配输出的样式完整性
+- [x] 实现 `renderer.py`：用 spike A 验证过的方案写入模板、超行时插入并复制样式
+- [x] 实现 `packager.py`：按命名规则（产品方案 §12.1）输出文件，支持 zip 打包、冲突策略、版本目录
+- [x] 集成测试：用 spike A 的断言验证装配输出的样式完整性
 
 ### 6.8 双向溯源索引
 
