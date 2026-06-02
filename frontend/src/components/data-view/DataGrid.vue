@@ -28,6 +28,19 @@ function cancelEdit() { editingCell.value = null; }
 const visibleHeaders = computed(() => {
   return wb.dataHeaders.filter(h => h && !String(h).startsWith("__"));
 });
+
+function isMissing(row: Record<string, unknown>, field: string): boolean {
+  const v = row[field];
+  return v === null || v === undefined || v === "";
+}
+
+const requiredFields = new Set(["SAP Number", "FINALQTY", "PO NO.", "INV#", "FACTORY DOC NO."]);
+
+function cellClass(row: Record<string, unknown>, field: string) {
+  return {
+    missing: requiredFields.has(field) && isMissing(row, field),
+  };
+}
 </script>
 
 <template>
@@ -53,7 +66,7 @@ const visibleHeaders = computed(() => {
             <td
               v-for="h in visibleHeaders"
               :key="h"
-              :class="{ editing: editingCell?.row === row.__row_number__ && editingCell?.field === h }"
+              :class="{ editing: editingCell?.row === row.__row_number__ && editingCell?.field === h, ...cellClass(row as Record<string, unknown>, h) }"
               @dblclick="startEdit(Number(row.__row_number__), h, row[h])"
             >
               <template v-if="editingCell?.row === row.__row_number__ && editingCell?.field === h">
@@ -90,5 +103,7 @@ td { padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--bord
 td.editing { padding: 0; }
 .row-num { width: 40px; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-subtle); text-align: right; }
 .edit-input { width: 100%; padding: var(--space-1); border: 2px solid var(--accent-default); border-radius: var(--radius-sm); font-family: inherit; font-size: inherit; }
+td.missing { border: 1px solid var(--status-blocked-fg); background: var(--error-bg); }
 tr:hover td { background: var(--surface-sunken); }
+tr:hover td.missing { background: var(--error-bg); }
 </style>
