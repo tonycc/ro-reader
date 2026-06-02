@@ -353,10 +353,10 @@ GitHub Actions，三个独立 job 并行：
 
 ### 6.2 Workbook Reader
 
-- [ ] 实现 `workbook_reader.py`：用 openpyxl 加载 base、按表头第 4 行 / 数据第 5 行解析两张 sheet
-- [ ] 处理表头规范化（参见 CLAUDE.md "源数据结构"中"换行和多余空格"）
-- [ ] 跳过完全空白行
-- [ ] 单元测试覆盖：合成 fixture 的最小 workbook、缺 sheet、缺表头、空数据
+- [x] 实现 `workbook_reader.py`：用 openpyxl 加载 base、按表头第 4 行 / 数据第 5 行解析两张 sheet
+- [x] 处理表头规范化（参见 CLAUDE.md "源数据结构"中"换行和多余空格"）
+- [x] 跳过完全空白行
+- [x] 单元测试覆盖：合成 fixture 的最小 workbook、缺 sheet、缺表头、空数据
 
 ### 6.3 Validator
 
