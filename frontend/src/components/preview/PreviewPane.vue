@@ -35,7 +35,7 @@ watch(
   async (result) => {
     if (!result?.output_file) { htmlContent.value = ""; return; }
     try {
-      const resp = await fetch(`http://127.0.0.1:54321/download/${encodeURIComponent(result.output_file)}`);
+      const resp = await fetch(`http://127.0.0.1:54321/download?path=${encodeURIComponent(result.output_file)}`);
       const buf = await resp.arrayBuffer();
       const workbook = read(new Uint8Array(buf), { type: "array", cellStyles: true });
       const ws = workbook.Sheets[workbook.SheetNames[0]];

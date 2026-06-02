@@ -57,11 +57,12 @@ export const useWorkbench = defineStore("workbench", () => {
     const data = await api.getDataView(baseFile.value, po_no);
     dataRows.value = data.rows;
     dataHeaders.value = data.headers;
-    // Default to first segment
     const po = poList.value.find((p) => p.po_no === po_no);
     if (po?.chain_segments.length) {
       selectedSegment.value = po.chain_segments[0];
     }
+    // Auto-load preview after PO + segment are set
+    await refreshPreview();
   }
 
   async function refreshPreview() {

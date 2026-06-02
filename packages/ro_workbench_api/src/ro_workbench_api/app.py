@@ -204,7 +204,12 @@ def get_po_data(po_no: str, base_file: str = Query(...)) -> dict[str, Any]:
 
 @app.post("/po/{po_no}/dry-run")
 def dry_run(po_no: str, req: DryRunRequest) -> dict[str, Any]:
-    """装配预览（不写文件），返回数据摘要 + source_index。"""
+    """装配预览，返回数据摘要 + source_index。
+
+    文件写入临时目录，通过 /download?path= 可访问。
+    """
+    import tempfile
+    out_dir = tempfile.mkdtemp(prefix="ro-dry-run-")
     request = DocumentRequest(
         base_file=req.base_file,
         po_no=po_no,
@@ -213,6 +218,7 @@ def dry_run(po_no: str, req: DryRunRequest) -> dict[str, Any]:
         buyer=req.buyer,
         invoice_month=req.invoice_month,
         invoice_no=req.invoice_no,
+        output_dir=out_dir,
     )
     result = generate(request)
     return _result_to_dict(result)
@@ -283,9 +289,9 @@ def export_documents(req: DryRunRequest) -> dict[str, Any]:
     return _result_to_dict(result)
 
 
-@app.get("/download/{file_path:path}")
-def download_file(file_path: str) -> FileResponse:
-    path = Path(file_path)
-    if not path.exists():
-        raise HTTPException(404, detail="file not found")
-    return FileResponse(str(path))
+@app.get("/download")
+def download_file(path: str = Query(...)) -> FileResponse:
+    p = Path(path)
+    if not p.exists():
+        raise HTTPException(404, detail=f"file not found: {path}")
+    return FileResponse(str(p), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
