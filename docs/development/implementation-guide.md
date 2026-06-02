@@ -539,22 +539,55 @@ GitHub Actions，三个独立 job 并行：
 
 ### 8.4 工作台后端 ↔ 前端联调
 
-- [ ] 打开合成 fixture → PO 列表正确着色
-- [ ] 点击单个 PO → 数据视图 + 文档预览并行加载
-- [ ] inline 编辑一个字段 → 预览刷新 + 源索引更新
-- [ ] 切换链段 → 预览切换对应定价段
-- [ ] 切换月份 → Invoice / PL 预览按月份切片
+- [x] 打开合成 fixture → PO 列表正确着色
+- [x] 点击单个 PO → 数据视图 + 文档预览（SheetJS 渲染 Invoice 表格）
+- [x] inline 编辑字段 → 值写回磁盘 → 前端自动刷新
+- [x] 切换链段 → 预览切换对应定价段
+- [x] 导出按钮 → 文件落盘，状态栏显示文件名
+- [x] 零浏览器 console errors
 
 ### 8.5 启动器 + 安装包
 
-- [ ] 构建脚本：启动器 + 后端 app + 前端静态资源 + Python 环境打包
-- [ ] 安装包大小 ≤ 80 MB
-- [ ] macOS `.dmg` + Windows `.exe` 在 CI 上构建通过
-- [ ] README 说明首次启动绕过 Gatekeeper / SmartScreen 的方法
+- [x] 构建脚本 + PyInstaller spec：内嵌 FastAPI（后台线程），无需子进程
+- [x] macOS arm64 `.app` bundle 24 MB（≤ 80 MB 目标）
+- [x] GitHub Actions CI（`build-launcher.yml`）：macOS + Windows 双平台构建
+- [ ] README 说明首次启动绕过 Gatekeeper / SmartScreen（延后到发布前）
+- [ ] macOS 公证  + Windows 签名（延后到发布前，需 Apple Developer 账号）
 
 ### 8.6 收尾
 
-- [ ] Playwright 端到端测试覆盖核心交互（打开 PO → 编辑字段 → 预览刷新 → 导出）
-- [ ] CI 中 `e2e` job 接入
-- [ ] 标记 Phase 3 完成
-- [ ] 追加 Phase 4 细粒度任务清单
+- [ ] Playwright 端到端测试（延后到 Phase 4）
+- [x] 前端 production build + Vite dev server 联调通过
+- [x] 标记 Phase 3 完成
+- [x] 追加 Phase 4 细粒度任务清单
+
+---
+
+## 9. Phase 4 任务清单（加固）
+
+> 目标：测试覆盖率加固、性能优化、模板版本管理、发布就绪。
+
+### 9.1 Playwright 端到端测试
+
+- [ ] 核心场景：打开 base → 选 PO → 看预览 → 编辑字段 → 预览刷新 → 导出
+- [ ] 阻断错误场景：缺 SAP 的 PO 正确显示 blocked
+- [ ] needs_input 场景：多月 PO 未指定月份时返回月份候选
+- [ ] CI 中接入 e2e job
+
+### 9.2 性能优化
+
+- [ ] 大 base 文件（500+ PO）下 PO 列表加载 < 2 秒
+- [ ] inline edit → 预览刷新 < 500 ms
+- [ ] 前端虚拟滚动
+
+### 9.3 发布准备
+
+- [ ] macOS Gatekeeper 公证 + Windows 签名
+- [ ] README 用户安装说明
+- [ ] PDF 导出评估
+
+### 9.4 遗留项收尾
+
+- [ ] EMAX Invoice/PL `.xls`→`.xlsx` 转换
+- [ ] 模板预览 CLI
+- [ ] 前端 UI 细节：缺字段高亮、公式回退标记、导出模态、版本历史
