@@ -8,14 +8,16 @@
 - 模板里有样板数据（如 GS Invoice 行 18-24 有示例 SKU），渲染前必须先清掉
 - totals 单元格的位置在数据行扩展时由 openpyxl 自动平移（公式如 =SUM(F16:F26) 也会
   跟着扩展），调用方拿到的最终行号会上移
+- 渲染期间累积双向溯源索引（产品方案 §4.4），随 RenderResult 返回
 
 输入：`DocumentModel` + `TemplateMapping` + 输出路径。
-输出：写好的 .xlsx 文件路径。
+输出：RenderResult（文件路径 + 源索引）。
 """
 
 from __future__ import annotations
 
 from copy import copy
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
@@ -28,6 +30,8 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from ro_generator.document_model import DocumentLine, DocumentModel
 from ro_generator.errors import InternalError, TemplateError
+from ro_generator.schema import SHEET_PO_RECORD
+from ro_generator.source_index import SourceIndex, SourceIndexBuilder, SourceLocation
 from ro_generator.template_mapping import LineColumns, TemplateMapping
 
 # —————————————————————————————————————
@@ -35,14 +39,26 @@ from ro_generator.template_mapping import LineColumns, TemplateMapping
 # —————————————————————————————————————
 
 
+@dataclass(frozen=True)
+class RenderResult:
+    """渲染输出。
+
+    - `output_path`：写好的 .xlsx 绝对路径
+    - `source_index`：装配单元格 ↔ base 字段的双向映射
+    """
+
+    output_path: Path
+    source_index: SourceIndex
+
+
 def render_document(
     model: DocumentModel,
     mapping: TemplateMapping,
     output_path: str | Path,
-) -> Path:
+) -> RenderResult:
     """把 model 渲染到 mapping.template_path 上指定的模板，保存到 output_path。
 
-    返回最终保存的绝对路径。
+    返回 RenderResult，含文件绝对路径与源索引。
     """
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -52,6 +68,7 @@ def render_document(
     except Exception as exc:
         raise TemplateError(f"无法打开模板 {mapping.template_path}：{exc}") from exc
 
+    builder = SourceIndexBuilder()
     try:
         if mapping.sheet not in wb.sheetnames:
             raise TemplateError(
@@ -59,14 +76,17 @@ def render_document(
             )
         ws: Worksheet = wb[mapping.sheet]
 
-        _write_header(ws, model, mapping)
-        _write_lines_and_totals(ws, model, mapping)
+        _write_header(ws, model, mapping, builder)
+        _write_lines_and_totals(ws, model, mapping, builder)
 
         wb.save(output_path)
     finally:
         wb.close()
 
-    return output_path.resolve()
+    return RenderResult(
+        output_path=output_path.resolve(),
+        source_index=builder.build(),
+    )
 
 
 # —————————————————————————————————————
@@ -85,7 +105,12 @@ _HEADER_FIELD_FROM_MODEL: Final[dict[str, str]] = {
 }
 
 
-def _write_header(ws: Worksheet, model: DocumentModel, mapping: TemplateMapping) -> None:
+def _write_header(
+    ws: Worksheet,
+    model: DocumentModel,
+    mapping: TemplateMapping,
+    builder: SourceIndexBuilder,
+) -> None:
     """按 mapping.header 写表头字段。
 
     - mapping 中没列出的字段跳过
@@ -99,6 +124,11 @@ def _write_header(ws: Worksheet, model: DocumentModel, mapping: TemplateMapping)
         if value is None:
             continue
         ws[cell_addr] = value
+        # 表头字段大多在 sheet 元信息层面（INV# 等），用 row=None 标识"非具体行"
+        builder.add(
+            cell_addr,
+            SourceLocation(sheet=SHEET_PO_RECORD, row=None, field=mapping_key),
+        )
 
 
 # —————————————————————————————————————
@@ -106,13 +136,18 @@ def _write_header(ws: Worksheet, model: DocumentModel, mapping: TemplateMapping)
 # —————————————————————————————————————
 
 
-def _write_lines_and_totals(ws: Worksheet, model: DocumentModel, mapping: TemplateMapping) -> None:
+def _write_lines_and_totals(
+    ws: Worksheet,
+    model: DocumentModel,
+    mapping: TemplateMapping,
+    builder: SourceIndexBuilder,
+) -> None:
     """把订单行写到模板，超出预留空间则插入新行并复制样式。"""
     line_count = len(model.lines)
     if line_count == 0:
         # 没有行数据时只清理样板，写合计为 0
         _clear_sample_rows(ws, mapping)
-        _write_totals(ws, model, mapping, totals_row_offset=0)
+        _write_totals(ws, model, mapping, totals_row_offset=0, builder=builder)
         return
 
     start_row = mapping.lines.start_row
@@ -135,10 +170,10 @@ def _write_lines_and_totals(ws: Worksheet, model: DocumentModel, mapping: Templa
     line_unit_label = mapping.lines.unit_label
     for offset, doc_line in enumerate(model.lines):
         row = start_row + offset
-        _write_data_row(ws, row, doc_line, columns, line_unit_label)
+        _write_data_row(ws, row, doc_line, columns, line_unit_label, builder)
 
     # 4. 写合计（位置已被 openpyxl 自动平移）
-    _write_totals(ws, model, mapping, totals_row_offset=insertion_count)
+    _write_totals(ws, model, mapping, totals_row_offset=insertion_count, builder=builder)
 
 
 def _reserved_row_count(mapping: TemplateMapping) -> int:
@@ -182,24 +217,54 @@ def _write_data_row(
     doc_line: DocumentLine,
     columns: LineColumns,
     fixed_unit_label: str | None,
+    builder: SourceIndexBuilder,
 ) -> None:
-    """写单行数据。amount 列写公式，让 Excel 在打开时自动重算。"""
+    """写单行数据。amount 列写公式，让 Excel 在打开时自动重算。
+
+    渲染期间往 builder 累积 SourceLocation，构成双向溯源索引。
+    """
+    src_row = doc_line.source_row  # 可能为 None（合成数据 / 测试场景）
+
     if columns.po_no:
         # DocumentLine 没有 po_no（已在 model.po_no 中），保留模板原值或不写
         pass
     if columns.item_line_no:
-        ws[f"{columns.item_line_no}{row}"] = doc_line.item_line_no
+        addr = f"{columns.item_line_no}{row}"
+        ws[addr] = doc_line.item_line_no
+        builder.add(addr, SourceLocation(SHEET_PO_RECORD, src_row, "ITEM LINE#"))
     if columns.description:
-        ws[f"{columns.description}{row}"] = doc_line.description
+        addr = f"{columns.description}{row}"
+        ws[addr] = doc_line.description
+        builder.add(addr, SourceLocation(SHEET_PO_RECORD, src_row, "DESCRIPTION"))
     if columns.gs_model:
-        ws[f"{columns.gs_model}{row}"] = doc_line.gs_model
-    ws[f"{columns.sap}{row}"] = doc_line.sap
-    ws[f"{columns.unit_price}{row}"] = doc_line.unit_price
-    ws[f"{columns.quantity}{row}"] = doc_line.quantity
+        addr = f"{columns.gs_model}{row}"
+        ws[addr] = doc_line.gs_model
+        # gs_model 来自 DATA BASE，不是 PO record；这里仍标 PO record 行+字段名
+        # 因为 UI 双向溯源 PO record 行号定位更直接，DATA BASE 详情通过 SAP 二次跳转
+        builder.add(addr, SourceLocation(SHEET_PO_RECORD, src_row, "GS MODEL"))
+
+    sap_addr = f"{columns.sap}{row}"
+    ws[sap_addr] = doc_line.sap
+    builder.add(sap_addr, SourceLocation(SHEET_PO_RECORD, src_row, "SAP Number"))
+
+    price_addr = f"{columns.unit_price}{row}"
+    ws[price_addr] = doc_line.unit_price
+    # 单价来源依链段不同，这里只标注它源自 PO record；具体哪一列由调用方根据 model.seller/buyer
+    # 反推（避免 renderer 重新计算链段）
+    builder.add(price_addr, SourceLocation(SHEET_PO_RECORD, src_row, "unit_price"))
+
+    qty_addr = f"{columns.quantity}{row}"
+    ws[qty_addr] = doc_line.quantity
+    builder.add(qty_addr, SourceLocation(SHEET_PO_RECORD, src_row, "FINALQTY"))
+
     # amount 列写公式：=E{row}*F{row}（保持模板风格，便于 Excel 用户审计）
-    ws[f"{columns.amount}{row}"] = f"={columns.unit_price}{row}*{columns.quantity}{row}"
+    amount_addr = f"{columns.amount}{row}"
+    ws[amount_addr] = f"={columns.unit_price}{row}*{columns.quantity}{row}"
+    builder.add_computed(amount_addr, "amount")
+
     if columns.unit_label and fixed_unit_label:
         ws[f"{columns.unit_label}{row}"] = fixed_unit_label
+        # 单位标签是模板里的固定文案，不溯源
 
 
 def _write_totals(
@@ -207,6 +272,7 @@ def _write_totals(
     model: DocumentModel,
     mapping: TemplateMapping,
     totals_row_offset: int,
+    builder: SourceIndexBuilder,
 ) -> None:
     """写合计单元格。位置随 insertion_count 平移。"""
     for field_name, addr in mapping.totals.items():
@@ -216,6 +282,7 @@ def _write_totals(
             raise InternalError(f"mapping totals 单元格地址 {addr!r} 无法解析") from exc
         new_row = row + totals_row_offset
         cell_addr = f"{col_letter}{new_row}"
+        wrote = True
         if field_name == "quantity":
             ws[cell_addr] = model.total_quantity
         elif field_name == "amount":
@@ -228,7 +295,11 @@ def _write_totals(
             ws[cell_addr] = model.total_gross_weight
         elif field_name == "cbm" and model.total_cbm is not None:
             ws[cell_addr] = model.total_cbm
-        # 其他自定义合计字段：mapping 提供但 model 中没有，跳过
+        else:
+            wrote = False
+        if wrote:
+            # 合计是工作台计算得出，不指向某一行
+            builder.add_computed(cell_addr, f"total_{field_name}")
 
 
 # —————————————————————————————————————

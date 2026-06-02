@@ -97,6 +97,9 @@ class OrderLine:
     `{ "SK/YM->GS PTE": Decimal("3280.00"), "GS PTE->EMAX PTE": ..., ... }`。
 
     `monthly_shipments` 的 key 形如 `"2601"`，值是该月发货数量；空月份不放入。
+
+    `source_row` 是该行在 `PO record` sheet 中的 1-based 行号，供双向溯源
+    索引（产品方案 §4.4）使用。
     """
 
     po_no: str
@@ -133,6 +136,9 @@ class OrderLine:
 
     # 月度出货
     monthly_shipments: dict[str, Decimal] = field(default_factory=dict)
+
+    # 双向溯源（产品方案 §4.4）
+    source_row: int | None = None
 
 
 # —————————————————————————————————————

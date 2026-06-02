@@ -392,9 +392,10 @@ GitHub Actions，三个独立 job 并行：
 
 ### 6.8 双向溯源索引
 
-- [ ] 在 `document_model.py` 中构建源字段 ↔ 文档单元格的双向映射
-- [ ] 索引格式：`{ doc_cell: source_field, source_field: [doc_cells] }`
-- [ ] 索引随 `GenerationResult` 一起返回，前端在 Phase 3 消费
+- [x] 在 `source_index.py` 中定义 `SourceLocation` / `SourceIndex` / `SourceIndexBuilder`
+- [x] `OrderLine` / `DocumentLine` 增加 `source_row` 字段，由 resolver 从 `__row_number__` 注入
+- [x] renderer 在每个写入操作上累积条目，最终通过 `RenderResult.source_index` 返回
+- [x] 索引随渲染结果返回，前端在 Phase 3 消费
 
 ### 6.9 Generator 流水线
 

@@ -18,6 +18,7 @@ from ro_generator.schema import (
     ENTITY_EMAX_PTE,
     ENTITY_GS_PTE,
 )
+from ro_generator.source_index import COMPUTED_SHEET
 from ro_generator.template_mapping import load_template_mapping
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -38,6 +39,7 @@ def make_order_line(
     quantity: int,
     item_line_no: str = "10",
     unit_prices: dict[tuple[str, str], Decimal] | None = None,
+    source_row: int | None = None,
 ) -> OrderLine:
     if unit_prices is None:
         unit_prices = {(ENTITY_GS_PTE, ENTITY_EMAX_PTE): Decimal("32.8")}
@@ -61,20 +63,33 @@ def make_order_line(
         factory_doc_no="FDOC-RENDER-001",
         prices=unit_prices,
         subtotals=subtotals,
+        source_row=source_row,
     )
 
 
 def build_three_line_invoice(
     seller: str = ENTITY_GS_PTE, buyer: str = ENTITY_EMAX_PTE
 ) -> DocumentModel:
-    """3 行（在 GS Invoice 7 行预留范围内）。"""
+    """3 行（在 GS Invoice 9 行预留范围内）。"""
     lines = (
-        make_order_line(sap="21-44640", description="CB2500.B2", gs_model="Q1", quantity=100),
         make_order_line(
-            sap="21-44641", description="CB3000.B2", gs_model="Q2", quantity=200, item_line_no="20"
+            sap="21-44640", description="CB2500.B2", gs_model="Q1", quantity=100, source_row=5
         ),
         make_order_line(
-            sap="21-44642", description="CB4000.B2", gs_model="Q3", quantity=80, item_line_no="30"
+            sap="21-44641",
+            description="CB3000.B2",
+            gs_model="Q2",
+            quantity=200,
+            item_line_no="20",
+            source_row=6,
+        ),
+        make_order_line(
+            sap="21-44642",
+            description="CB4000.B2",
+            gs_model="Q3",
+            quantity=80,
+            item_line_no="30",
+            source_row=7,
         ),
     )
     result = build_invoice_model(lines, seller=seller, buyer=buyer, po_no="4500030844")
@@ -110,22 +125,22 @@ class TestRenderBasic:
     def test_returns_absolute_path(self, tmp_path: Path) -> None:
         mapping = load_template_mapping(GS_INVOICE_MAPPING)
         model = build_three_line_invoice()
-        out = render_document(model, mapping, tmp_path / "out.xlsx")
-        assert out.is_absolute()
-        assert out.exists()
+        result = render_document(model, mapping, tmp_path / "out.xlsx")
+        assert result.output_path.is_absolute()
+        assert result.output_path.exists()
 
     def test_creates_parent_directories(self, tmp_path: Path) -> None:
         mapping = load_template_mapping(GS_INVOICE_MAPPING)
         model = build_three_line_invoice()
         deep = tmp_path / "a" / "b" / "c" / "out.xlsx"
-        out = render_document(model, mapping, deep)
-        assert out.exists()
+        result = render_document(model, mapping, deep)
+        assert result.output_path.exists()
 
     def test_invoice_no_written_to_header(self, tmp_path: Path) -> None:
         mapping = load_template_mapping(GS_INVOICE_MAPPING)
         model = build_three_line_invoice()
-        out = render_document(model, mapping, tmp_path / "out.xlsx")
-        wb = load_workbook(out)
+        result = render_document(model, mapping, tmp_path / "out.xlsx")
+        wb = load_workbook(result.output_path)
         ws = wb["Sheet1"]
         # mapping.header.invoice_no = H6
         assert ws["H6"].value == "INV-RENDER-001"
@@ -133,8 +148,8 @@ class TestRenderBasic:
     def test_three_lines_written_to_correct_columns(self, tmp_path: Path) -> None:
         mapping = load_template_mapping(GS_INVOICE_MAPPING)
         model = build_three_line_invoice()
-        out = render_document(model, mapping, tmp_path / "out.xlsx")
-        wb = load_workbook(out)
+        result = render_document(model, mapping, tmp_path / "out.xlsx")
+        wb = load_workbook(result.output_path)
         ws = wb["Sheet1"]
         # mapping start_row=18, columns: SAP=D, qty=F, price=E, amount=H, gs_model=C, unit_label=G
         # 注意：openpyxl 把 Decimal 数值读回为 int/float，断言用数值相等
@@ -155,8 +170,8 @@ class TestRenderBasic:
         """3 行 < 预留 7 行，剩余 4 行的样板数据应被清掉。"""
         mapping = load_template_mapping(GS_INVOICE_MAPPING)
         model = build_three_line_invoice()
-        out = render_document(model, mapping, tmp_path / "out.xlsx")
-        wb = load_workbook(out)
+        result = render_document(model, mapping, tmp_path / "out.xlsx")
+        wb = load_workbook(result.output_path)
         ws = wb["Sheet1"]
         # row 21-24 应该没有 SAP（D 列）
         for row in range(21, 25):
@@ -167,8 +182,8 @@ class TestRenderBasic:
         """3 行不触发插入时，合计行号保持模板原位置 (F27/H27)。"""
         mapping = load_template_mapping(GS_INVOICE_MAPPING)
         model = build_three_line_invoice()
-        out = render_document(model, mapping, tmp_path / "out.xlsx")
-        wb = load_workbook(out)
+        result = render_document(model, mapping, tmp_path / "out.xlsx")
+        wb = load_workbook(result.output_path)
         ws = wb["Sheet1"]
         # openpyxl 读回 Decimal 数值会被规约为 int/float
         assert ws["F27"].value == 380  # 100+200+80
@@ -185,8 +200,8 @@ class TestRenderOverflow:
     def test_all_ten_lines_present(self, tmp_path: Path) -> None:
         mapping = load_template_mapping(GS_INVOICE_MAPPING)
         model = build_overflowing_invoice()
-        out = render_document(model, mapping, tmp_path / "out.xlsx")
-        wb = load_workbook(out)
+        result = render_document(model, mapping, tmp_path / "out.xlsx")
+        wb = load_workbook(result.output_path)
         ws = wb["Sheet1"]
         for i in range(10):
             row = 18 + i
@@ -198,8 +213,8 @@ class TestRenderOverflow:
         """
         mapping = load_template_mapping(GS_INVOICE_MAPPING)
         model = build_overflowing_invoice()
-        out = render_document(model, mapping, tmp_path / "out.xlsx")
-        wb = load_workbook(out)
+        result = render_document(model, mapping, tmp_path / "out.xlsx")
+        wb = load_workbook(result.output_path)
         ws = wb["Sheet1"]
         assert ws["F28"].value is not None
         assert ws["H28"].value is not None
@@ -213,8 +228,8 @@ class TestRenderOverflow:
         """
         mapping = load_template_mapping(GS_INVOICE_MAPPING)
         model = build_overflowing_invoice()
-        out = render_document(model, mapping, tmp_path / "out.xlsx")
-        wb = load_workbook(out)
+        result = render_document(model, mapping, tmp_path / "out.xlsx")
+        wb = load_workbook(result.output_path)
         ws = wb["Sheet1"]
         cell = ws["D27"]
         assert cell.has_style, "插入行 row 27 D 列缺样式"
@@ -241,8 +256,8 @@ class TestStylePreservationParity:
         self, tmp_path: Path, baseline: dict[str, object]
     ) -> None:
         mapping = load_template_mapping(GS_INVOICE_MAPPING)
-        out = render_document(build_three_line_invoice(), mapping, tmp_path / "basic.xlsx")
-        wb = load_workbook(out)
+        result = render_document(build_three_line_invoice(), mapping, tmp_path / "basic.xlsx")
+        wb = load_workbook(result.output_path)
         ws = wb["Sheet1"]
         assert {str(r) for r in ws.merged_cells.ranges} == baseline["merged"]
         for col, expected in baseline["col_widths"].items():  # type: ignore[attr-defined]
@@ -250,8 +265,8 @@ class TestStylePreservationParity:
 
     def test_overflow_keeps_widths(self, tmp_path: Path, baseline: dict[str, object]) -> None:
         mapping = load_template_mapping(GS_INVOICE_MAPPING)
-        out = render_document(build_overflowing_invoice(), mapping, tmp_path / "overflow.xlsx")
-        wb = load_workbook(out)
+        result = render_document(build_overflowing_invoice(), mapping, tmp_path / "overflow.xlsx")
+        wb = load_workbook(result.output_path)
         ws = wb["Sheet1"]
         for col, expected in baseline["col_widths"].items():  # type: ignore[attr-defined]
             assert ws.column_dimensions[col].width == expected
@@ -278,3 +293,61 @@ class TestEdgeCases:
         broken_mapping = replace(mapping, template_path=bad_template)
         with pytest.raises(TemplateError, match="无法打开模板"):
             render_document(build_three_line_invoice(), broken_mapping, tmp_path / "out.xlsx")
+
+
+# ————————————————————————————————————————
+# 双向溯源索引（产品方案 §4.4）
+# ————————————————————————————————————————
+
+
+class TestSourceIndex:
+    def test_index_returned_with_result(self, tmp_path: Path) -> None:
+        mapping = load_template_mapping(GS_INVOICE_MAPPING)
+        result = render_document(build_three_line_invoice(), mapping, tmp_path / "out.xlsx")
+        # 数据行 SAP/qty/price + 表头 invoice_no/ship_to + 合计 quantity/amount 都应有条目
+        assert len(result.source_index) > 0
+
+    def test_data_row_traces_back_to_po_record(self, tmp_path: Path) -> None:
+        mapping = load_template_mapping(GS_INVOICE_MAPPING)
+        result = render_document(build_three_line_invoice(), mapping, tmp_path / "out.xlsx")
+        # 第一行的 SAP（D18）应溯源到 PO record source_row=5 的 SAP Number 字段
+        loc = result.source_index.lookup_source("D18")
+        assert loc is not None
+        assert loc.sheet == "PO record"
+        assert loc.row == 5
+        assert loc.field == "SAP Number"
+
+    def test_quantity_traces_to_finalqty(self, tmp_path: Path) -> None:
+        mapping = load_template_mapping(GS_INVOICE_MAPPING)
+        result = render_document(build_three_line_invoice(), mapping, tmp_path / "out.xlsx")
+        loc = result.source_index.lookup_source("F18")
+        assert loc is not None
+        assert loc.field == "FINALQTY"
+
+    def test_amount_marked_computed(self, tmp_path: Path) -> None:
+        """amount 列写公式，UI 上溯源应标识为"由工作台计算"。"""
+        mapping = load_template_mapping(GS_INVOICE_MAPPING)
+        result = render_document(build_three_line_invoice(), mapping, tmp_path / "out.xlsx")
+        loc = result.source_index.lookup_source("H18")
+        assert loc is not None
+        assert loc.is_computed
+        assert loc.sheet == COMPUTED_SHEET
+
+    def test_totals_marked_computed(self, tmp_path: Path) -> None:
+        mapping = load_template_mapping(GS_INVOICE_MAPPING)
+        result = render_document(build_three_line_invoice(), mapping, tmp_path / "out.xlsx")
+        # 模板原合计在 F27/H27（3 行不触发插入）
+        qty_loc = result.source_index.lookup_source("F27")
+        amt_loc = result.source_index.lookup_source("H27")
+        assert qty_loc is not None and qty_loc.is_computed
+        assert amt_loc is not None and amt_loc.is_computed
+        assert qty_loc.field == "total_quantity"
+        assert amt_loc.field == "total_amount"
+
+    def test_header_traces_to_po_record(self, tmp_path: Path) -> None:
+        mapping = load_template_mapping(GS_INVOICE_MAPPING)
+        result = render_document(build_three_line_invoice(), mapping, tmp_path / "out.xlsx")
+        loc = result.source_index.lookup_source("H6")
+        assert loc is not None
+        assert loc.sheet == "PO record"
+        assert loc.field == "invoice_no"

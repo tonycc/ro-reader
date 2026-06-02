@@ -41,6 +41,8 @@ class DocumentLine:
 
     PL 专属字段（carton_count、net/gross weight、cbm）在 Invoice 中保持 None；
     Phase 2 PL 实现时会填充。
+
+    `source_row` 是 PO record 中的源行号，用于双向溯源（产品方案 §4.4）。
     """
 
     item_line_no: str
@@ -50,6 +52,7 @@ class DocumentLine:
     quantity: Decimal
     unit_price: Decimal
     amount: Decimal
+    source_row: int | None = None
     carton_count: Decimal | None = None
     net_weight: Decimal | None = None
     gross_weight: Decimal | None = None
@@ -159,6 +162,7 @@ def build_invoice_model(
                 quantity=line_quantity,
                 unit_price=unit_price,
                 amount=amount,
+                source_row=original_line.source_row,
             )
         )
 

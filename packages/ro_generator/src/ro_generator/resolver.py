@@ -299,6 +299,7 @@ def _resolve_row(
         prices=prices,
         subtotals=subtotals,
         monthly_shipments=monthly,
+        source_row=row_number,
     )
     return line, messages
 
