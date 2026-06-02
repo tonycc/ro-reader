@@ -1,0 +1,33 @@
+name: build-launcher
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/ro_workbench_launcher/**'
+      - 'packages/ro_workbench_api/**'
+      - 'packages/ro_generator/**'
+      - '.github/workflows/build-launcher.yml'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: latest
+      - run: uv python install 3.11
+      - run: uv sync --all-packages
+      - run: uv add --dev pyinstaller
+      - run: |
+          uv run pyinstaller packages/ro_workbench_launcher/ro-workbench.spec \
+            --distpath dist --workpath build --noconfirm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ro-workbench-${{ matrix.os }}
+          path: dist/
