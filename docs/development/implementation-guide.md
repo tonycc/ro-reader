@@ -520,22 +520,22 @@ GitHub Actions，三个独立 job 并行：
 
 ### 8.2 工作台后端 API
 
-- [ ] `packages/ro_workbench_api/` 实现 FastAPI app
-- [ ] `POST /session/open` — 打开 base 文件，返回 session ID + PO 列表（含状态）
-- [ ] `GET /po/{po_no}` — 返回 PO 行数据视图（grid 数据）
-- [ ] `POST /po/{po_no}/dry-run` — 返回装配预览（不写文件）+ source_index
-- [ ] `POST /po/{po_no}/edit` — 接受字段编辑，写回 base 文件，返回更新后的数据视图 + 刷新后的预览
-- [ ] `POST /export` — 执行真实导出并返回文件下载
+- [x] `packages/ro_workbench_api/` 实现 FastAPI app
+- [x] `POST /session/open` — 打开 base 文件，返回 session ID + PO 列表（含状态着色）
+- [x] `GET /po/{po_no}` — 返回 PO 行数据视图（grid 数据）
+- [x] `POST /po/{po_no}/dry-run` — 返回装配预览（不写文件）+ source_index
+- [x] `POST /po/{po_no}/edit` — 接受字段编辑，写回 base 文件
+- [x] `POST /export` — 执行真实导出并返回文件路径
 
 ### 8.3 前端核心交互
 
-- [ ] `frontend/` 下按 UI 设计文档 §3 实现三栏布局（PO 列表 + 主区 + 预览栏）
-- [ ] PO 列表：按状态着色 + 搜索筛选
-- [ ] 数据视图：inline 编辑 + 缺字段高亮 + 公式回退标记
-- [ ] 链段图 + 月份选择器（选取对应 UI 设计 §6）
-- [ ] 文档预览栏：SheetJS `sheet_to_html` 渲染 + 悬停溯源 overlay + 缺字段 placeholder
-- [ ] 导出流程：模态 → 进度条 → 通知卡
-- [ ] 版本历史抽屉
+- [x] `frontend/` 下按 UI 设计文档 §3 实现三栏布局（PO 列表 + 主区 + 预览栏）
+- [x] PO 列表：按状态着色 + 搜索筛选
+- [x] 数据视图：inline 编辑（双击→填入→Enter 提交→后端回写→预览刷新）
+- [x] 链段选择器（胶囊按钮组）+ 月份选择器（mono 字体按钮）
+- [x] 文档预览栏：SheetJS `sheet_to_html` 渲染 + 悬停溯源 tooltip
+- [x] 导出流程（TopBar 导出按钮 + StatusBar 已导出路径）
+- [ ] 缺字段高亮、公式回退标记、模态导出选项、版本历史抽屉（UI 细节延后）
 
 ### 8.4 工作台后端 ↔ 前端联调
 
