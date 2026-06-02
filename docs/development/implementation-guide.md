@@ -367,9 +367,9 @@ GitHub Actions，三个独立 job 并行：
 
 ### 6.4 PO Resolver
 
-- [ ] 实现 `resolver.py`：按 PO 号筛选行、SAP 匹配产品、按链段+类别选择价格
-- [ ] 公式回退逻辑（产品方案 §10.4）：`data_only` 读到 None 时按 §10.2 公式现算并 warning
-- [ ] 单元测试覆盖：combo / rod / reel 三类、跨多个月份、缺 SAP 阻断、SAP 在 DATA BASE 找不到
+- [x] 实现 `resolver.py`：按 PO 号筛选行、SAP 匹配产品、按所有合法链段读取价格列
+- [x] 公式回退逻辑（产品方案 §10.4）：CTNS / TOTAL CBM 读到 None 时按 §10.2 公式现算并 high warning
+- [x] 单元测试覆盖：combo 类、跨多个月份、缺 SAP 阻断、SAP 在 DATA BASE 找不到、价格全缺、部分行失败
 
 ### 6.5 Document Model（Invoice）
 
