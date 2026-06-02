@@ -373,10 +373,10 @@ GitHub Actions，三个独立 job 并行：
 
 ### 6.5 Document Model（Invoice）
 
-- [ ] 实现 `document_model.py` 中 Invoice 的视图模型构建
-- [ ] 数量来源切换：完整 PO 数量 vs 月度出货数量
-- [ ] 合计计算：总数量、总金额、总箱数、总 CBM
-- [ ] 单元测试覆盖月份切片、空行剔除（产品方案 §10.3）
+- [x] 实现 `document_model.py` 中 Invoice 的视图模型构建
+- [x] 数量来源切换：完整 PO 数量 vs 月度出货数量
+- [x] 合计计算：总数量、总金额（PL 合计字段在 Phase 2 加）
+- [x] 单元测试覆盖月份切片、空行剔除（产品方案 §10.3）、链段定价缺失、Invoice 必填字段
 
 ### 6.6 Template Mapping
 

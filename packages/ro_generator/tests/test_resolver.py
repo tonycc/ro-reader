@@ -8,7 +8,6 @@ from typing import Any
 
 import pytest
 from openpyxl import Workbook
-
 from ro_generator.models import OrderLine
 from ro_generator.resolver import (
     CODE_FORMULA_FALLBACK,
@@ -425,9 +424,7 @@ class TestFormulaFallback:
         assert line.carton_count == Decimal("10")
         # CTNS 不应触发 fallback warning（TOTAL CBM 仍可能 fallback，因为本测试未提供）
         ctns_fallback_msgs = [
-            m
-            for m in result.messages
-            if m.code == CODE_FORMULA_FALLBACK and m.field == "CTNS"
+            m for m in result.messages if m.code == CODE_FORMULA_FALLBACK and m.field == "CTNS"
         ]
         assert ctns_fallback_msgs == []
 
