@@ -1,0 +1,25 @@
+document: invoice
+template_version: "v1"
+template: templates/emax/invoice.xlsx
+sheet: CI
+header:
+  invoice_no: G5
+  invoice_date: G6
+  ship_to: A11
+lines:
+  start_row: 17
+  style_source_row: 18
+  unit_label: PCS
+  columns:
+    po_no: B
+    gs_model: C
+    sap: D
+    unit_price: E
+    quantity: F
+    unit_label: G
+    amount: H
+totals:
+  quantity: F26
+  amount: H26
+notes:
+  carton_summary: A29

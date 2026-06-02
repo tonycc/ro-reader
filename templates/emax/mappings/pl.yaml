@@ -1,0 +1,21 @@
+document: pl
+template_version: "v1"
+template: templates/emax/pl.xlsx
+sheet: PL
+header:
+  invoice_no: F4
+lines:
+  start_row: 13
+  style_source_row: 14
+  unit_label: PCS
+  columns:
+    po_no: B
+    description: C
+    sap: D
+    quantity: E
+    unit_label: F
+    unit_price: B
+    amount: B
+totals:
+  quantity: E21
+  unit_label: F21

@@ -178,10 +178,12 @@ def _generate(request: DocumentRequest) -> GenerationResult:
             )
         )
 
-    # 4. 推断 seller / buyer 或返回 needs_input
+    # 4. 推断 seller / buyer 或返回 needs_input/error
     seller, buyer, segment_messages = _resolve_segment(request, lines)
     if seller is None or buyer is None:
-        # segment_messages 已是 needs_input 形态
+        blocking = tuple(m for m in segment_messages if m.kind == "blocking_error")
+        if blocking:
+            return GenerationResult(status="error", errors=blocking, warnings=warnings_resolver)
         return _needs_input(segment_messages, [INPUT_SELLER, INPUT_BUYER], request, lines)
 
     # 5. 推断 invoice_month

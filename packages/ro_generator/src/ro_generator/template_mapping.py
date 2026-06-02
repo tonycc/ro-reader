@@ -116,16 +116,12 @@ def _parse_mapping(raw: dict[str, object], yaml_path: Path) -> TemplateMapping:
 
     # 模板路径：相对 mapping 文件的目录解析；最终落到仓库相对路径上
     # 真实业务里 mapping 与模板同目录，YAML 中常写 templates/gs/invoice.xlsx 这种仓库相对路径
-    template_path = (yaml_path.parent.parent.parent / template_rel).resolve()
+    # YAML 在 templates/<entity>/mappings/<doc>.yaml → repo root 上 4 级
+    template_path = (yaml_path.parent.parent.parent.parent / template_rel).resolve()
     if not template_path.exists():
-        # 退而求其次：直接相对当前工作目录
-        alt = Path(template_rel).resolve()
-        if alt.exists():
-            template_path = alt
-        else:
-            raise MappingError(
-                f"模板文件不存在：{template_rel}（相对 {yaml_path} 解析为 {template_path}）"
-            )
+        raise MappingError(
+            f"模板文件不存在：{template_rel}（相对 {yaml_path} 解析为 {template_path}）"
+        )
 
     header = _require_dict_of_str(raw, "header", yaml_path)
     lines = _parse_lines_section(raw, yaml_path)

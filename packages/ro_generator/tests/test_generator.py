@@ -320,8 +320,8 @@ class TestErrorPath:
         assert any("PI" in f for f in result.files)
         assert any("INVOICE" in f for f in result.files)
 
-    def test_unsupported_seller_blocks(self, tmp_path: Path) -> None:
-        """EMAX PTE + PF 链段的 Invoice mapping 不存在（Phase 2 仅限于已有模板）。"""
+    def test_emax_to_pf_invoice_succeeds(self, tmp_path: Path) -> None:
+        """Phase 4：EMAX Invoice mapping 已就绪，EMAX PTE → PF 链段应装配成功。"""
         path = make_base_file(
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
@@ -337,9 +337,29 @@ class TestErrorPath:
             output_dir=str(tmp_path / "out"),
         )
         result = generate(request)
+        assert result.status == "success", result.errors
+        assert result.output_file is not None
+
+    def test_unknown_seller_blocks(self, tmp_path: Path) -> None:
+        """非法链段组合应返回 UNSUPPORTED_CHAIN_SEGMENT。"""
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[basic_po_row(FINALQTY=100, **{"2601": 100})],
+        )
+        request = DocumentRequest(
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("INVOICE",),
+            seller="UNKNOWN CORP",
+            buyer="PF",
+            invoice_month="2601",
+            output_dir=str(tmp_path / "out"),
+        )
+        result = generate(request)
         assert result.status == "error"
         codes = {m.code for m in result.errors}
-        assert CODE_MAPPING_NOT_FOUND in codes
+        assert "UNSUPPORTED_CHAIN_SEGMENT" in codes
 
     def test_sk_ym_po_blocked(self, tmp_path: Path) -> None:
         """SK / YM 没有 PO 模板（产品方案 §13.1）。"""

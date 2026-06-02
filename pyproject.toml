@@ -16,6 +16,7 @@ dev = [
     "types-openpyxl>=3.1",
     "types-PyYAML>=6.0",
     "pyinstaller>=6.20.0",
+    "xlrd<2",
 ]
 
 [tool.ruff]
