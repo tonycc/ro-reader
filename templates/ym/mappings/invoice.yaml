@@ -1,0 +1,25 @@
+document: invoice
+template_version: "v1"
+template: templates/ym/invoice.xlsx
+sheet: "PF Standard Invoice format"
+header:
+  invoice_no: H6
+  invoice_date: H7
+  ship_to: A12
+lines:
+  start_row: 18
+  style_source_row: 19
+  unit_label: PCS
+  columns:
+    po_no: B
+    gs_model: C
+    sap: D
+    unit_price: E
+    quantity: F
+    unit_label: G
+    amount: H
+totals:
+  quantity: F27
+  amount: H27
+notes:
+  carton_summary: A30

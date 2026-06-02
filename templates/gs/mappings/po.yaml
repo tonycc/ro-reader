@@ -1,0 +1,19 @@
+document: po
+template_version: "v1"
+template: templates/gs/po.xlsx
+sheet: Sheet1
+header:
+  po_no: B6
+  bill_to: B10
+lines:
+  start_row: 22
+  style_source_row: 22
+  columns:
+    po_no: B
+    item_line_no: C
+    sap: D
+    description: E
+    unit_price: F
+    quantity: G
+    amount: F
+totals: {}

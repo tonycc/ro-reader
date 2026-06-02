@@ -298,7 +298,8 @@ class TestErrorPath:
         codes = {m.code for m in result.errors}
         assert "INVOICE_NO_MISSING" in codes
 
-    def test_unsupported_document_type_blocks(self, tmp_path: Path) -> None:
+    def test_multi_doc_generates_both(self, tmp_path: Path) -> None:
+        """Phase 2：PI + INVOICE 同时生成，两个文件都输出。"""
         path = make_base_file(
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
@@ -314,12 +315,13 @@ class TestErrorPath:
             output_dir=str(tmp_path / "out"),
         )
         result = generate(request)
-        assert result.status == "error"
-        codes = {m.code for m in result.errors}
-        assert CODE_UNSUPPORTED_DOCUMENT in codes
+        assert result.status == "success", result.errors
+        assert len(result.files) == 2
+        assert any("PI" in f for f in result.files)
+        assert any("INVOICE" in f for f in result.files)
 
     def test_unsupported_seller_blocks(self, tmp_path: Path) -> None:
-        """Phase 1 仅 GS PTE 有 mapping。"""
+        """EMAX PTE + PF 链段的 Invoice mapping 不存在（Phase 2 仅限于已有模板）。"""
         path = make_base_file(
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
@@ -332,6 +334,26 @@ class TestErrorPath:
             seller="EMAX PTE",
             buyer="PF",
             invoice_month="2601",
+            output_dir=str(tmp_path / "out"),
+        )
+        result = generate(request)
+        assert result.status == "error"
+        codes = {m.code for m in result.errors}
+        assert CODE_MAPPING_NOT_FOUND in codes
+
+    def test_sk_ym_po_blocked(self, tmp_path: Path) -> None:
+        """SK / YM 没有 PO 模板（产品方案 §13.1）。"""
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[basic_po_row(FINALQTY=100, **{"2601": 100})],
+        )
+        request = DocumentRequest(
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PO",),
+            seller="SK/YM",
+            buyer="GS PTE",
             output_dir=str(tmp_path / "out"),
         )
         result = generate(request)

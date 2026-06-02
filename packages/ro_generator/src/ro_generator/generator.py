@@ -22,15 +22,23 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Final
 
-from ro_generator.document_model import build_invoice_model
+from ro_generator.document_model import (
+    build_invoice_model,
+    build_pi_model,
+    build_pl_model,
+    build_po_model,
+)
 from ro_generator.errors import RoGeneratorError, WorkbookOpenError
 from ro_generator.models import (
     DocumentRequest,
+    DocumentType,
     GenerationResult,
     ValidationMessage,
 )
 from ro_generator.packager import (
     build_document_filename,
+    build_zip_filename,
+    package_zip,
     resolve_output_path,
 )
 from ro_generator.renderer import render_document
@@ -128,20 +136,8 @@ def generate(request: DocumentRequest) -> GenerationResult:
 
 
 def _generate(request: DocumentRequest) -> GenerationResult:
-    # 1. 文档类型检查（Phase 1 只支持 INVOICE）
+    # 1. 文档类型检查
     documents = tuple(d.upper() for d in request.documents)
-    unsupported = [d for d in documents if d != "INVOICE"]
-    if unsupported:
-        return _error_result(
-            ValidationMessage(
-                kind="blocking_error",
-                code=CODE_UNSUPPORTED_DOCUMENT,
-                message=(
-                    f"Phase 1 仅支持 INVOICE 单据类型；收到不支持的类型：{unsupported}。"
-                    "PI/PO/PL 在 Phase 2 加入。"
-                ),
-            )
-        )
     if not documents:
         return _error_result(
             ValidationMessage(
@@ -188,9 +184,10 @@ def _generate(request: DocumentRequest) -> GenerationResult:
         # segment_messages 已是 needs_input 形态
         return _needs_input(segment_messages, [INPUT_SELLER, INPUT_BUYER], request, lines)
 
-    # 5. 推断 invoice_month（仅 INVOICE/PL 需要）
+    # 5. 推断 invoice_month（INVOICE / PL 有月份要求时可自动选定单月）
     invoice_month = request.invoice_month
-    if "INVOICE" in documents and invoice_month is None:
+    needs_month = any(d in ("INVOICE", "PL") for d in documents)
+    if needs_month and invoice_month is None:
         candidates = _collect_month_candidates(lines)
         if len(candidates) == 0:
             return _error_result(
@@ -207,73 +204,183 @@ def _generate(request: DocumentRequest) -> GenerationResult:
                 options={INPUT_INVOICE_MONTH: candidates},
                 warnings=warnings_resolver,
             )
-        # 单个月份：自动选定
         invoice_month = candidates[0]["value"]
 
-    # 6. 加载 mapping
-    mapping = _load_mapping(seller, "INVOICE")
-    if mapping is None:
-        return _error_result(
-            ValidationMessage(
-                kind="blocking_error",
-                code=CODE_MAPPING_NOT_FOUND,
-                message=(
-                    f"找不到 (seller={seller!r}, document=INVOICE) 对应的模板 mapping。"
-                    "Phase 1 仅支持 GS PTE。"
-                ),
+    # 6. 逐个装配单据
+    rendered_files: list[tuple[str, Path]] = []  # (filename, absolute_path)
+    all_warnings = list(warnings_resolver)
+    source_indices: list[SourceIndex] = []
+
+    for doc_type in documents:
+        doc_result = _generate_one(
+            lines,
+            seller=seller,
+            buyer=buyer,
+            po_no=request.po_no,
+            invoice_month=invoice_month,
+            doc_type=doc_type,  # type: ignore[arg-type]
+            request=request,
+        )
+        if doc_result.status == "error":
+            return GenerationResult(
+                status="error",
+                errors=doc_result.errors,
+                warnings=tuple(all_warnings) + doc_result.warnings,
             )
+        if doc_result.files and doc_result.output_file:
+            rendered_files.append((doc_result.files[0], Path(doc_result.output_file)))
+        if isinstance(doc_result.source_index, SourceIndex):
+            source_indices.append(doc_result.source_index)
+        all_warnings.extend(doc_result.warnings)
+
+    # 7. Zip（多文件时）
+    all_warnings_t = tuple(all_warnings)
+    if len(rendered_files) == 1:
+        filename, path = rendered_files[0]
+        return GenerationResult(
+            status="success",
+            summary=_build_summary(request, seller, buyer, invoice_month, lines, documents),
+            files=(filename,),
+            output_file=str(path),
+            warnings=all_warnings_t,
+            source_index=source_indices[0] if source_indices else None,
         )
 
-    # 7. 构建 document model
-    invoice_result = build_invoice_model(
-        lines,
-        seller=seller,
-        buyer=buyer,
-        po_no=request.po_no,
-        invoice_month=invoice_month,
+    if request.output_format == "zip":
+        zip_name = build_zip_filename(
+            po_no=request.po_no,
+            invoice_month=invoice_month,
+        )
+        zip_path = package_zip(
+            files=tuple(p for _, p in rendered_files),
+            output_dir=request.output_dir,
+            zip_name=zip_name,
+            on_conflict=request.on_conflict,
+        )
+        filenames = tuple(fn for fn, _ in rendered_files)
+        return GenerationResult(
+            status="success",
+            summary=_build_summary(request, seller, buyer, invoice_month, lines, documents),
+            files=filenames,
+            output_file=str(zip_path),
+            warnings=all_warnings_t,
+        )
+
+    # 多文件、非 zip：各自落盘
+    filenames = tuple(fn for fn, _ in rendered_files)
+    return GenerationResult(
+        status="success",
+        summary=_build_summary(request, seller, buyer, invoice_month, lines, documents),
+        files=filenames,
+        output_file=str(Path(request.output_dir).resolve()),
+        warnings=all_warnings_t,
     )
-    invoice_blocking = tuple(m for m in invoice_result.messages if m.kind == "blocking_error")
-    invoice_warnings = tuple(m for m in invoice_result.messages if m.kind == "warning")
-    if invoice_result.model is None:
+
+
+# —————————————————————————————————————
+# 单文档装配
+# —————————————————————————————————————
+
+# 无 PO 模板的主体集合
+ENTITIES_WITHOUT_PO: Final = {"SK", "YM", "SK/YM"}
+
+
+def _generate_one(
+    lines: tuple,  # type: ignore[type-arg]
+    *,
+    seller: str,
+    buyer: str,
+    po_no: str,
+    invoice_month: str | None,
+    doc_type: DocumentType,
+    request: DocumentRequest,
+) -> GenerationResult:
+    """为单个单据类型走完整装配流程并返回临时结果。"""
+
+    # SK / YM 无 PO
+    if doc_type == "PO" and seller in ENTITIES_WITHOUT_PO:
         return GenerationResult(
             status="error",
-            errors=invoice_blocking,
-            warnings=warnings_resolver + invoice_warnings,
+            errors=(
+                ValidationMessage(
+                    kind="blocking_error",
+                    code=CODE_MAPPING_NOT_FOUND,
+                    message=f"{seller} 主体不提供 PO 模板（产品方案 §13.1）",
+                ),
+            ),
         )
 
-    # 8. 解析输出路径并渲染
+    # 加载 mapping
+    mapping = _load_mapping(seller, doc_type)
+    if mapping is None:
+        return GenerationResult(
+            status="error",
+            errors=(
+                ValidationMessage(
+                    kind="blocking_error",
+                    code=CODE_MAPPING_NOT_FOUND,
+                    message=f"找不到 (seller={seller!r}, document={doc_type}) 对应的模板 mapping",
+                ),
+            ),
+        )
+
+    # 构建 model
+    month_for_doc = invoice_month if doc_type in ("INVOICE", "PL") else None
+    if doc_type == "PI":
+        build_result = build_pi_model(lines, seller=seller, buyer=buyer, po_no=po_no)
+    elif doc_type == "PO":
+        build_result = build_po_model(lines, seller=seller, buyer=buyer, po_no=po_no)
+    elif doc_type == "PL":
+        build_result = build_pl_model(
+            lines, seller=seller, buyer=buyer, po_no=po_no, invoice_month=month_for_doc,
+        )
+    else:
+        build_result = build_invoice_model(
+            lines, seller=seller, buyer=buyer, po_no=po_no, invoice_month=month_for_doc,
+        )
+
+    blocking = tuple(m for m in build_result.messages if m.kind == "blocking_error")
+    doc_warnings = tuple(m for m in build_result.messages if m.kind == "warning")
+    if build_result.model is None:
+        return GenerationResult(status="error", errors=blocking, warnings=doc_warnings)
+
+    # 渲染
     filename = build_document_filename(
         seller=seller,
-        document_type="INVOICE",
-        po_no=request.po_no,
-        invoice_month=invoice_month,
+        document_type=doc_type,
+        po_no=po_no,
+        invoice_month=month_for_doc,
     )
     output_path = resolve_output_path(
-        request.output_dir,
-        filename,
-        on_conflict=request.on_conflict,
+        request.output_dir, filename, on_conflict=request.on_conflict,
     )
-    render_result = render_document(invoice_result.model, mapping, output_path)
+    render_result = render_document(build_result.model, mapping, output_path)
 
-    # 9. 装配最终结果
-    summary: dict[str, object] = {
+    return GenerationResult(
+        status="success",
+        files=(filename,),
+        output_file=str(render_result.output_path),
+        warnings=doc_warnings,
+        source_index=render_result.source_index,
+    )
+
+
+def _build_summary(
+    request: DocumentRequest,
+    seller: str,
+    buyer: str,
+    invoice_month: str | None,
+    lines: tuple,  # type: ignore[type-arg]
+    documents: tuple[str, ...],
+) -> dict[str, object]:
+    return {
         "po_no": request.po_no,
         "documents": list(documents),
         "seller": seller,
         "buyer": buyer,
         "invoice_month": invoice_month,
-        "line_count": len(invoice_result.model.lines),
-        "total_quantity": str(invoice_result.model.total_quantity),
-        "total_amount": str(invoice_result.model.total_amount),
+        "line_count": len(lines),
     }
-    return GenerationResult(
-        status="success",
-        summary=summary,
-        files=(filename,),
-        output_file=str(render_result.output_path),
-        warnings=warnings_resolver + invoice_warnings,
-        source_index=render_result.source_index,
-    )
 
 
 # —————————————————————————————————————

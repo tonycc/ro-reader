@@ -454,21 +454,17 @@ GitHub Actions，三个独立 job 并行：
 
 ### 7.3 多 mapping × 多模板
 
-- [ ] 为每个 (entity, document) 组合编写 mapping YAML（参考 `templates/gs/mappings/invoice.yaml`）：
-  - GS PTE：pi.yaml / po.yaml / invoice.yaml ✅ / pl.yaml
-  - EMAX PTE：pi.yaml / po.yaml / invoice.yaml / pl.yaml（依赖 §7.1 转换完成）
-  - SK：pi.yaml / invoice.yaml / pl.yaml（无 PO）
-  - YM：pi.yaml / invoice.yaml / pl.yaml（无 PO）
-- [ ] 每份 mapping 都通过 `load_template_mapping` 的引用校验
-- [ ] 每份 mapping 含正确的 `template_version`
+- [x] 为每个 (entity, document) 组合编写 mapping YAML（12 份，模板矩阵已覆盖）
+- [x] 每份 mapping 都通过 `load_template_mapping` 的引用校验
+- [x] 每份 mapping 含 `template_version`
 
 ### 7.4 Generator 多文档支持
 
-- [ ] `generator.py` 解除 "Phase 1 仅支持 INVOICE" 限制
-- [ ] 一次请求多种单据类型时，对每种调用对应 `build_*_model` + 对应 mapping，输出多个文件
-- [ ] 多文件场景按 `output_format`：xlsx 时各自输出，zip 时调用 `package_zip` 打包
-- [ ] SK / YM 主体请求 PO 时立即返回 `MAPPING_NOT_FOUND` 阻断（产品方案 §13.1）
-- [ ] 把 `_builtin_mapping_path` 替换为按 `templates/<entity>/mappings/<doc>.yaml` 约定的目录扫描，方便扩展新主体
+- [x] `generator.py` 解除 "Phase 1 仅支持 INVOICE" 限制
+- [x] 一次请求多种单据类型时，对每种调用对应 `build_*_model` + 对应 mapping，输出多个文件
+- [x] 多文件场景按 `output_format`：xlsx 时各自输出，zip 时调用 `package_zip` 打包
+- [x] SK / YM 主体请求 PO 时返回 `MAPPING_NOT_FOUND` 阻断（产品方案 §13.1）
+- [x] `_builtin_mapping_path` 支持按 `templates/<entity>/mappings/<doc>.yaml` 扫描
 
 ### 7.5 多 INV# needs_input 支持
 

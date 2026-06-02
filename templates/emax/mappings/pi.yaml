@@ -1,0 +1,20 @@
+document: pi
+template_version: "v1"
+template: templates/emax/pi.xlsx
+sheet: "PF Standard Invoice format"
+header:
+  pi_no: B6
+  bill_to: B9
+lines:
+  start_row: 18
+  style_source_row: 18
+  columns:
+    po_no: B
+    item_line_no: C
+    sap: D
+    description: E
+    unit_price: F
+    quantity: G
+    amount: F
+totals:
+  quantity: G24
