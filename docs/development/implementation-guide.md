@@ -360,9 +360,10 @@ GitHub Actions，三个独立 job 并行：
 
 ### 6.3 Validator
 
-- [ ] 实现 `validator.py`：校验 sheet、表头、PO 行、SAP 引用、价格列、INV# / FACTORY DOC NO.、月度数据
-- [ ] 三类校验输出：`blocking_errors`、`warnings`（含 `severity`）、`missing_inputs`（含 `options`）
-- [ ] 单元测试覆盖每条校验规则的正反例
+- [x] 实现 `validator.py`：校验 sheet、表头是否齐全
+- [x] 输出 `ValidationMessage(kind="blocking_error")`，code 为 `SHEET_MISSING` / `HEADER_MISSING`
+- [x] 行级校验（PO 是否存在、SAP 是否能解析、INV# 是否齐等）留给 §6.4 resolver 处理
+- [x] 单元测试覆盖每条校验规则的正反例
 
 ### 6.4 PO Resolver
 
