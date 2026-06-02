@@ -16,6 +16,11 @@ const tabs: { key: typeof previewTab.value; label: string }[] = [
   { key: "PL", label: "PL" },
 ];
 
+function switchTab(key: typeof previewTab.value) {
+  previewTab.value = key;
+  wb.refreshPreview(key);
+}
+
 function onCellHover(e: MouseEvent) {
   const el = e.target as HTMLElement;
   const id = el.id || "";
@@ -55,7 +60,7 @@ watch(
       <button
         v-for="tab in tabs" :key="tab.key"
         class="tab-btn" :class="{ active: previewTab === tab.key }"
-        @click="previewTab = tab.key"
+        @click="switchTab(tab.key)"
       >{{ tab.label }}</button>
     </div>
     <div class="preview-body" @mouseover="onCellHover">

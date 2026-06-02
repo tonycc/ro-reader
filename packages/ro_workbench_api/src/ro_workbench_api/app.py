@@ -70,6 +70,7 @@ class DryRunRequest(BaseModel):
     buyer: str
     invoice_month: str | None = None
     invoice_no: str | None = None
+    document: str = "INVOICE"  # PI / PO / INVOICE / PL
 
 
 class EditFieldRequest(BaseModel):
@@ -207,13 +208,15 @@ def dry_run(po_no: str, req: DryRunRequest) -> dict[str, Any]:
     """装配预览，返回数据摘要 + source_index。
 
     文件写入临时目录，通过 /download?path= 可访问。
+    req.document 控制生成哪种单据（PI/PO/INVOICE/PL）。
     """
     import tempfile
     out_dir = tempfile.mkdtemp(prefix="ro-dry-run-")
+    doc = req.document.upper()
     request = DocumentRequest(
         base_file=req.base_file,
         po_no=po_no,
-        documents=("INVOICE",),
+        documents=(doc,),  # type: ignore[arg-type]
         seller=req.seller,
         buyer=req.buyer,
         invoice_month=req.invoice_month,

@@ -45,6 +45,7 @@ export interface DryRunRequest {
   buyer: string
   invoice_month?: string | null
   invoice_no?: string | null
+  document?: string
 }
 
 export interface DryRunResult {

@@ -21,6 +21,7 @@ export const useWorkbench = defineStore("workbench", () => {
 
   // Preview
   const preview = ref<DryRunResult | null>(null);
+  const previewDocType = ref("INVOICE");
   const sourceIndex = ref<SourceIndexEntry[]>([]);
 
   // Export
@@ -65,8 +66,9 @@ export const useWorkbench = defineStore("workbench", () => {
     await refreshPreview();
   }
 
-  async function refreshPreview() {
+  async function refreshPreview(docType?: string) {
     if (!baseFile.value || !selectedPo.value || !selectedSegment.value) return;
+    const dt = docType || previewDocType.value || "INVOICE";
     try {
       const result = await api.dryRun({
         base_file: baseFile.value,
@@ -74,8 +76,10 @@ export const useWorkbench = defineStore("workbench", () => {
         seller: selectedSegment.value.seller,
         buyer: selectedSegment.value.buyer,
         invoice_month: selectedMonth.value,
+        document: dt,
       });
       preview.value = result;
+      previewDocType.value = dt;
       sourceIndex.value = result.source_index ?? [];
       warnings.value = result.warnings;
       blockingErrors.value = result.errors;
@@ -128,7 +132,7 @@ export const useWorkbench = defineStore("workbench", () => {
     baseFile, poList, loading, error,
     selectedPo, dataRows, dataHeaders,
     selectedSegment, selectedMonth,
-    preview, sourceIndex,
+    preview, previewDocType, sourceIndex,
     exporting, lastExportFile,
     blockingErrors, warnings,
     poEntry, poStatus,
