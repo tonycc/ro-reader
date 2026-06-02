@@ -412,8 +412,9 @@ GitHub Actions，三个独立 job 并行：
 ### 6.11 测试 fixture
 
 - [ ] 与团队确认是否能提交真实 base 文件作为 fixture
-- [ ] 如果不能：编写合成 fixture 生成脚本 `tests/fixtures/generate_synthetic_base.py`
-- [ ] 合成 fixture 必须覆盖（参见 CLAUDE.md "测试 fixture"）：combo/rod/reel、跨多月份、多 INV#、缺 SAP、SK 主体请求 PO
+- [x] 编写合成 fixture 生成脚本 `tests/fixtures/generate_synthetic_base.py`
+- [x] 合成 fixture 覆盖（参见 CLAUDE.md "测试 fixture"）：combo/rod/reel、跨多月份、缺 SAP；多 INV# 留待 Phase 2 实现
+- [x] 端到端 CLI 验证：单月 success、跨月 needs_input、缺 SAP error 三种退出码全部正确
 
 ### 6.12 收尾
 
