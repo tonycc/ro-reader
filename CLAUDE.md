@@ -142,6 +142,8 @@ MVP 形态为**本地启动器 + 浏览器**：双击 PyInstaller 打包的可�
 | SK | ✅ | ❌ | ✅ | ✅ |
 | YM | ✅ | ❌ | ✅ | ✅ |
 
+14/14 mapping 全部通过 `load_template_mapping` 校验。
+
 ## 文件命名规则
 
 | 单据类型 | 命名模板 |
