@@ -179,6 +179,9 @@ class GenerationResult:
     `status == "success"` 时 `files` 与 `output_file` 有值；
     `status == "error"` 时 `errors` 非空；
     `status == "needs_input"` 时 `missing_inputs` 与 `options` 有值。
+
+    `source_index` 是装配单元格 ↔ base 字段的双向映射（产品方案 §4.4），
+    工作台 UI 在 Phase 3 消费此索引实现双向高亮。
     """
 
     status: ResultStatus
@@ -189,3 +192,6 @@ class GenerationResult:
     warnings: tuple[ValidationMessage, ...] = ()
     missing_inputs: tuple[str, ...] = ()
     options: dict[str, tuple[dict[str, str], ...]] = field(default_factory=dict)
+    # 注：source_index 是 SourceIndex 类型，但避免 models.py 反向依赖 source_index.py，
+    # 这里用 object 暂存。Phase 3 工作台后端可以用 isinstance 还原类型。
+    source_index: object = None

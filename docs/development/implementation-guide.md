@@ -399,9 +399,9 @@ GitHub Actions，三个独立 job 并行：
 
 ### 6.9 Generator 流水线
 
-- [ ] 实现 `generator.py`：串联 reader → validator → resolver → document_model → renderer → packager
-- [ ] 统一返回 `GenerationResult`，含 status、files、warnings、errors、missing_inputs、options、source_index
-- [ ] 集成测试：黄金 PO `4500030844` 端到端
+- [x] 实现 `generator.py`：串联 reader → validator → resolver → document_model → renderer → packager
+- [x] 统一返回 `GenerationResult`，含 status (success/error/needs_input)、files、output_file、warnings、errors、missing_inputs、options、source_index
+- [x] 集成测试：成功路径、需补充月份、需补充链段、未知 PO、缺字段、不支持的单据/链段
 
 ### 6.10 CLI
 
