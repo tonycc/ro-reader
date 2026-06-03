@@ -40,6 +40,12 @@ export const useWorkbench = defineStore("workbench", () => {
   async function openSession(file: string) {
     loading.value = true;
     error.value = "";
+    // Reset all transient state
+    selectedPo.value = "";
+    preview.value = null;
+    blockingErrors.value = [];
+    warnings.value = [];
+    sourceIndex.value = [];
     try {
       baseFile.value = file;
       const data = await api.openSession(file);
@@ -54,6 +60,11 @@ export const useWorkbench = defineStore("workbench", () => {
 
   async function selectPo(po_no: string) {
     selectedPo.value = po_no;
+    // Clear stale state from previous PO before loading new data
+    preview.value = null;
+    blockingErrors.value = [];
+    warnings.value = [];
+    sourceIndex.value = [];
     if (!baseFile.value) return;
     const data = await api.getDataView(baseFile.value, po_no);
     dataRows.value = data.rows;
@@ -62,7 +73,6 @@ export const useWorkbench = defineStore("workbench", () => {
     if (po?.chain_segments.length) {
       selectedSegment.value = po.chain_segments[0];
     }
-    // Auto-load preview after PO + segment are set
     await refreshPreview();
   }
 
