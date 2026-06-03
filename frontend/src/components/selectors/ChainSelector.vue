@@ -4,26 +4,26 @@ const wb = useWorkbench();
 </script>
 
 <template>
-  <div class="chain-selector">
-    <span class="label">链段:</span>
+  <div class="seller-selector">
+    <span class="label">主体:</span>
     <button
-      v-for="seg in wb.poEntry?.chain_segments ?? []"
-      :key="seg.seller + seg.buyer"
-      class="chain-btn"
-      :class="{ active: wb.selectedSegment?.seller === seg.seller && wb.selectedSegment?.buyer === seg.buyer }"
-      @click="wb.selectSegment(seg)"
+      v-for="s in wb.poEntry?.sellers ?? []"
+      :key="s"
+      class="seller-btn"
+      :class="{ active: wb.selectedSeller === s }"
+      @click="wb.selectSeller(s)"
     >
-      {{ seg.seller.split('/')[0] }} → {{ seg.buyer.split('/')[0] }}
+      {{ s }}
     </button>
-    <span v-if="!wb.poEntry?.chain_segments.length" class="hint">无可用链段</span>
+    <span v-if="!wb.poEntry?.sellers?.length" class="hint">无可用主体</span>
   </div>
 </template>
 
 <style scoped>
-.chain-selector { display: flex; align-items: center; gap: var(--space-2); }
+.seller-selector { display: flex; align-items: center; gap: var(--space-2); }
 .label { color: var(--fg-muted); font-size: var(--text-xs); white-space: nowrap; }
-.chain-btn { padding: var(--space-1) var(--space-3); border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--surface-default); cursor: pointer; font-size: var(--text-xs); color: var(--fg-muted); }
-.chain-btn.active { background: var(--accent-subtle); border-color: var(--accent-default); color: var(--accent-default); font-weight: 600; }
-.chain-btn:hover { border-color: var(--accent-default); }
+.seller-btn { padding: var(--space-1) var(--space-3); border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--surface-default); cursor: pointer; font-size: var(--text-xs); color: var(--fg-muted); }
+.seller-btn.active { background: var(--accent-subtle); border-color: var(--accent-default); color: var(--accent-default); font-weight: 600; }
+.seller-btn:hover { border-color: var(--accent-default); }
 .hint { color: var(--fg-subtle); font-size: var(--text-xs); }
 </style>

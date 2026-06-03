@@ -1,0 +1,124 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: ●
+      - generic [ref=e7] [cursor=pointer]: synthetic_base.xlsx
+    - button "导出 ⌘E" [ref=e9] [cursor=pointer]
+  - generic [ref=e10]:
+    - complementary [ref=e11]:
+      - generic [ref=e12]:
+        - generic [ref=e13]:
+          - textbox "搜索 PO / SAP / INV#" [ref=e14]
+          - combobox [ref=e15]:
+            - option "全部" [selected]
+            - option "就绪"
+            - option "部分"
+            - option "阻断"
+            - option "已导出"
+        - list [ref=e16]:
+          - listitem [ref=e39] [cursor=pointer]:
+            - text: ●4500030844
+            - generic [ref=e40]: SK·GS PTE·EMAX PTE · 3 行
+          - listitem [ref=e41] [cursor=pointer]:
+            - text: ●4500099999
+            - generic [ref=e42]: SK·GS PTE·EMAX PTE · 1 行
+          - listitem [ref=e43] [cursor=pointer]:
+            - text: ●4500088888
+            - generic [ref=e44]: SK·GS PTE·EMAX PTE · 1 行
+        - generic [ref=e18]: 3 / 3
+    - generic [ref=e19]:
+      - generic [ref=e45]:
+        - generic [ref=e46]:
+          - generic [ref=e47]: "4500099999"
+          - generic [ref=e48]: 1 行 · 1 条数据
+        - table [ref=e49]:
+          - rowgroup [ref=e50]:
+            - row "# SHIP TO PO NO. ITEM LINE# SAP Number DESCRIPTION BRAND FINALQTY SK/YM USD FOB GS PTE FOB EMAX PTE INV# FACTORY DOC NO. ORDER DATE (EMAIL) PO DELIVERY DATE CTNS N/W G/W TOTAL CBM 外箱 2601 2602 2603 2604 2605 2606 2607 2608 2609 2610 2611 2612" [ref=e51]:
+              - columnheader "#" [ref=e52]
+              - columnheader "SHIP TO" [ref=e53]
+              - columnheader "PO NO." [ref=e54]
+              - columnheader "ITEM LINE#" [ref=e55]
+              - columnheader "SAP Number" [ref=e56]
+              - columnheader "DESCRIPTION" [ref=e57]
+              - columnheader "BRAND" [ref=e58]
+              - columnheader "FINALQTY" [ref=e59]
+              - columnheader "SK/YM USD FOB" [ref=e60]
+              - columnheader "GS PTE FOB" [ref=e61]
+              - columnheader "EMAX PTE" [ref=e62]
+              - columnheader "INV#" [ref=e63]
+              - columnheader "FACTORY DOC NO." [ref=e64]
+              - columnheader "ORDER DATE (EMAIL)" [ref=e65]
+              - columnheader "PO DELIVERY DATE" [ref=e66]
+              - columnheader "CTNS" [ref=e67]
+              - columnheader "N/W" [ref=e68]
+              - columnheader "G/W" [ref=e69]
+              - columnheader "TOTAL CBM" [ref=e70]
+              - columnheader "外箱" [ref=e71]
+              - columnheader "2601" [ref=e72]
+              - columnheader "2602" [ref=e73]
+              - columnheader "2603" [ref=e74]
+              - columnheader "2604" [ref=e75]
+              - columnheader "2605" [ref=e76]
+              - columnheader "2606" [ref=e77]
+              - columnheader "2607" [ref=e78]
+              - columnheader "2608" [ref=e79]
+              - columnheader "2609" [ref=e80]
+              - columnheader "2610" [ref=e81]
+              - columnheader "2611" [ref=e82]
+              - columnheader "2612" [ref=e83]
+          - rowgroup [ref=e84]:
+            - row "8 EMAX HQ 4500099999 10 21-44640 CB2500.B2 Combo Quantum 100 28 32.8 38 INV-2603-001 FDOC-2603 5 0.36 24 100" [ref=e85]:
+              - cell "8" [ref=e86]
+              - cell "EMAX HQ" [ref=e87]
+              - cell "4500099999" [ref=e88]
+              - cell "10" [ref=e89]
+              - cell "21-44640" [ref=e90]
+              - cell "CB2500.B2 Combo" [ref=e91]
+              - cell "Quantum" [ref=e92]
+              - cell "100" [ref=e93]
+              - cell "28" [ref=e94]
+              - cell "32.8" [ref=e95]
+              - cell "38" [ref=e96]
+              - cell "INV-2603-001" [ref=e97]
+              - cell "FDOC-2603" [ref=e98]
+              - cell [ref=e99]
+              - cell [ref=e100]
+              - cell "5" [ref=e101]
+              - cell [ref=e102]
+              - cell [ref=e103]
+              - cell "0.36" [ref=e104]
+              - cell "24" [ref=e105]
+              - cell [ref=e106]
+              - cell [ref=e107]
+              - cell "100" [ref=e108]
+              - cell [ref=e109]
+              - cell [ref=e110]
+              - cell [ref=e111]
+              - cell [ref=e112]
+              - cell [ref=e113]
+              - cell [ref=e114]
+              - cell [ref=e115]
+              - cell [ref=e116]
+              - cell [ref=e117]
+      - generic [ref=e22]:
+        - generic [ref=e23]:
+          - generic [ref=e24]: "链段:"
+          - button "SK → GS PTE" [ref=e118] [cursor=pointer]
+          - button "GS PTE → EMAX PTE" [ref=e119] [cursor=pointer]
+          - button "EMAX PTE → PF" [ref=e120] [cursor=pointer]
+        - generic [ref=e26]:
+          - generic [ref=e27]: "月份:"
+          - button "2603" [ref=e121] [cursor=pointer]
+    - complementary [ref=e28]:
+      - generic [ref=e29]:
+        - generic [ref=e30]:
+          - button "PI" [ref=e31] [cursor=pointer]
+          - button "PO" [ref=e32] [cursor=pointer]
+          - button "Invoice" [ref=e33] [cursor=pointer]
+          - button "PL" [ref=e34] [cursor=pointer]
+        - generic [ref=e122]: 加载预览中…
+  - contentinfo [ref=e37]:
+    - generic [ref=e38]: ●
+    - generic [ref=e123]: ready
+    - generic [ref=e124]: PO 4500099999
+    - generic [ref=e125]: SK/YM → GS PTE

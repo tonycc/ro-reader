@@ -61,6 +61,23 @@ LEGAL_CHAIN_SEGMENTS: Final[tuple[tuple[str, str], ...]] = (
     (ENTITY_EMAX_PTE, ENTITY_PF),
 )
 
+# 卖方主体列表（按贸易链顺序）
+SELLERS: Final[tuple[str, ...]] = (ENTITY_SK_YM, ENTITY_GS_PTE, ENTITY_EMAX_PTE)
+
+# 卖方 → 买方（固定对应关系）
+SELLER_TO_BUYER: Final[dict[str, str]] = {
+    ENTITY_SK_YM: ENTITY_GS_PTE,
+    ENTITY_GS_PTE: ENTITY_EMAX_PTE,
+    ENTITY_EMAX_PTE: ENTITY_PF,
+}
+
+# 卖方 → 价格列名
+SELLER_PRICE_COLUMNS: Final[dict[str, str]] = {
+    ENTITY_SK_YM: "SK/YM USD FOB",
+    ENTITY_GS_PTE: "GS PTE FOB",
+    ENTITY_EMAX_PTE: "EMAX PTE",
+}
+
 
 # —————————————————————————————————————
 # 月度列：2601 ~ 2612（2026 年 1-12 月）

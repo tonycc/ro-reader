@@ -40,7 +40,7 @@ const filtered = computed(() => {
       >
         <span class="status-dot" :class="po.status">{{ po.status === 'ready' ? '●' : po.status === 'partial' ? '◐' : po.status === 'blocked' ? '●' : '○' }}</span>
         <span class="po-no" style="font-family: var(--font-mono);">{{ po.po_no }}</span>
-        <span class="po-meta">{{ po.chain_segments.map(s => s.seller.split('/')[0]).join('·') }} · {{ po.line_count }} 行</span>
+        <span class="po-meta">{{ po.sellers.map((s: string) => s.split('/')[0]).join('·') }} · {{ po.line_count }} 行</span>
       </li>
       <li v-if="!filtered.length && !wb.loading" class="empty">没有匹配的 PO</li>
       <li v-if="wb.loading" class="empty">解析 PO record...</li>

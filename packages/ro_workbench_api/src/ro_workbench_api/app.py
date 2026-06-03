@@ -23,7 +23,7 @@ from ro_generator.errors import RoGeneratorError, WorkbookOpenError
 from ro_generator.generator import generate
 from ro_generator.models import DocumentRequest, GenerationResult, ValidationMessage
 from ro_generator.resolver import resolve_po_lines
-from ro_generator.schema import LEGAL_CHAIN_SEGMENTS
+from ro_generator.schema import SELLERS
 from ro_generator.source_index import SourceIndex
 from ro_generator.validator import validate_workbook_structure
 from ro_generator.workbook_reader import ROW_NUMBER_KEY, WorkbookReader
@@ -67,10 +67,10 @@ class DryRunRequest(BaseModel):
     base_file: str
     po_no: str
     seller: str
-    buyer: str
+    buyer: str | None = None  # 可选，未填时从 seller 自动推导
     invoice_month: str | None = None
     invoice_no: str | None = None
-    document: str = "INVOICE"  # PI / PO / INVOICE / PL
+    document: str = "INVOICE"
 
 
 class EditFieldRequest(BaseModel):
@@ -159,11 +159,6 @@ def open_session(req: OpenSessionRequest) -> dict[str, Any]:
             resolve_result = resolve_po_lines(reader, po_no)
             blocking = [m for m in resolve_result.messages if m.kind == "blocking_error"]
 
-            # 所有合法链段都可选（缺价时单据显示 [需填: 单价]）
-            priced_segments: list[dict[str, str]] = [
-                {"seller": seg[0], "buyer": seg[1]} for seg in LEGAL_CHAIN_SEGMENTS
-            ]
-
             months: set[str] = set()
             for line in resolve_result.lines:
                 months.update(line.monthly_shipments.keys())
@@ -173,7 +168,7 @@ def open_session(req: OpenSessionRequest) -> dict[str, Any]:
             po_list.append({
                 "po_no": po_no,
                 "status": status,
-                "chain_segments": priced_segments,
+                "sellers": list(SELLERS),
                 "line_count": len(resolve_result.lines) or len(rows),
                 "monthly_months": sorted(months),
                 "blocking_count": len(blocking),

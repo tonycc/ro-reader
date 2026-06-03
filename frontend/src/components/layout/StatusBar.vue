@@ -8,7 +8,7 @@ const wb = useWorkbench();
     <span class="status-dot" :class="wb.poStatus">●</span>
     <span v-if="wb.poStatus">{{ wb.poStatus }} </span>
     <span v-if="wb.selectedPo">PO {{ wb.selectedPo }} </span>
-    <span v-if="wb.selectedSegment">{{ wb.selectedSegment.seller }} → {{ wb.selectedSegment.buyer }} </span>
+    <span v-if="wb.selectedSeller">{{ wb.selectedSeller }} </span>
     <span v-if="wb.selectedMonth">/ {{ wb.selectedMonth }}</span>
     <span v-if="wb.warnings.length" class="warn-count"> · {{ wb.warnings.length }} 项待补全</span>
     <span v-if="wb.blockingErrors.length" class="err-count"> · {{ wb.blockingErrors.length }} 阻断</span>

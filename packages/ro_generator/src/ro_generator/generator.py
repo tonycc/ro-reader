@@ -48,6 +48,8 @@ from ro_generator.schema import (
     ENTITY_GS_PTE,
     LEGAL_CHAIN_SEGMENTS,
     MONTH_COLUMNS,
+    SELLER_TO_BUYER,
+    SELLERS,
 )
 from ro_generator.source_index import SourceIndex
 from ro_generator.template_mapping import TemplateMapping, load_template_mapping
@@ -314,8 +316,11 @@ def _generate(request: DocumentRequest) -> GenerationResult:
 # 单文档装配
 # —————————————————————————————————————
 
-# 无 PO 模板的主体集合
+# 无 PO 模板的主体集合（仅 SK/YM 链段下不提供 PO）
 ENTITIES_WITHOUT_PO: Final = {"SK", "YM", "SK/YM"}
+
+# 卖方主体列表（供 UI）
+ALL_SELLERS: Final = SELLERS
 
 
 def _generate_one(
@@ -425,56 +430,40 @@ def _resolve_segment(
     request: DocumentRequest,
     lines: tuple,  # type: ignore[type-arg]
 ) -> tuple[str | None, str | None, tuple[ValidationMessage, ...]]:
-    """决定使用哪个链段。
-
-    优先级：
-    - request.seller + request.buyer 都给定 → 校验后直接用
-    - 都未给定但 lines 在所有链段下都有定价 → needs_input（产品方案 §11.3）
-    - 都未给定但只有一段定价 → 自动选定
-    """
-    if request.seller and request.buyer:
-        seg = (request.seller, request.buyer)
-        if seg not in LEGAL_CHAIN_SEGMENTS:
+    """决定使用哪个卖方主体。buyer 从 SELLER_TO_BUYER 自动推导。"""
+    if request.seller:
+        if request.seller not in SELLERS:
             return (
-                None,
-                None,
-                (
-                    ValidationMessage(
-                        kind="blocking_error",
-                        code=CODE_UNSUPPORTED_SEGMENT,
-                        message=f"链段 {request.seller}→{request.buyer} 不是合法链段",
-                    ),
-                ),
+                None, None,
+                (ValidationMessage(kind="blocking_error", code=CODE_UNSUPPORTED_SEGMENT,
+                 message=f"未知卖方主体 {request.seller!r}，合法值：{SELLERS}"),),
             )
-        return request.seller, request.buyer, ()
+        buyer = SELLER_TO_BUYER.get(request.seller, "")
+        return request.seller, buyer, ()
 
-    # 推断：哪些链段在所有行上都有定价
-    available = _segments_with_full_coverage(lines)
-    if not available:
-        return (
-            None,
-            None,
-            (
-                ValidationMessage(
-                    kind="blocking_error",
-                    code="NO_PRICED_SEGMENT",
-                    message="所有合法链段下都至少有一行无定价，无法选定单据链段",
-                ),
-            ),
-        )
-    if len(available) == 1:
-        return available[0][0], available[0][1], ()
-
-    # 多个候选 → needs_input
+    # 未给定 seller → needs_input
     return None, None, ()
 
 
-def _segments_with_full_coverage(lines: tuple) -> list[tuple[str, str]]:  # type: ignore[type-arg]
-    out: list[tuple[str, str]] = []
-    for seg in LEGAL_CHAIN_SEGMENTS:
-        if all(seg in line.prices for line in lines):
-            out.append(seg)
-    return out
+def _needs_input(
+    base_messages: tuple[ValidationMessage, ...],
+    inputs: list[str],
+    request: DocumentRequest,
+    lines: tuple,  # type: ignore[type-arg]
+) -> GenerationResult:
+    """构造 needs_input 结果。列出所有合法卖方主体候选。"""
+    options: dict[str, tuple[dict[str, str], ...]] = {}
+    if INPUT_SELLER in inputs:
+        seller_options = tuple(
+            {"value": s, "label": s} for s in SELLERS
+        )
+        options[INPUT_SELLER] = seller_options
+    return GenerationResult(
+        status="needs_input",
+        missing_inputs=tuple(inputs),
+        options=options,
+        warnings=base_messages,
+    )
 
 
 def _collect_month_candidates(lines: tuple) -> tuple[dict[str, str], ...]:  # type: ignore[type-arg]
@@ -523,29 +512,6 @@ def _load_mapping(seller: str, document: str) -> TemplateMapping | None:
 
 def _error_result(*messages: ValidationMessage) -> GenerationResult:
     return GenerationResult(status="error", errors=messages)
-
-
-def _needs_input(
-    base_messages: tuple[ValidationMessage, ...],
-    inputs: list[str],
-    request: DocumentRequest,
-    lines: tuple,  # type: ignore[type-arg]
-) -> GenerationResult:
-    """构造 needs_input 结果。
-
-    Phase 1 简化：只列出"哪些是合法链段候选"，UI 用此作为多选项。
-    """
-    available = _segments_with_full_coverage(lines)
-    options: dict[str, tuple[dict[str, str], ...]] = {}
-    if INPUT_SELLER in inputs and available:
-        seller_options = tuple({"value": s, "label": f"{s} → {b}"} for s, b in available)
-        options[INPUT_SELLER] = seller_options
-    return GenerationResult(
-        status="needs_input",
-        missing_inputs=tuple(inputs),
-        options=options,
-        warnings=base_messages,
-    )
 
 
 # 保留导出 for IDE / 测试方便

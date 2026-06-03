@@ -25,7 +25,6 @@ from typing import Any
 from openpyxl import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
-
 DATA_BASE_HEADER = [
     "SAP",
     "Material Description",

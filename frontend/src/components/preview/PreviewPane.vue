@@ -45,8 +45,8 @@ watch(
       } else if (result?.status === "error") {
         const err = (result.errors?.[0] as any) || {};
         const code = err.code || "...";
-        if (code === "MAPPING_NOT_FOUND" && wb.selectedSegment?.seller?.includes("SK") || wb.selectedSegment?.seller?.includes("YM")) {
-          htmlContent.value = `<p style="padding:16px;color:#856404;">${wb.selectedSegment?.seller || "该主体"}不提供 PO 模板<br>请切换到 GS PTE 或 EMAX PTE 链段</p>`;
+        if (code === "MAPPING_NOT_FOUND" && (wb.selectedSeller?.includes("SK") || wb.selectedSeller?.includes("YM"))) {
+          htmlContent.value = `<p style="padding:16px;color:#856404;">${wb.selectedSeller || "该主体"}不提供 PO 模板<br>请切换到 GS PTE 或 EMAX PTE</p>`;
         } else {
           htmlContent.value = `<p style="padding:16px;color:#991b1b;">生成失败：${code}<br>${err.message || ""}</p>`;
         }

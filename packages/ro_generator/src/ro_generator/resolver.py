@@ -30,6 +30,8 @@ from ro_generator.schema import (
     ENTITY_SK_YM,
     LEGAL_CHAIN_SEGMENTS,
     MONTH_COLUMNS,
+    SELLER_PRICE_COLUMNS,
+    SELLER_TO_BUYER,
     SHEET_DATA_BASE,
     SHEET_PO_RECORD,
 )
@@ -309,17 +311,13 @@ def _collect_prices(
     quantity: Decimal,
     row_number: int | None,
 ) -> tuple[dict[tuple[str, str], Decimal], dict[tuple[str, str], Decimal], list[ValidationMessage]]:
-    """按合法链段读取每段单价并计算小计。
-
-    某段没数据时整体不报，只在所有段都没数据时由调用方报 NO_PRICES。
-    """
+    """按卖方主体读取单价并计算小计。"""
     prices: dict[tuple[str, str], Decimal] = {}
     subtotals: dict[tuple[str, str], Decimal] = {}
     messages: list[ValidationMessage] = []
-    for segment in LEGAL_CHAIN_SEGMENTS:
-        column = PO_PRICE_COLUMNS.get(segment)
-        if column is None:
-            continue
+    for seller, column in SELLER_PRICE_COLUMNS.items():
+        buyer = SELLER_TO_BUYER.get(seller, "")
+        segment = (seller, buyer)
         raw = row.get(column)
         if raw is None or raw == "":
             continue
