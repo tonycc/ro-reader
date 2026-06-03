@@ -33,7 +33,7 @@ export interface DryRunResult {
   status: string; summary: Record<string, unknown>; files: string[]
   output_file: string | null; errors: unknown[]; warnings: unknown[]
   missing_inputs: string[]; source_index: SourceIndexEntry[]
-  metadata?: Record<string, unknown>
+  table_start_row?: number | null
 }
 
 export interface SourceIndexEntry {

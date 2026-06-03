@@ -9,9 +9,11 @@ const zoom = ref(100);
 
 interface CellData { value: string; colspan: number; rowspan: number; cellRef: string; isNum: boolean }
 interface RowData { cells: CellData[] }
-
-const headerRows = ref<RowData[]>([]);
-const tableRows = ref<RowData[]>([]);
+/** 描述列表项：label 来自表头区域某列的值，value 来自同行的相邻列 */
+interface FieldItem { label: string; value: string; cellRef: string }
+const headerFields = ref<FieldItem[]>([]);
+const tableData = ref<RowData[]>([]);
+const tableStartRow = ref<number | null>(null);
 const statusMsg = ref("");
 const hoveredCell = ref("");
 const hoverSource = ref<string>("");
@@ -25,7 +27,25 @@ const tabs = [
 
 function switchTab(key: typeof previewTab.value) { previewTab.value = key; wb.refreshPreview(key); }
 
-function parseSheet(ws: Record<string, unknown>, tableStartRow: number) {
+function extractPairs(rows: RowData[]): FieldItem[] {
+  /** 从表头区域中提取 label: value 对。
+   *  规则：同一行中非空列相邻配对，或者跨行配对（当前行非空 + 下一行对应列非空）。
+   *  简化为：同行的非空单元格两两配对。
+   */
+  const pairs: FieldItem[] = [];
+  for (const row of rows) {
+    const vals = row.cells.filter((c) => c.value);
+    for (let i = 0; i < vals.length - 1; i += 2) {
+      pairs.push({ label: vals[i].value, value: vals[i + 1]?.value || "", cellRef: vals[i].cellRef });
+    }
+    if (vals.length % 2 === 1) {
+      pairs.push({ label: vals[vals.length - 1].value, value: "", cellRef: vals[vals.length - 1].cellRef });
+    }
+  }
+  return pairs;
+}
+
+function parseSheet(ws: Record<string, unknown>, startRow: number | null): { headers: FieldItem[]; table: RowData[] } {
   const range = utils.decode_range((ws["!ref"] as string) || "A1");
   const merges = (ws["!merges"] || []) as { s: { r: number; c: number }; e: { r: number; c: number } }[];
 
@@ -36,57 +56,46 @@ function parseSheet(ws: Record<string, unknown>, tableStartRow: number) {
         if (r !== m.s.r || c !== m.s.c) mergedHidden.add(`${r},${c}`);
   }
 
-  // 用 mapping 中的 start_row 分割：start_row - 1 行是字段标签行
-  // (openpyxl 行号是 1-based，SheetJS 行号是 0-based)
-  const tableLabelRow = tableStartRow > 0 ? tableStartRow - 2 : -1;
+  const nonBlankRows = new Set<number>();
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const cell = ws[utils.encode_cell({ r, c })] as { v?: unknown } | undefined;
+      if (cell?.v != null && cell.v !== "") { nonBlankRows.add(r); break; }
+    }
+  }
 
-  function buildCells(rr: number) {
+  function readRow(r: number): CellData[] {
     const cells: CellData[] = [];
     for (let c = range.s.c; c <= range.e.c; c++) {
-      if (mergedHidden.has(`${rr},${c}`)) continue;
-      const cell = ws[utils.encode_cell({ r: rr, c })] as { v?: unknown; t?: string } | undefined;
+      if (mergedHidden.has(`${r},${c}`)) continue;
+      const cell = ws[utils.encode_cell({ r, c })] as { v?: unknown; t?: string } | undefined;
       const value = cell?.v != null ? String(cell.v) : "";
-      const merge = merges.find((m) => m.s.r === rr && m.s.c === c);
+      const merge = merges.find((m) => m.s.r === r && m.s.c === c);
+      const isNum = cell?.t === "n" || (value !== "" && !isNaN(Number(value)));
       cells.push({
         value,
         colspan: merge ? merge.e.c - merge.s.c + 1 : 1,
         rowspan: merge ? merge.e.r - merge.s.r + 1 : 1,
-        cellRef: utils.encode_cell({ r: rr, c }),
-        isNum: cell?.t === "n" || (value !== "" && !isNaN(Number(value))),
+        cellRef: utils.encode_cell({ r, c }),
+        isNum,
       });
     }
     return cells;
   }
 
-  function isBlank(rr: number) {
-    for (let c = range.s.c; c <= range.e.c; c++) {
-      const cell = ws[utils.encode_cell({ r: rr, c })] as { v?: unknown } | undefined;
-      if (cell?.v != null && cell.v !== "") return false;
-    }
-    return true;
+  const headerRows: RowData[] = [];
+  const tableRows: RowData[] = [];
+  // startRow is 1-based, r is 0-based
+  const cutoff = startRow ? startRow - 1 : 99;
+
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    if (!nonBlankRows.has(r)) continue;
+    const cells = readRow(r);
+    if (r < cutoff) headerRows.push({ cells });
+    else tableRows.push({ cells });
   }
 
-  const hRows: RowData[] = [];
-  const tRows: RowData[] = [];
-
-  if (tableLabelRow >= 0) {
-    // Header: rows before the table label row
-    for (let r = range.s.r; r < tableLabelRow; r++) {
-      if (!isBlank(r)) hRows.push({ cells: buildCells(r) });
-    }
-    // Table: label row + data rows
-    for (let r = tableLabelRow; r <= range.e.r; r++) {
-      if (!isBlank(r)) tRows.push({ cells: buildCells(r) });
-    }
-  } else {
-    // Fallback: all rows in header if no source data
-    for (let r = range.s.r; r <= range.e.r; r++) {
-      if (!isBlank(r)) hRows.push({ cells: buildCells(r) });
-    }
-  }
-
-  headerRows.value = hRows;
-  tableRows.value = tRows;
+  return { headers: extractPairs(headerRows), table: tableRows };
 }
 
 function onCellEnter(cellRef: string) {
@@ -101,7 +110,7 @@ function onCellLeave() { hoveredCell.value = ""; hoverSource.value = ""; }
 watch(
   () => wb.preview,
   async (result) => {
-    headerRows.value = []; tableRows.value = [];
+    tableData.value = []; headerFields.value = []; tableStartRow.value = null;
     if (!result?.output_file) {
       if (result?.status === "needs_input") statusMsg.value = `请选择 ${result.missing_inputs?.join("、") || "..."}`;
       else if (result?.status === "error") {
@@ -114,14 +123,16 @@ watch(
     }
     statusMsg.value = "";
     try {
+      tableStartRow.value = result.table_start_row ?? null;
       const resp = await fetch(`http://127.0.0.1:54321/download?path=${encodeURIComponent(result.output_file)}`);
       if (!resp.ok) { statusMsg.value = `下载失败 HTTP ${resp.status}`; return; }
       const buf = await resp.arrayBuffer();
-      const xls = read(new Uint8Array(buf), { type: "array", cellStyles: true });
-      const ws = xls.Sheets[xls.SheetNames[0]];
+      const wb = read(new Uint8Array(buf), { type: "array", cellStyles: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
       if (!ws) { statusMsg.value = "无法读取 sheet"; return; }
-      const startRow = Number((result as any).metadata?.table_start_row) || 0;
-      parseSheet(ws as Record<string, unknown>, startRow);
+      const parsed = parseSheet(ws as Record<string, unknown>, tableStartRow.value);
+      headerFields.value = parsed.headers;
+      tableData.value = parsed.table;
     } catch (e) { statusMsg.value = `加载失败: ${String(e).substring(0, 80)}`; }
   },
   { immediate: true }
@@ -161,32 +172,26 @@ watch(
     <div class="preview-body">
       <div v-if="!wb.selectedPo" class="placeholder">选择 PO 后自动预览</div>
       <div v-else-if="statusMsg" class="status-msg" :class="{ err: statusMsg.includes('失败') || statusMsg.includes('不提供') }">{{ statusMsg }}</div>
-      <div v-else-if="!headerRows.length && !tableRows.length" class="placeholder">加载预览中…</div>
-      <template v-else>
-        <!-- 表头区：单据元信息 -->
-        <div v-if="headerRows.length" class="doc-header" :style="{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left' }">
-          <table class="header-table">
-            <tr v-for="(row, ri) in headerRows" :key="ri">
-              <td v-for="(cell, ci) in row.cells" :key="ci"
-                :colspan="cell.colspan" :rowspan="cell.rowspan"
-                :class="{ num: cell.isNum }"
-              >{{ cell.value }}</td>
-            </tr>
-          </table>
+      <div v-else-if="!headerFields.length && !tableData.length" class="placeholder">加载预览中…</div>
+
+      <!-- 表头区域：描述列表 -->
+      <dl v-if="headerFields.length" class="header-fields" :style="{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left' }">
+        <div v-for="(f, i) in headerFields" :key="i" class="field-pair" @mouseenter="onCellEnter(f.cellRef)" @mouseleave="onCellLeave">
+          <dt>{{ f.label }}</dt>
+          <dd>{{ f.value }}</dd>
         </div>
-        <!-- 数据表格区：行项目 -->
-        <div v-if="tableRows.length" class="table-wrap" :style="{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left' }">
-          <table class="preview-table">
-            <tr v-for="(row, ri) in tableRows" :key="ri" :class="{ 'label-row': ri === 0 }">
-              <td v-for="(cell, ci) in row.cells" :key="ci"
-                :class="{ num: cell.isNum }"
-                :colspan="cell.colspan" :rowspan="cell.rowspan"
-                @mouseenter="onCellEnter(cell.cellRef)" @mouseleave="onCellLeave"
-              >{{ cell.value }}</td>
-            </tr>
-          </table>
-        </div>
-      </template>
+      </dl>
+
+      <!-- 表格区域 -->
+      <table v-if="tableData.length" class="preview-table" :style="{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left' }">
+        <tr v-for="(row, ri) in tableData" :key="ri" :class="{ 'label-row': ri === 0 }">
+          <td v-for="(cell, ci) in row.cells" :key="ci"
+            :class="{ num: cell.isNum }"
+            :colspan="cell.colspan" :rowspan="cell.rowspan"
+            @mouseenter="onCellEnter(cell.cellRef)" @mouseleave="onCellLeave"
+          >{{ cell.value }}</td>
+        </tr>
+      </table>
     </div>
     <div v-if="hoverSource" class="tooltip">{{ hoverSource }} · {{ hoveredCell }}</div>
   </div>
@@ -220,35 +225,38 @@ watch(
 .status-msg.err { color: var(--status-blocked-fg); }
 .placeholder { padding: var(--space-8); text-align: center; color: var(--fg-subtle); }
 
-/* 单据表头 */
-.doc-header { margin-bottom: var(--space-4); }
-.header-table { border-collapse: collapse; font-size: var(--text-sm); font-family: var(--font-sans); }
-.header-table td { padding: 2px 8px; vertical-align: middle; }
-.header-table td.num { font-family: var(--font-mono); }
+/* 表头描述列表 */
+.header-fields { display: grid; grid-template-columns: auto 1fr; gap: 0; margin-bottom: var(--space-4); border: 1px solid var(--border-default); border-radius: var(--radius-md); overflow: hidden; background: var(--surface-default); }
+.field-pair { display: contents; }
+.field-pair dt { padding: 4px 12px; background: var(--surface-sunken); color: var(--fg-muted); font-size: var(--text-xs); font-weight: 600; border-bottom: 1px solid var(--border-default); white-space: nowrap; }
+.field-pair dd { padding: 4px 12px; border-bottom: 1px solid var(--border-default); margin: 0; font-size: var(--text-sm); }
+.field-pair:last-of-type dt, .field-pair:last-of-type dd { border-bottom: none; }
+.field-pair:hover dt, .field-pair:hover dd { background: var(--accent-subtle); }
 
-/* 数据表格 */
-.table-wrap { overflow-x: auto; }
+/* 表格 */
 .preview-table {
-  border-collapse: collapse;
+  border-collapse: separate; border-spacing: 0;
   width: max-content; min-width: 100%;
   font-size: var(--text-sm); font-family: var(--font-sans);
   background: var(--surface-default);
+  border: 1px solid var(--border-default); border-radius: var(--radius-md);
+  overflow: hidden;
 }
 .preview-table td {
   padding: 6px 12px; vertical-align: middle; white-space: nowrap;
-  border: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--border-default);
   min-width: 50px; max-width: 280px;
   overflow: hidden; text-overflow: ellipsis;
 }
 .preview-table td.num { text-align: right; font-family: var(--font-mono); font-size: 0.85em; }
 .preview-table .label-row td {
   font-weight: 600; color: var(--fg-muted); font-size: var(--text-xs);
-  border: 1px solid var(--border-strong); background: var(--surface-sunken);
-  position: sticky; top: 0; z-index: 1;
+  border-bottom: 2px solid var(--border-strong); background: var(--surface-sunken);
 }
 .preview-table .label-row td:empty { background: transparent; }
 .preview-table tr:nth-child(even):not(.label-row) td { background: #fafbfc; }
 .preview-table tr:hover td { background: var(--accent-subtle) !important; }
+.preview-table tr:last-child td { border-bottom: none; }
 
 .tooltip { position: fixed; bottom: 32px; right: 16px; padding: var(--space-1) var(--space-2); background: var(--fg-default); color: var(--fg-on-accent); font-size: var(--text-xs); border-radius: var(--radius-sm); max-width: 320px; z-index: 100; }
 </style>

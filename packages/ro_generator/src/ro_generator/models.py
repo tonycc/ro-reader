@@ -195,6 +195,3 @@ class GenerationResult:
     # 注：source_index 是 SourceIndex 类型，但避免 models.py 反向依赖 source_index.py，
     # 这里用 object 暂存。Phase 3 工作台后端可以用 isinstance 还原类型。
     source_index: object = None
-
-    # 渲染元信息（供前端预览分拆表头/表格）
-    metadata: dict[str, object] = field(default_factory=dict)
