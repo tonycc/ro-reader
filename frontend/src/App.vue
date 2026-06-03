@@ -29,8 +29,15 @@ import PreviewPane from "./components/preview/PreviewPane.vue";
 <style scoped>
 .app-shell { display: flex; flex-direction: column; height: 100vh; font-family: var(--font-sans); font-size: var(--text-sm); color: var(--fg-default); background: var(--surface-canvas); }
 .main-area { display: flex; flex: 1; overflow: hidden; }
-.sidebar { width: 240px; min-width: 200px; max-width: 360px; border-right: 1px solid var(--border-default); overflow-y: auto; background: var(--surface-default); }
-.center { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-.selectors-row { display: flex; border-top: 1px solid var(--border-default); padding: var(--space-2) var(--space-4); gap: var(--space-4); background: var(--surface-sunken); min-height: 60px; align-items: center; }
-.preview-col { width: 480px; min-width: 360px; border-left: 1px solid var(--border-default); overflow-y: auto; background: var(--surface-default); }
+
+/* PO 列表：收窄，最小可到 180px */
+.sidebar { width: 220px; min-width: 180px; max-width: 320px; border-right: 1px solid var(--border-default); overflow-y: auto; background: var(--surface-default); flex-shrink: 0; }
+
+/* 中间：弹性收缩，给预览让空间 */
+.center { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 300px; }
+
+.selectors-row { display: flex; border-top: 1px solid var(--border-default); padding: var(--space-2) var(--space-4); gap: var(--space-4); background: var(--surface-sunken); min-height: 48px; align-items: center; flex-shrink: 0; }
+
+/* 预览栏：增宽，最小 480px，最大不封顶 */
+.preview-col { flex: 1.6; min-width: 480px; max-width: 900px; border-left: 1px solid var(--border-default); overflow-y: auto; background: var(--surface-default); }
 </style>
