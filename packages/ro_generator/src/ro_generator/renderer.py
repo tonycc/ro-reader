@@ -177,7 +177,7 @@ def _write_lines_and_totals(
     line_unit_label = mapping.lines.unit_label
     for offset, doc_line in enumerate(model.lines):
         row = start_row + offset
-        _write_data_row(ws, row, doc_line, columns, line_unit_label, builder)
+        _write_data_row(ws, row, doc_line, columns, line_unit_label, builder, po_no=model.po_no)
 
     # 4. 写合计（位置已被 openpyxl 自动平移）
     _write_totals(ws, model, mapping, totals_row_offset=insertion_count, builder=builder)
@@ -225,16 +225,14 @@ def _write_data_row(
     columns: LineColumns,
     fixed_unit_label: str | None,
     builder: SourceIndexBuilder,
+    *,
+    po_no: str = "",
 ) -> None:
-    """写单行数据。amount 列写公式，让 Excel 在打开时自动重算。
-
-    渲染期间往 builder 累积 SourceLocation，构成双向溯源索引。
-    """
+    """写单行数据。amount 列写公式，让 Excel 在打开时自动重算。"""
     src_row = doc_line.source_row  # 可能为 None（合成数据 / 测试场景）
 
     if columns.po_no:
-        # DocumentLine 没有 po_no（已在 model.po_no 中），保留模板原值或不写
-        pass
+        ws[f"{columns.po_no}{row}"] = po_no
     if columns.item_line_no:
         addr = f"{columns.item_line_no}{row}"
         ws[addr] = doc_line.item_line_no
