@@ -51,7 +51,8 @@ watch(
       if (result?.status === "needs_input") {
         htmlContent.value = `<p style="padding:16px;color:#856404;">请选择 ${result.missing_inputs?.join("、") || "..."}</p>`;
       } else if (result?.status === "error") {
-        htmlContent.value = `<p style="padding:16px;color:#991b1b;">生成失败：${result.errors?.[0]?.code || "..."}</p>`;
+        const firstErr = (result.errors?.[0] as any)?.code || "...";
+        htmlContent.value = `<p style="padding:16px;color:#991b1b;">生成失败：${firstErr}</p>`;
       } else {
         htmlContent.value = "";
       }
