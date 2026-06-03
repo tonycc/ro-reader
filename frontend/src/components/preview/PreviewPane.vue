@@ -206,8 +206,8 @@ watch(
 
 .preview-header { margin-bottom: var(--space-3); }
 .header-table { border-collapse: collapse; font-size: var(--text-sm); font-family: var(--font-sans); }
-.header-table td { padding: 2px 6px; vertical-align: middle; white-space: nowrap; }
-.header-table td.sourced { border-bottom: 1.5px solid var(--accent-default); }
+.header-table td { padding: 2px 6px; vertical-align: middle; white-space: nowrap; font-weight: 600; color: var(--fg-muted); }
+.header-table td.sourced { font-weight: 400; color: var(--fg-default); border-bottom: 1.5px solid var(--accent-default); }
 
 .preview-table {
   border-collapse: separate; border-spacing: 0;
