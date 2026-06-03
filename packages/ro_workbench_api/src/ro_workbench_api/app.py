@@ -205,14 +205,11 @@ def get_po_data(po_no: str, base_file: str = Query(...)) -> dict[str, Any]:
 
 @app.post("/po/{po_no}/dry-run")
 def dry_run(po_no: str, req: DryRunRequest) -> dict[str, Any]:
-    """装配预览，返回数据摘要 + source_index。
-
-    文件写入临时目录，通过 /download?path= 可访问。
-    req.document 控制生成哪种单据（PI/PO/INVOICE/PL）。
-    """
-    import tempfile
+    """装配预览，返回数据摘要 + source_index。"""
+    import sys, tempfile
     out_dir = tempfile.mkdtemp(prefix="ro-dry-run-")
     doc = req.document.upper()
+    print(f"[dry-run] po={po_no} doc={doc} seller={req.seller} buyer={req.buyer} month={req.invoice_month}", file=sys.stderr)
     request = DocumentRequest(
         base_file=req.base_file,
         po_no=po_no,
@@ -224,6 +221,9 @@ def dry_run(po_no: str, req: DryRunRequest) -> dict[str, Any]:
         output_dir=out_dir,
     )
     result = generate(request)
+    print(f"[dry-run] status={result.status} errors={len(result.errors)} missing={result.missing_inputs}", file=sys.stderr)
+    for e in result.errors:
+        print(f"[dry-run]   ERROR [{e.code}] {e.message}", file=sys.stderr)
     return _result_to_dict(result)
 
 
