@@ -5,133 +5,102 @@ import { read, utils } from "xlsx";
 
 const wb = useWorkbench();
 const previewTab = ref<"INVOICE" | "PI" | "PO" | "PL">("INVOICE");
-const htmlContent = ref("");
-const hoveredCell = ref("");
-const hoverSource = ref<string>("");
 const zoom = ref(100);
 
-const tabs: { key: typeof previewTab.value; label: string }[] = [
-  { key: "PI", label: "PI" },
-  { key: "PO", label: "PO" },
-  { key: "INVOICE", label: "Invoice" },
-  { key: "PL", label: "PL" },
+interface CellData { value: string; colspan: number; rowspan: number; cellRef: string; isNum: boolean }
+interface RowData { cells: CellData[]; isLabel: boolean }
+const tableData = ref<RowData[]>([]);
+const statusMsg = ref("");
+const hoveredCell = ref("");
+const hoverSource = ref<string>("");
+
+const tabs = [
+  { key: "PI" as const, label: "PI" },
+  { key: "PO" as const, label: "PO" },
+  { key: "INVOICE" as const, label: "Invoice" },
+  { key: "PL" as const, label: "PL" },
 ];
 
-function switchTab(key: typeof previewTab.value) {
-  previewTab.value = key;
-  wb.refreshPreview(key);
-}
+function switchTab(key: typeof previewTab.value) { previewTab.value = key; wb.refreshPreview(key); }
 
-/** 把 SheetJS worksheet 转成自定义 HTML table */
-function buildTableHtml(ws: Record<string, unknown>): string {
+function parseSheet(ws: Record<string, unknown>): RowData[] {
   const range = utils.decode_range((ws["!ref"] as string) || "A1");
   const merges = (ws["!merges"] || []) as { s: { r: number; c: number }; e: { r: number; c: number } }[];
 
-  // 标记哪些单元格是合并区域的"被吞掉"的格子
   const mergedHidden = new Set<string>();
   for (const m of merges) {
-    for (let r = m.s.r; r <= m.e.r; r++) {
-      for (let c = m.s.c; c <= m.e.c; c++) {
-        if (r !== m.s.r || c !== m.s.c) {
-          mergedHidden.add(`${r},${c}`);
-        }
-      }
-    }
+    for (let r = m.s.r; r <= m.e.r; r++)
+      for (let c = m.s.c; c <= m.e.c; c++)
+        if (r !== m.s.r || c !== m.s.c) mergedHidden.add(`${r},${c}`);
   }
 
-  // 收集非空行
   const nonBlankRows = new Set<number>();
   for (let r = range.s.r; r <= range.e.r; r++) {
     for (let c = range.s.c; c <= range.e.c; c++) {
       const cell = ws[utils.encode_cell({ r, c })] as { v?: unknown } | undefined;
-      if (cell && cell.v != null && cell.v !== "") { nonBlankRows.add(r); break; }
+      if (cell?.v != null && cell.v !== "") { nonBlankRows.add(r); break; }
     }
   }
 
-  let html = '<table class="preview-table">';
+  const rows: RowData[] = [];
   let rowIdx = 0;
   for (let r = range.s.r; r <= range.e.r; r++) {
     if (!nonBlankRows.has(r)) continue;
-    // 第一个非空行 = 字段标签行
-    const isLabel = rowIdx === 0;
-    rowIdx++;
-    html += `<tr class="${isLabel ? "label-row" : ""}">`;
+    const cells: CellData[] = [];
     for (let c = range.s.c; c <= range.e.c; c++) {
-      const key = `${r},${c}`;
-      if (mergedHidden.has(key)) continue;
-
+      if (mergedHidden.has(`${r},${c}`)) continue;
       const cell = ws[utils.encode_cell({ r, c })] as { v?: unknown; t?: string } | undefined;
       const value = cell?.v != null ? String(cell.v) : "";
-
-      // 合并单元格的 span
       const merge = merges.find((m) => m.s.r === r && m.s.c === c);
-      const rowspan = merge ? merge.e.r - merge.s.r + 1 : 1;
-      const colspan = merge ? merge.e.c - merge.s.c + 1 : 1;
-
-      const cellId = `cell-${utils.encode_cell({ r, c })}`;
-
-      // 数值类型 → 右对齐 + mono 字体
-      const isNum = cell?.t === "n" || (!isNaN(Number(value)) && value !== "");
-      // 字段标签行（header 区域，未有溯源数据的行）→ 加粗
-      const cls = isNum ? "num" : "";
-
-      let attrs = `id="${cellId}" class="${cls}"`;
-      if (colspan > 1) attrs += ` colspan="${colspan}"`;
-      if (rowspan > 1) attrs += ` rowspan="${rowspan}"`;
-
-      html += `<td ${attrs}>${value}</td>`;
+      const isNum = cell?.t === "n" || (value !== "" && !isNaN(Number(value)));
+      cells.push({
+        value,
+        colspan: merge ? merge.e.c - merge.s.c + 1 : 1,
+        rowspan: merge ? merge.e.r - merge.s.r + 1 : 1,
+        cellRef: utils.encode_cell({ r, c }),
+        isNum,
+      });
     }
-    html += "</tr>";
+    rows.push({ cells, isLabel: rowIdx === 0 });
+    rowIdx++;
   }
-  html += "</table>";
-  return html;
+  return rows;
 }
 
-function onCellHover(e: MouseEvent) {
-  const el = e.target as HTMLElement;
-  const id = el.id || "";
-  hoveredCell.value = id;
-  if (id && wb.sourceIndex.length) {
-    const cellRef = id.replace("cell-", "");
-    const entry = wb.sourceIndex.find((s) => s.doc_cell === cellRef);
-    if (entry) {
-      hoverSource.value = `${entry.source.sheet} · ${entry.source.field}` + (entry.source.row ? ` row ${entry.source.row}` : "");
-      return;
-    }
-  }
-  hoverSource.value = "";
+function onCellEnter(cellRef: string) {
+  hoveredCell.value = cellRef;
+  const entry = wb.sourceIndex.find((s) => s.doc_cell === cellRef);
+  hoverSource.value = entry
+    ? `${entry.source.sheet} · ${entry.source.field}` + (entry.source.row ? ` row ${entry.source.row}` : "")
+    : "";
 }
+
+function onCellLeave() { hoveredCell.value = ""; hoverSource.value = ""; }
 
 watch(
   () => wb.preview,
   async (result) => {
+    tableData.value = [];
     if (!result?.output_file) {
-      if (result?.status === "needs_input") {
-        htmlContent.value = `<p class="preview-msg warn">请选择 ${result.missing_inputs?.join("、") || "..."}</p>`;
-      } else if (result?.status === "error") {
+      if (result?.status === "needs_input") statusMsg.value = `请选择 ${result.missing_inputs?.join("、") || "..."}`;
+      else if (result?.status === "error") {
         const err = (result.errors?.[0] as any) || {};
-        const code = err.code || "...";
-        if (code === "MAPPING_NOT_FOUND" && (wb.selectedSeller?.includes("SK") || wb.selectedSeller?.includes("YM"))) {
-          htmlContent.value = `<p class="preview-msg warn">${wb.selectedSeller || "该主体"}不提供 PO 模板<br>请切换到 GS PTE 或 EMAX PTE</p>`;
-        } else {
-          htmlContent.value = `<p class="preview-msg err">生成失败：${code}<br>${err.message || ""}</p>`;
-        }
-      } else {
-        htmlContent.value = "";
+        if (err.code === "MAPPING_NOT_FOUND" && (wb.selectedSeller?.includes("SK") || wb.selectedSeller?.includes("YM")))
+          statusMsg.value = `${wb.selectedSeller || "该主体"}不提供 PO 模板`;
+        else statusMsg.value = `生成失败：${err.code || "..."}`;
       }
       return;
     }
+    statusMsg.value = "";
     try {
       const resp = await fetch(`http://127.0.0.1:54321/download?path=${encodeURIComponent(result.output_file)}`);
-      if (!resp.ok) { htmlContent.value = `<p>下载失败 HTTP ${resp.status}</p>`; return; }
+      if (!resp.ok) { statusMsg.value = `下载失败 HTTP ${resp.status}`; return; }
       const buf = await resp.arrayBuffer();
-      const workbook = read(new Uint8Array(buf), { type: "array", cellStyles: true });
-      const ws = workbook.Sheets[workbook.SheetNames[0]];
-      if (!ws) { htmlContent.value = "<p>无法读取 sheet</p>"; return; }
-      htmlContent.value = buildTableHtml(ws as Record<string, unknown>);
-    } catch (e) {
-      htmlContent.value = `<p>加载预览失败: ${String(e).substring(0, 80)}</p>`;
-    }
+      const wb = read(new Uint8Array(buf), { type: "array", cellStyles: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      if (!ws) { statusMsg.value = "无法读取 sheet"; return; }
+      tableData.value = parseSheet(ws as Record<string, unknown>);
+    } catch (e) { statusMsg.value = `加载失败: ${String(e).substring(0, 80)}`; }
   },
   { immediate: true }
 );
@@ -158,8 +127,8 @@ watch(
     </div>
 
     <div class="tab-bar">
-      <button v-for="tab in tabs" :key="tab.key" class="tab-btn"
-        :class="{ active: previewTab === tab.key }" @click="switchTab(tab.key)">{{ tab.label }}</button>
+      <button v-for="t in tabs" :key="t.key" class="tab-btn"
+        :class="{ active: previewTab === t.key }" @click="switchTab(t.key)">{{ t.label }}</button>
       <span class="zoom-control">
         <button class="zoom-btn" @click="zoom = Math.max(50, zoom - 10)" :disabled="zoom <= 50">−</button>
         <span class="zoom-label">{{ zoom }}%</span>
@@ -167,12 +136,19 @@ watch(
       </span>
     </div>
 
-    <div class="preview-body" @mouseover="onCellHover">
+    <div class="preview-body">
       <div v-if="!wb.selectedPo" class="placeholder">选择 PO 后自动预览</div>
-      <div v-else-if="!htmlContent" class="placeholder">加载预览中…</div>
-      <div v-else class="html-preview"
-        :style="{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left' }"
-        v-html="htmlContent"></div>
+      <div v-else-if="statusMsg" class="status-msg" :class="{ err: statusMsg.includes('失败') || statusMsg.includes('不提供') }">{{ statusMsg }}</div>
+      <div v-else-if="!tableData.length" class="placeholder">加载预览中…</div>
+      <table v-else class="preview-table" :style="{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left' }">
+        <tr v-for="(row, ri) in tableData" :key="ri" :class="{ 'label-row': row.isLabel }">
+          <td v-for="(cell, ci) in row.cells" :key="ci"
+            :class="{ num: cell.isNum }"
+            :colspan="cell.colspan" :rowspan="cell.rowspan"
+            @mouseenter="onCellEnter(cell.cellRef)" @mouseleave="onCellLeave"
+          >{{ cell.value }}</td>
+        </tr>
+      </table>
     </div>
     <div v-if="hoverSource" class="tooltip">{{ hoverSource }} · {{ hoveredCell }}</div>
   </div>
@@ -181,7 +157,6 @@ watch(
 <style scoped>
 .preview-pane { display: flex; flex-direction: column; height: 100%; }
 
-/* toolbar */
 .preview-toolbar { padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border-default); background: var(--surface-sunken); display: flex; align-items: center; gap: var(--space-4); }
 .seller-group, .month-group { display: flex; align-items: center; gap: var(--space-1); }
 .label { color: var(--fg-muted); font-size: var(--text-xs); white-space: nowrap; width: 32px; flex-shrink: 0; }
@@ -192,7 +167,6 @@ watch(
 .clear { cursor: pointer; font-size: var(--text-xs); color: var(--accent-default); }
 .hint { font-size: var(--text-xs); color: var(--fg-subtle); }
 
-/* tabs */
 .tab-bar { display: flex; align-items: center; border-bottom: 1px solid var(--border-default); padding: 0 var(--space-2); gap: var(--space-1); }
 .tab-btn { padding: var(--space-2) var(--space-3); border: none; border-bottom: 2px solid transparent; background: none; cursor: pointer; font-size: var(--text-sm); color: var(--fg-muted); }
 .tab-btn.active { border-bottom-color: var(--accent-default); color: var(--accent-default); font-weight: 600; }
@@ -203,38 +177,18 @@ watch(
 .zoom-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 .zoom-label { font-size: var(--text-xs); color: var(--fg-muted); width: 36px; text-align: center; font-family: var(--font-mono); }
 
-/* content */
 .preview-body { flex: 1; overflow: auto; padding: var(--space-2); }
-.html-preview { display: inline-block; min-width: 100%; }
-
-/* custom table */
-.html-preview :deep(.preview-table) {
-  border-collapse: collapse; width: max-content; min-width: 100%;
-  font-size: var(--text-sm); font-family: var(--font-sans);
-  background: var(--surface-default);
-}
-.html-preview :deep(.preview-table td) {
-  padding: 5px 10px; border-bottom: 1px solid var(--border-default);
-  vertical-align: middle; white-space: nowrap; min-width: 60px;
-}
-.html-preview :deep(.preview-table .num) {
-  text-align: right; font-family: var(--font-mono);
-}
-.html-preview :deep(.preview-table .label-row td) {
-  font-weight: 600; color: var(--fg-default); font-size: var(--text-xs);
-  text-transform: uppercase; letter-spacing: 0.02em;
-  border-bottom: 2px solid var(--border-strong); background: var(--surface-sunken);
-}
-.html-preview :deep(.preview-table .label-row td:empty) {
-  background: transparent;
-}
-.html-preview :deep(.preview-table tr:hover td) { background: var(--surface-sunken); }
-.html-preview :deep(.preview-table .label-row:hover td) { background: var(--surface-sunken); }
-
-.preview-msg { padding: var(--space-3); margin: 0; }
-.preview-msg.warn { color: var(--status-partial-fg); }
-.preview-msg.err { color: var(--status-blocked-fg); }
+.status-msg { padding: var(--space-3); color: var(--status-partial-fg); }
+.status-msg.err { color: var(--status-blocked-fg); }
 .placeholder { padding: var(--space-8); text-align: center; color: var(--fg-subtle); }
+
+.preview-table { border-collapse: collapse; width: max-content; min-width: 100%; font-size: var(--text-sm); font-family: var(--font-sans); background: var(--surface-default); }
+.preview-table td { padding: 5px 10px; border-bottom: 1px solid var(--border-default); vertical-align: middle; white-space: nowrap; min-width: 60px; }
+.preview-table td.num { text-align: right; font-family: var(--font-mono); }
+.preview-table .label-row td { font-weight: 600; color: var(--fg-default); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.02em; border-bottom: 2px solid var(--border-strong); background: var(--surface-sunken); }
+.preview-table .label-row td:empty { background: transparent; }
+.preview-table tr:hover td { background: var(--surface-sunken); }
+.preview-table .label-row:hover td { background: var(--surface-sunken); }
 
 .tooltip { position: fixed; bottom: 32px; right: 16px; padding: var(--space-1) var(--space-2); background: var(--fg-default); color: var(--fg-on-accent); font-size: var(--text-xs); border-radius: var(--radius-sm); max-width: 320px; z-index: 100; }
 </style>
