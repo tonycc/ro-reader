@@ -78,7 +78,11 @@ export const useWorkbench = defineStore("workbench", () => {
   }
 
   async function doExport() {
-    if (!baseFile.value || !selectedPo.value || !selectedSeller.value) return;
+    console.log("[doExport] called", { base: !!baseFile.value, po: selectedPo.value, seller: selectedSeller.value, month: selectedMonth.value, doc: previewDocType.value });
+    if (!baseFile.value || !selectedPo.value || !selectedSeller.value) {
+      console.log("[doExport] EARLY RETURN - missing required");
+      return;
+    }
     exporting.value = true;
     try {
       const result = await api.exportDocuments({
@@ -86,8 +90,11 @@ export const useWorkbench = defineStore("workbench", () => {
         seller: selectedSeller.value, invoice_month: selectedMonth.value,
         document: previewDocType.value,
       });
+      console.log("[doExport] result:", { status: result.status, output: result.output_file, files: result.files, errors: result.errors?.length });
       lastExportFile.value = result.output_file ?? "";
       return result;
+    } catch (e) {
+      console.error("[doExport] FAILED:", e);
     } finally { exporting.value = false; }
   }
 
