@@ -222,8 +222,12 @@ watch(
   text-align: right; font-family: var(--font-mono);
 }
 .html-preview :deep(.preview-table .label-row td) {
-  font-weight: 600; color: var(--fg-muted); font-size: var(--text-xs);
+  font-weight: 600; color: var(--fg-default); font-size: var(--text-xs);
+  text-transform: uppercase; letter-spacing: 0.02em;
   border-bottom: 2px solid var(--border-strong); background: var(--surface-sunken);
+}
+.html-preview :deep(.preview-table .label-row td:empty) {
+  background: transparent;
 }
 .html-preview :deep(.preview-table tr:hover td) { background: var(--surface-sunken); }
 .html-preview :deep(.preview-table .label-row:hover td) { background: var(--surface-sunken); }
