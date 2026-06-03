@@ -265,7 +265,7 @@ def _write_data_row(
 
     # amount 列写公式：=E{row}*F{row}（保持模板风格，便于 Excel 用户审计）
     amount_addr = f"{columns.amount}{row}"
-    ws[amount_addr] = f"={columns.unit_price}{row}*{columns.quantity}{row}"
+    ws[amount_addr] = doc_line.amount
     builder.add_computed(amount_addr, "amount")
 
     if columns.unit_label and fixed_unit_label:
