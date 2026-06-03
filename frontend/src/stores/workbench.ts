@@ -78,11 +78,7 @@ export const useWorkbench = defineStore("workbench", () => {
   }
 
   async function doExport() {
-    console.log("[doExport] called", { base: !!baseFile.value, po: selectedPo.value, seller: selectedSeller.value, month: selectedMonth.value, doc: previewDocType.value });
-    if (!baseFile.value || !selectedPo.value || !selectedSeller.value) {
-      console.log("[doExport] EARLY RETURN - missing required");
-      return;
-    }
+    if (!baseFile.value || !selectedPo.value || !selectedSeller.value) return;
     exporting.value = true;
     try {
       const result = await api.exportDocuments({
@@ -90,8 +86,15 @@ export const useWorkbench = defineStore("workbench", () => {
         seller: selectedSeller.value, invoice_month: selectedMonth.value,
         document: previewDocType.value,
       });
-      console.log("[doExport] result:", { status: result.status, output: result.output_file, files: result.files, errors: result.errors?.length });
       lastExportFile.value = result.output_file ?? "";
+      // Trigger browser download
+      if (result.output_file) {
+        const downloadUrl = `http://127.0.0.1:54321/download?path=${encodeURIComponent(result.output_file)}`;
+        const a = document.createElement("a");
+        a.href = downloadUrl;
+        a.download = result.files[0] || "export.xlsx";
+        a.click();
+      }
       return result;
     } catch (e) {
       console.error("[doExport] FAILED:", e);

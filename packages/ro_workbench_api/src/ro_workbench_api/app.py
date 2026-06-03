@@ -271,8 +271,6 @@ def export_documents(req: DryRunRequest) -> dict[str, Any]:
 
     out_dir = tempfile.mkdtemp(prefix="ro-export-")
     doc = req.document.upper() if req.document else "INVOICE"
-    import sys
-    print(f"[export] po={req.po_no} seller={req.seller} doc={doc} month={req.invoice_month}", file=sys.stderr)
     request = DocumentRequest(
         base_file=req.base_file,
         po_no=req.po_no,
@@ -283,10 +281,6 @@ def export_documents(req: DryRunRequest) -> dict[str, Any]:
         output_dir=out_dir,
     )
     result = generate(request)
-    print(f"[export] result: status={result.status} errors={len(result.errors)} output={result.output_file}", file=sys.stderr)
-    if result.errors:
-        for e in result.errors:
-            print(f"[export]   ERROR [{e.code}] {e.message}", file=sys.stderr)
     return _result_to_dict(result)
 
 
