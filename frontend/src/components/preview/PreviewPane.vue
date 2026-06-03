@@ -62,7 +62,13 @@ watch(
       const workbook = read(new Uint8Array(buf), { type: "array", cellStyles: true });
       const ws = workbook.Sheets[workbook.SheetNames[0]];
       if (!ws) { htmlContent.value = "<p>无法读取 sheet</p>"; return; }
-      htmlContent.value = utils.sheet_to_html(ws, { editable: false });
+      let html = utils.sheet_to_html(ws, { editable: false });
+      // 找到列名行（含 "PO Number" / "SAP ITEM#" 等），加 bold-row class
+      html = html.replace(
+        /<tr>(<td[^>]*>.*?(?:PO Number|SAP ITEM#|Item Number|Description|QTY|DESCRIPT|GOODS).*?<\/tr>)/i,
+        '<tr class="bold-row">$1'
+      );
+      htmlContent.value = html;
     } catch (e) {
       htmlContent.value = `<p>加载预览失败: ${String(e).substring(0, 80)}</p>`;
     }
@@ -162,8 +168,8 @@ watch(
   padding: 4px 8px; text-align: left; vertical-align: top;
   border-bottom: 1px solid var(--border-default);
 }
-.html-preview :deep(tr:first-child) { border-bottom: 2px solid var(--border-strong); }
-.html-preview :deep(tr:first-child td) { font-weight: 700; color: var(--fg-default); font-size: var(--text-sm); }
+.html-preview :deep(tr.bold-row) { border-bottom: 2px solid var(--border-strong); }
+.html-preview :deep(tr.bold-row td) { font-weight: 700; color: var(--fg-default); font-size: var(--text-sm); background: var(--surface-sunken); }
 .html-preview :deep(tr:hover) { background: var(--surface-sunken); }
 .placeholder { padding: var(--space-8); text-align: center; color: var(--fg-subtle); }
 
