@@ -72,6 +72,10 @@ export const useWorkbench = defineStore("workbench", () => {
     if (po?.chain_segments.length) {
       selectedSegment.value = po.chain_segments[0];
     }
+    // Auto-select first month if available
+    if (po?.monthly_months.length) {
+      selectedMonth.value = po.monthly_months[0];
+    }
     await refreshPreview();
   }
 
