@@ -8,11 +8,10 @@ const previewTab = ref<"INVOICE" | "PI" | "PO" | "PL">("INVOICE");
 const zoom = ref(100);
 
 interface CellData { value: string; colspan: number; rowspan: number; cellRef: string; isNum: boolean }
-interface RowData { cells: CellData[] }
-/** 描述列表项：label 来自表头区域某列的值，value 来自同行的相邻列 */
-const headerRows = ref<HeaderRow[]>([]);
-const tableData = ref<RowData[]>([]);
-const tableStartRow = ref<number | null>(null);
+interface RowData { cells: CellData[]; rowNum: number; isLabel?: boolean }
+const headerRows = ref<RowData[]>([]);
+const dataRows = ref<RowData[]>([]);
+const tableStartRow = ref(99);
 const statusMsg = ref("");
 const hoveredCell = ref("");
 const hoverSource = ref<string>("");
@@ -26,9 +25,7 @@ const tabs = [
 
 function switchTab(key: typeof previewTab.value) { previewTab.value = key; wb.refreshPreview(key); }
 
-interface HeaderRow { cells: { value: string; cellRef: string }[] }
-
-function parseSheet(ws: Record<string, unknown>, startRow: number | null): { headers: HeaderRow[]; table: RowData[] } {
+function parseSheet(ws: Record<string, unknown>): RowData[] {
   const range = utils.decode_range((ws["!ref"] as string) || "A1");
   const merges = (ws["!merges"] || []) as { s: { r: number; c: number }; e: { r: number; c: number } }[];
 
@@ -47,7 +44,9 @@ function parseSheet(ws: Record<string, unknown>, startRow: number | null): { hea
     }
   }
 
-  function readRow(r: number): CellData[] {
+  const rows: RowData[] = [];
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    if (!nonBlankRows.has(r)) continue;
     const cells: CellData[] = [];
     for (let c = range.s.c; c <= range.e.c; c++) {
       if (mergedHidden.has(`${r},${c}`)) continue;
@@ -63,25 +62,9 @@ function parseSheet(ws: Record<string, unknown>, startRow: number | null): { hea
         isNum,
       });
     }
-    return cells;
+    rows.push({ cells, rowNum: r + 1 });
   }
-
-  const hdrRows: HeaderRow[] = [];
-  const tableRows: RowData[] = [];
-  const cutoff = startRow ? startRow - 2 : 99;
-
-  for (let r = range.s.r; r <= range.e.r; r++) {
-    if (!nonBlankRows.has(r)) continue;
-    const cells = readRow(r);
-    if (r < cutoff) {
-      const vals = cells.filter((c) => c.value).map((c) => ({ value: c.value, cellRef: c.cellRef }));
-      if (vals.length) hdrRows.push({ cells: vals });
-    } else {
-      tableRows.push({ cells });
-    }
-  }
-
-  return { headers: hdrRows, table: tableRows };
+  return rows;
 }
 
 function onCellEnter(cellRef: string) {
@@ -91,12 +74,15 @@ function onCellEnter(cellRef: string) {
     ? `${entry.source.sheet} · ${entry.source.field}` + (entry.source.row ? ` row ${entry.source.row}` : "")
     : "";
 }
+
 function onCellLeave() { hoveredCell.value = ""; hoverSource.value = ""; }
 
 watch(
   () => wb.preview,
   async (result) => {
-    tableData.value = []; headerRows.value = []; tableStartRow.value = null;
+    headerRows.value = [];
+    dataRows.value = [];
+    tableStartRow.value = (result?.summary?.table_start_row as number) || 99;
     if (!result?.output_file) {
       if (result?.status === "needs_input") statusMsg.value = `请选择 ${result.missing_inputs?.join("、") || "..."}`;
       else if (result?.status === "error") {
@@ -109,16 +95,18 @@ watch(
     }
     statusMsg.value = "";
     try {
-      tableStartRow.value = result.table_start_row ?? null;
       const resp = await fetch(`http://127.0.0.1:54321/download?path=${encodeURIComponent(result.output_file)}`);
       if (!resp.ok) { statusMsg.value = `下载失败 HTTP ${resp.status}`; return; }
       const buf = await resp.arrayBuffer();
       const wb = read(new Uint8Array(buf), { type: "array", cellStyles: true });
       const ws = wb.Sheets[wb.SheetNames[0]];
       if (!ws) { statusMsg.value = "无法读取 sheet"; return; }
-      const parsed = parseSheet(ws as Record<string, unknown>, tableStartRow.value);
-      headerRows.value = parsed.headers;
-      tableData.value = parsed.table;
+      const allRows = parseSheet(ws as Record<string, unknown>);
+      const start = tableStartRow.value || 99;
+      headerRows.value = allRows.filter((r) => r.rowNum < start);
+      dataRows.value = allRows.filter((r) => r.rowNum >= start);
+      // Mark first data row as label
+      if (dataRows.value.length) dataRows.value[0] = { ...dataRows.value[0], isLabel: true } as RowData;
     } catch (e) { statusMsg.value = `加载失败: ${String(e).substring(0, 80)}`; }
   },
   { immediate: true }
@@ -158,27 +146,29 @@ watch(
     <div class="preview-body">
       <div v-if="!wb.selectedPo" class="placeholder">选择 PO 后自动预览</div>
       <div v-else-if="statusMsg" class="status-msg" :class="{ err: statusMsg.includes('失败') || statusMsg.includes('不提供') }">{{ statusMsg }}</div>
-      <div v-else-if="!headerRows.length && !tableData.length" class="placeholder">加载预览中…</div>
-
-      <!-- 表头区域：逐行展示 -->
-      <div v-if="headerRows.length" class="header-area" :style="{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left' }">
-        <div v-for="(row, ri) in headerRows" :key="ri" class="header-row">
-          <span v-for="(cell, ci) in row.cells" :key="ci" class="header-cell"
-            @mouseenter="onCellEnter(cell.cellRef)" @mouseleave="onCellLeave"
-          >{{ cell.value }}</span>
+      <div v-else-if="!headerRows.length && !dataRows.length" class="placeholder">加载预览中…</div>
+      <template v-else>
+        <!-- 表头区域 -->
+        <div class="preview-header" :style="{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left' }">
+          <table class="header-table">
+            <tr v-for="(row, ri) in headerRows" :key="'h'+ri">
+              <td v-for="(cell, ci) in row.cells" :key="ci"
+                :colspan="cell.colspan" :rowspan="cell.rowspan"
+              >{{ cell.value }}</td>
+            </tr>
+          </table>
         </div>
-      </div>
-
-      <!-- 表格区域 -->
-      <table v-if="tableData.length" class="preview-table" :style="{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left' }">
-        <tr v-for="(row, ri) in tableData" :key="ri" :class="{ 'label-row': ri === 0 }">
-          <td v-for="(cell, ci) in row.cells" :key="ci"
-            :class="{ num: cell.isNum }"
-            :colspan="cell.colspan" :rowspan="cell.rowspan"
-            @mouseenter="onCellEnter(cell.cellRef)" @mouseleave="onCellLeave"
-          >{{ cell.value }}</td>
-        </tr>
-      </table>
+        <!-- 表格区域 -->
+        <table v-if="dataRows.length" class="preview-table" :style="{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left' }">
+          <tr v-for="(row, ri) in dataRows" :key="'d'+ri" :class="{ 'label-row': row.isLabel }">
+            <td v-for="(cell, ci) in row.cells" :key="ci"
+              :class="{ num: cell.isNum }"
+              :colspan="cell.colspan" :rowspan="cell.rowspan"
+              @mouseenter="onCellEnter(cell.cellRef)" @mouseleave="onCellLeave"
+            >{{ cell.value }}</td>
+          </tr>
+        </table>
+      </template>
     </div>
     <div v-if="hoverSource" class="tooltip">{{ hoverSource }} · {{ hoveredCell }}</div>
   </div>
@@ -212,15 +202,10 @@ watch(
 .status-msg.err { color: var(--status-blocked-fg); }
 .placeholder { padding: var(--space-8); text-align: center; color: var(--fg-subtle); }
 
-/* 表头区域 */
-.header-area { margin-bottom: var(--space-4); border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--surface-default); overflow: hidden; }
-.header-row { display: flex; flex-wrap: wrap; padding: 4px 12px; gap: 12px; border-bottom: 1px solid var(--border-default); }
-.header-row:last-child { border-bottom: none; }
-.header-cell { font-size: var(--text-sm); white-space: nowrap; }
-.header-cell:first-child { font-weight: 600; color: var(--fg-muted); min-width: 80px; }
-.header-row:hover { background: var(--accent-subtle); }
+.preview-header { margin-bottom: var(--space-3); }
+.header-table { border-collapse: collapse; font-size: var(--text-sm); font-family: var(--font-sans); }
+.header-table td { padding: 2px 6px; vertical-align: middle; white-space: nowrap; }
 
-/* 表格 */
 .preview-table {
   border-collapse: separate; border-spacing: 0;
   width: max-content; min-width: 100%;
@@ -239,6 +224,7 @@ watch(
 .preview-table .label-row td {
   font-weight: 600; color: var(--fg-muted); font-size: var(--text-xs);
   border-bottom: 2px solid var(--border-strong); background: var(--surface-sunken);
+  position: sticky; top: 0; z-index: 1;
 }
 .preview-table .label-row td:empty { background: transparent; }
 .preview-table tr:nth-child(even):not(.label-row) td { background: #fafbfc; }

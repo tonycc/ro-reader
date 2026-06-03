@@ -216,17 +216,7 @@ def dry_run(po_no: str, req: DryRunRequest) -> dict[str, Any]:
         output_dir=out_dir,
     )
     result = generate(request)
-    payload = _result_to_dict(result)
-    # 附加 table_start_row（从 mapping 读取）
-    try:
-        from ro_generator.generator import _builtin_mapping_path
-        path = _builtin_mapping_path(req.seller, doc)
-        if path:
-            from ro_generator.template_mapping import load_template_mapping
-            payload["table_start_row"] = load_template_mapping(path).lines.start_row
-    except Exception:
-        payload["table_start_row"] = None
-    return payload
+    return _result_to_dict(result)
 
 
 @app.post("/po/{po_no}/edit")
@@ -291,16 +281,7 @@ def export_documents(req: DryRunRequest) -> dict[str, Any]:
         output_dir=out_dir,
     )
     result = generate(request)
-    payload = _result_to_dict(result)
-    try:
-        from ro_generator.generator import _builtin_mapping_path
-        path = _builtin_mapping_path(req.seller, doc)
-        if path:
-            from ro_generator.template_mapping import load_template_mapping
-            payload["table_start_row"] = load_template_mapping(path).lines.start_row
-    except Exception:
-        payload["table_start_row"] = None
-    return payload
+    return _result_to_dict(result)
 
 
 @app.get("/download")

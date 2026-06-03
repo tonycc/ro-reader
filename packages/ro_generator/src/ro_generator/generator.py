@@ -400,6 +400,7 @@ def _generate_one(
         output_file=str(render_result.output_path),
         warnings=doc_warnings,
         source_index=render_result.source_index,
+        summary={"table_start_row": mapping.lines.start_row},
     )
 
 
