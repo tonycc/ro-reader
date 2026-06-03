@@ -9,7 +9,8 @@ const zoom = ref(100);
 
 interface CellData { value: string; colspan: number; rowspan: number; cellRef: string; isNum: boolean }
 interface RowData { cells: CellData[]; isLabel: boolean }
-const tableData = ref<RowData[]>([]);
+interface TableMeta { rows: RowData[]; colCount: number; colWidth: string }
+const tableMeta = ref<TableMeta>({ rows: [], colCount: 1, colWidth: "100%" });
 const statusMsg = ref("");
 const hoveredCell = ref("");
 const hoverSource = ref<string>("");
@@ -23,7 +24,7 @@ const tabs = [
 
 function switchTab(key: typeof previewTab.value) { previewTab.value = key; wb.refreshPreview(key); }
 
-function parseSheet(ws: Record<string, unknown>): RowData[] {
+function parseSheet(ws: Record<string, unknown>): TableMeta {
   const range = utils.decode_range((ws["!ref"] as string) || "A1");
   const merges = (ws["!merges"] || []) as { s: { r: number; c: number }; e: { r: number; c: number } }[];
 
@@ -41,6 +42,9 @@ function parseSheet(ws: Record<string, unknown>): RowData[] {
       if (cell?.v != null && cell.v !== "") { nonBlankRows.add(r); break; }
     }
   }
+
+  const colCount = range.e.c - range.s.c + 1;
+  const colWidth = `${Math.round(100 / colCount)}%`;
 
   const rows: RowData[] = [];
   let rowIdx = 0;
@@ -64,7 +68,7 @@ function parseSheet(ws: Record<string, unknown>): RowData[] {
     rows.push({ cells, isLabel: rowIdx === 0 });
     rowIdx++;
   }
-  return rows;
+  return { rows, colCount, colWidth };
 }
 
 function onCellEnter(cellRef: string) {
@@ -80,7 +84,7 @@ function onCellLeave() { hoveredCell.value = ""; hoverSource.value = ""; }
 watch(
   () => wb.preview,
   async (result) => {
-    tableData.value = [];
+    tableMeta.value = { rows: [], colCount: 1, colWidth: "100%" };
     if (!result?.output_file) {
       if (result?.status === "needs_input") statusMsg.value = `请选择 ${result.missing_inputs?.join("、") || "..."}`;
       else if (result?.status === "error") {
@@ -99,7 +103,7 @@ watch(
       const wb = read(new Uint8Array(buf), { type: "array", cellStyles: true });
       const ws = wb.Sheets[wb.SheetNames[0]];
       if (!ws) { statusMsg.value = "无法读取 sheet"; return; }
-      tableData.value = parseSheet(ws as Record<string, unknown>);
+      tableMeta.value = parseSheet(ws as Record<string, unknown>);
     } catch (e) { statusMsg.value = `加载失败: ${String(e).substring(0, 80)}`; }
   },
   { immediate: true }
@@ -139,9 +143,12 @@ watch(
     <div class="preview-body">
       <div v-if="!wb.selectedPo" class="placeholder">选择 PO 后自动预览</div>
       <div v-else-if="statusMsg" class="status-msg" :class="{ err: statusMsg.includes('失败') || statusMsg.includes('不提供') }">{{ statusMsg }}</div>
-      <div v-else-if="!tableData.length" class="placeholder">加载预览中…</div>
+      <div v-else-if="!tableMeta.rows.length" class="placeholder">加载预览中…</div>
       <table v-else class="preview-table" :style="{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left' }">
-        <tr v-for="(row, ri) in tableData" :key="ri" :class="{ 'label-row': row.isLabel }">
+        <colgroup>
+          <col v-for="i in tableMeta.colCount" :key="i" :style="{ width: tableMeta.colWidth }">
+        </colgroup>
+        <tr v-for="(row, ri) in tableMeta.rows" :key="ri" :class="{ 'label-row': row.isLabel }">
           <td v-for="(cell, ci) in row.cells" :key="ci"
             :class="{ num: cell.isNum }"
             :colspan="cell.colspan" :rowspan="cell.rowspan"
@@ -182,7 +189,7 @@ watch(
 .status-msg.err { color: var(--status-blocked-fg); }
 .placeholder { padding: var(--space-8); text-align: center; color: var(--fg-subtle); }
 
-.preview-table { border-collapse: collapse; width: max-content; min-width: 100%; font-size: var(--text-sm); font-family: var(--font-sans); background: var(--surface-default); }
+.preview-table { table-layout: fixed; border-collapse: collapse; width: 100%; min-width: 100%; font-size: var(--text-sm); font-family: var(--font-sans); background: var(--surface-default); }
 .preview-table td { padding: 5px 10px; border-bottom: 1px solid var(--border-default); vertical-align: middle; white-space: nowrap; }
 .preview-table td.num { text-align: right; font-family: var(--font-mono); }
 .preview-table .label-row td { font-weight: 600; color: var(--fg-default); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.02em; border-bottom: 2px solid var(--border-strong); background: var(--surface-sunken); }
