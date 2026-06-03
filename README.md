@@ -74,6 +74,118 @@ cd frontend && pnpm run dev
 
 点击顶部栏右侧"导出 ⌘E"按钮，文件写入后端临时目录，状态栏显示导出文件名。
 
+## 实现逻辑
+
+### 装配流水线
+
+```
+RO DATA BASE.xlsx
+     │
+     ▼
+  WorkbookReader ─── 打开文件，表头规范化（去掉 \n 和多余空格），按行读为 dict
+     │
+     ▼
+  Validator ─── 校验 sheet 和必需表头是否存在（缺失 → blocking_error）
+     │
+     ▼
+  Resolver ─── 按 PO 号筛选行，SAP 关联产品主数据，按链段读取价格列
+     │          公式列（CTNS / TOTAL CBM）读到 None 时按公式现算并产生 warning
+     │
+     ▼
+  DocumentModel ─── 构建四类单据的视图模型（DocumentLine 列表 + 合计）
+     │              PI/PO 用完整 PO 数量；Invoice/PL 可按 invoice_month 切片
+     │
+     ▼
+  TemplateMapping ─── 加载 YAML 映射，校验所有引用单元格在模板中存在
+     │
+     ▼
+  Renderer ─── 写入 Excel 模板，超行时插入新行并复制样式
+     │          openpyxl 陷阱：insert_rows() 不平移 row_dimensions，须先手动处理
+     │
+     ▼
+  输出 .xlsx / .zip
+```
+
+### 模板与 YAML 映射
+
+每个模板配一份 YAML，描述"哪个业务字段写到哪个单元格"：
+
+```yaml
+# templates/gs/mappings/invoice.yaml
+document: invoice
+template_version: "v1"
+template: templates/gs/invoice.xlsx
+sheet: Sheet1
+header:
+  invoice_no: H6          # 发票号写到 H6
+  ship_to: A12            # 收货地址写到 A12
+lines:
+  start_row: 18           # 数据行从 18 行开始
+  style_source_row: 19    # 样式参考行（插入新行时复制此行样式）
+  columns:
+    sap: D                # SAP 号写到 D 列
+    unit_price: E          # 单价写到 E 列
+    quantity: F            # 数量写到 F 列
+    amount: H              # 金额写到 H 列
+totals:
+  quantity: F27            # 数量合计写到 F27
+  amount: H27              # 金额合计写到 H27
+```
+
+模板版式变化时**只改 YAML，不改代码**。mapping 加载时自动校验所有单元格引用在模板中真实存在，防止模板漂移。
+
+### 贸易链段与定价
+
+RO 业务涉及多段贸易链路。同一个 PO 在不同链段下使用不同的单价列：
+
+```
+工厂 → SK/YM → GS PTE → EMAX PTE → PF（最终客户）
+        ↓ SK/YM USD FOB   ↓ GS PTE FOB   ↓ EMAX PTE
+```
+
+合法的 `(seller, buyer)` 组合及选价规则：
+
+| 链段 | 价格列 | Invoice 金额列前缀 |
+|---|---|---|
+| SK/YM → GS PTE | `SK/YM USD FOB` | `GS-SK/YM INV-*` |
+| GS PTE → EMAX PTE | `GS PTE FOB` | `EMAX-GS INV-*` |
+| EMAX PTE → PF | `EMAX PTE` | `PF-EMAX INV-*` |
+
+`SUBTOTAL = FINALQTY × unit_price`，金额用 `Decimal` 避免浮点精度问题。
+
+### 数量来源
+
+| 单据 | 数量来源 |
+|---|---|
+| PI / PO | 完整 PO 数量（`FINALQTY`） |
+| Invoice / PL | `invoice_month` 对应的月度出货数量（`2601`–`2612` 列） |
+
+### 校验体系
+
+三类校验输出在装配流水线的不同阶段累积：
+
+| 类型 | 含义 | 示例 |
+|---|---|---|
+| `blocking_errors` | 阻断装配，必须修复 | SAP 缺失、SAP 不在 DATA BASE、数量无效、INV# 缺失 |
+| `warnings` | 可装配但需复核（带 `severity: high/low`） | 公式回退现算（high）、RFID 为空（low） |
+| `missing_inputs` | 信息不足，需用户选择 | 多月出货需指定月份、多 INV# 需选定 |
+
+### 公式回退
+
+`PO record` 中的 `SUBTOTAL`、`CTNS`、`TOTAL CBM` 通常来自 Excel 公式。当保存文件的程序（如 LibreOffice/WPS）未缓存公式结果时，`openpyxl` 的 `data_only=True` 读到的是 `None`，装配引擎按规则现算：
+
+- `CTNS = FINALQTY / 外箱`
+- `TOTAL CBM = L × W × H ÷ 1,000,000 × CTNS`
+
+并在数据视图中标记橙色边框，提示用户"由工作台计算，建议在 Excel 中刷新"。
+
+### 双向溯源
+
+渲染时每个写到 Excel 的单元格都记录其来源（`SourceLocation`：sheet + row + field），构建 `SourceIndex`。
+
+- 工作台中**悬停文档预览的单元格** → 右下角显示源字段信息
+- 未来：点击源字段 → 高亮所有引用它的文档位置
+
 ## 命令行工具
 
 `ro-generate` 不依赖工作台 UI，可直接在终端使用。
