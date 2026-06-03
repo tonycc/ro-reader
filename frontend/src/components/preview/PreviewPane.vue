@@ -39,23 +39,22 @@ function buildTableHtml(ws: Record<string, unknown>): string {
     }
   }
 
-  // 收集非空行 & 有溯源的行
+  // 收集非空行
   const nonBlankRows = new Set<number>();
-  const sourcedRows = new Set<number>();
   for (let r = range.s.r; r <= range.e.r; r++) {
     for (let c = range.s.c; c <= range.e.c; c++) {
       const cell = ws[utils.encode_cell({ r, c })] as { v?: unknown } | undefined;
       if (cell && cell.v != null && cell.v !== "") { nonBlankRows.add(r); break; }
     }
   }
-  for (const s of wb.sourceIndex) {
-    try { sourcedRows.add(utils.decode_cell(s.doc_cell).r); } catch { /* skip */ }
-  }
 
   let html = '<table class="preview-table">';
+  let rowIdx = 0;
   for (let r = range.s.r; r <= range.e.r; r++) {
     if (!nonBlankRows.has(r)) continue;
-    const isLabel = !sourcedRows.has(r);
+    // 第一个非空行 = 字段标签行
+    const isLabel = rowIdx === 0;
+    rowIdx++;
     html += `<tr class="${isLabel ? "label-row" : ""}">`;
     for (let c = range.s.c; c <= range.e.c; c++) {
       const key = `${r},${c}`;
