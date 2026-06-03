@@ -229,29 +229,26 @@ watch(
 /* 数据表格 */
 .table-wrap { overflow-x: auto; }
 .preview-table {
-  border-collapse: separate; border-spacing: 0;
+  border-collapse: collapse;
   width: max-content; min-width: 100%;
   font-size: var(--text-sm); font-family: var(--font-sans);
   background: var(--surface-default);
-  border: 1px solid var(--border-default); border-radius: var(--radius-md);
-  overflow: hidden;
 }
 .preview-table td {
   padding: 6px 12px; vertical-align: middle; white-space: nowrap;
-  border-bottom: 1px solid var(--border-default);
+  border: 1px solid var(--border-default);
   min-width: 50px; max-width: 280px;
   overflow: hidden; text-overflow: ellipsis;
 }
 .preview-table td.num { text-align: right; font-family: var(--font-mono); font-size: 0.85em; }
 .preview-table .label-row td {
   font-weight: 600; color: var(--fg-muted); font-size: var(--text-xs);
-  border-bottom: 2px solid var(--border-strong); background: var(--surface-sunken);
+  border: 1px solid var(--border-strong); background: var(--surface-sunken);
   position: sticky; top: 0; z-index: 1;
 }
 .preview-table .label-row td:empty { background: transparent; }
 .preview-table tr:nth-child(even):not(.label-row) td { background: #fafbfc; }
 .preview-table tr:hover td { background: var(--accent-subtle) !important; }
-.preview-table tr:last-child td { border-bottom: none; }
 
 .tooltip { position: fixed; bottom: 32px; right: 16px; padding: var(--space-1) var(--space-2); background: var(--fg-default); color: var(--fg-on-accent); font-size: var(--text-xs); border-radius: var(--radius-sm); max-width: 320px; z-index: 100; }
 </style>
