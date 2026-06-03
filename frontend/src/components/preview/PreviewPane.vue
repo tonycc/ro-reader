@@ -162,8 +162,9 @@ watch(
   padding: 4px 8px; text-align: left; vertical-align: top;
   border-bottom: 1px solid var(--border-default);
 }
-.html-preview :deep(tr:first-child) { border-bottom: 2px solid var(--border-strong); }
-.html-preview :deep(tr:first-child td) { font-weight: 600; color: var(--fg-muted); font-size: var(--text-xs); text-transform: none; }
+.html-preview :deep(tr:first-child) { border-bottom: 2px solid var(--border-strong); background: var(--surface-sunken); }
+.html-preview :deep(tr:first-child td) { font-weight: 700; color: var(--fg-default); font-size: var(--text-sm); }
+.html-preview :deep(tr:not(:first-child) td) { font-weight: 400; }
 .html-preview :deep(tr:hover) { background: var(--surface-sunken); }
 .placeholder { padding: var(--space-8); text-align: center; color: var(--fg-subtle); }
 
