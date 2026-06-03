@@ -159,16 +159,17 @@ def open_session(req: OpenSessionRequest) -> dict[str, Any]:
             resolve_result = resolve_po_lines(reader, po_no)
             blocking = [m for m in resolve_result.messages if m.kind == "blocking_error"]
 
-            priced_segments: list[dict[str, str]] = []
-            for seg in LEGAL_CHAIN_SEGMENTS:
-                if all(seg in line.prices for line in resolve_result.lines):
-                    priced_segments.append({"seller": seg[0], "buyer": seg[1]})
+            # 所有合法链段都可选（缺价时单据显示 [需填: 单价]）
+            priced_segments: list[dict[str, str]] = [
+                {"seller": seg[0], "buyer": seg[1]} for seg in LEGAL_CHAIN_SEGMENTS
+            ]
 
             months: set[str] = set()
             for line in resolve_result.lines:
                 months.update(line.monthly_shipments.keys())
 
-            status = "blocked" if blocking else ("ready" if priced_segments else "partial")
+            has_lines = len(resolve_result.lines) > 0
+            status = "blocked" if blocking else ("ready" if has_lines else "partial")
             po_list.append({
                 "po_no": po_no,
                 "status": status,
