@@ -18,6 +18,7 @@ const tabs: { key: typeof previewTab.value; label: string }[] = [
 ];
 
 function switchTab(key: typeof previewTab.value) {
+  console.log("[PreviewPane] switchTab", { key, hasPo: !!wb.selectedPo, hasSeg: !!wb.selectedSegment });
   previewTab.value = key;
   wb.refreshPreview(key);
 }
