@@ -240,8 +240,8 @@ class TestMonthlySlice:
 
 
 class TestSegmentPricing:
-    def test_unpriced_line_blocks(self) -> None:
-        # 该行只在 SK→GS 段定价，但请求 GS→EMAX
+    def test_unpriced_line_warns_but_generates(self) -> None:
+        """缺价→high warning，仍生成 model（单价=0）。"""
         lines = (
             make_order_line(
                 quantity=100,
@@ -249,23 +249,25 @@ class TestSegmentPricing:
             ),
         )
         result = build_invoice_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
-        assert result.model is None
+        assert result.model is not None
         codes = [m.code for m in result.messages]
         assert CODE_LINE_NOT_PRICED in codes
+        assert all(m.kind == "warning" for m in result.messages)
 
-    def test_partial_unpriced_blocks_whole(self) -> None:
-        """只要有一行在该段无价就不输出半成品 Invoice。"""
+    def test_partial_unpriced_still_generates(self) -> None:
+        """部分行无价→warning，所有行仍然输出（无价行单价=0）。"""
         lines = (
             make_order_line(sap="21-44640", quantity=100),
             make_order_line(
                 sap="21-44641",
                 quantity=200,
                 item_line_no="20",
-                prices={(ENTITY_SK_YM, ENTITY_GS_PTE): Decimal("28.0")},  # 仅这段
+                prices={(ENTITY_SK_YM, ENTITY_GS_PTE): Decimal("28.0")},
             ),
         )
         result = build_invoice_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
-        assert result.model is None
+        assert result.model is not None
+        assert any(m.code == CODE_LINE_NOT_PRICED for m in result.messages)
 
 
 # ————————————————————————————————————————
@@ -274,17 +276,20 @@ class TestSegmentPricing:
 
 
 class TestInvoiceRequiredFields:
-    def test_missing_invoice_no_blocks(self) -> None:
+    def test_missing_invoice_no_warns_but_generates(self) -> None:
+        """缺 INV#→warning，仍然生成 model（INV#=None）。"""
         lines = (make_order_line(invoice_no=None),)
         result = build_invoice_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
-        assert result.model is None
+        assert result.model is not None
         codes = [m.code for m in result.messages]
         assert CODE_INVOICE_NO_MISSING in codes
+        assert result.model.invoice_no is None
 
-    def test_missing_factory_doc_no_blocks(self) -> None:
+    def test_missing_factory_doc_no_warns_but_generates(self) -> None:
+        """缺 FACTORY DOC NO.→warning，仍然生成 model。"""
         lines = (make_order_line(factory_doc_no=None),)
         result = build_invoice_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
-        assert result.model is None
+        assert result.model is not None
         codes = [m.code for m in result.messages]
         assert CODE_FACTORY_DOC_NO_MISSING in codes
 
@@ -340,10 +345,12 @@ class TestPiModel:
         assert result.model is not None
         assert result.model.total_quantity == Decimal("300")
 
-    def test_pi_still_blocks_on_unpriced_line(self) -> None:
+    def test_pi_warns_on_unpriced_line(self) -> None:
+        """PI 缺价→warning，仍生成 model。"""
         lines = (make_order_line(quantity=100, prices={}),)
         result = build_pi_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
-        assert result.model is None
+        assert result.model is not None
+        assert any(m.kind == "warning" for m in result.messages)
 
 
 # ————————————————————————————————————————
@@ -379,7 +386,8 @@ class TestPoModel:
 
 
 class TestPlModel:
-    def test_pl_requires_invoice_no_and_factory_doc_no(self) -> None:
+    def test_pl_warns_on_missing_invoice_no(self) -> None:
+        """缺 INV#/FDOC→warning，仍生成 PL model。"""
         lines = (
             make_order_line(
                 invoice_no=None,
@@ -391,36 +399,40 @@ class TestPlModel:
             ),
         )
         result = build_pl_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
-        assert result.model is None
+        assert result.model is not None
         codes = {m.code for m in result.messages}
         assert "INVOICE_NO_MISSING" in codes
         assert "FACTORY_DOC_NO_MISSING" in codes
+        assert all(m.kind == "warning" for m in result.messages)
 
-    def test_pl_blocks_on_missing_carton_count(self) -> None:
+    def test_pl_warns_on_missing_carton_count(self) -> None:
+        """缺 CTNS→warning，仍生成 PL。"""
         lines = (make_order_line(carton_count=None),)
         result = build_pl_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
-        assert result.model is None
+        assert result.model is not None
         codes = {m.code for m in result.messages}
         assert "PACKING_DATA_MISSING" in codes
+        assert all(m.kind == "warning" for m in result.messages)
 
-    def test_pl_blocks_on_missing_weight(self) -> None:
+    def test_pl_warns_on_missing_weight(self) -> None:
+        """缺净重→warning，仍生成 PL。"""
         lines = (make_order_line(net_weight=None),)
         result = build_pl_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
-        assert result.model is None
+        assert result.model is not None
 
-    def test_pl_requires_all_packing_fields(self) -> None:
-        """四缺一即阻断。"""
+    def test_pl_warns_all_packing_fields_missing(self) -> None:
+        """四缺一→warning，仍生成 PL。"""
         lines = (
             make_order_line(
                 sap="21-44640",
                 carton_count=Decimal("10"),
                 net_weight=Decimal("12.5"),
                 gross_weight=Decimal("13.8"),
-                cbm=None,  # ← 缺
+                cbm=None,
             ),
         )
         result = build_pl_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
-        assert result.model is None
+        assert result.model is not None
         codes = {m.code for m in result.messages}
         assert "PACKING_DATA_MISSING" in codes
 
@@ -500,8 +512,8 @@ class TestPlModel:
         assert result.model.lines[0].carton_count == Decimal("12")
         assert result.model.total_quantity == Decimal("100")
 
-    def test_pl_blocks_when_partial_packing_failure(self) -> None:
-        """一行装箱齐全 +一行缺 CBM → 整体阻断。"""
+    def test_pl_warns_partial_packing_failure(self) -> None:
+        """一行装箱齐全+一行缺 → 两行都输出，缺失行填 0。"""
         lines = (
             make_order_line(
                 sap="21-44640",
@@ -520,7 +532,8 @@ class TestPlModel:
             ),
         )
         result = build_pl_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
-        assert result.model is None
+        assert result.model is not None
+        assert any(m.code == "PACKING_DATA_MISSING" for m in result.messages)
 
 
 # ————————————————————————————————————————

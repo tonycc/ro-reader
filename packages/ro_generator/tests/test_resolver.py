@@ -343,7 +343,8 @@ class TestPrices:
         assert (ENTITY_SK_YM, ENTITY_GS_PTE) not in line.prices
         assert (ENTITY_EMAX_PTE, ENTITY_PF) not in line.prices
 
-    def test_no_prices_blocks_row(self, tmp_path: Path) -> None:
+    def test_no_prices_warns_but_still_resolves(self, tmp_path: Path) -> None:
+        """缺价格→high warning，仍创建 OrderLine（prices={}）。"""
         path = make_base_file(
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
@@ -361,7 +362,8 @@ class TestPrices:
             result = resolve_po_lines(reader, "4500030844")
         codes = [m.code for m in result.messages]
         assert CODE_NO_PRICES in codes
-        assert result.lines == ()
+        assert all(m.kind == "warning" for m in result.messages)
+        assert len(result.lines) == 1
 
     def test_price_columns_constant_covers_all_legal_segments(self) -> None:
         """常量表必须覆盖所有合法链段，否则会有段被静默跳过。"""

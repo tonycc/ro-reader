@@ -278,7 +278,8 @@ class TestErrorPath:
         assert any(m.code == "PO_NOT_FOUND" for m in result.errors)
         assert result.output_file is None
 
-    def test_missing_invoice_no_blocks(self, tmp_path: Path) -> None:
+    def test_missing_invoice_no_warns_but_generates(self, tmp_path: Path) -> None:
+        """缺 INV#→warning，仍生成文件。"""
         path = make_base_file(
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
@@ -294,8 +295,8 @@ class TestErrorPath:
             output_dir=str(tmp_path / "out"),
         )
         result = generate(request)
-        assert result.status == "error"
-        codes = {m.code for m in result.errors}
+        assert result.status == "success", result.errors
+        codes = {m.code for m in result.warnings}
         assert "INVOICE_NO_MISSING" in codes
 
     def test_multi_doc_generates_both(self, tmp_path: Path) -> None:

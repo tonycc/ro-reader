@@ -126,16 +126,18 @@ def _assemble_lines(
         if unit_price is None:
             messages.append(
                 ValidationMessage(
-                    kind="blocking_error",
+                    kind="warning",
                     code=CODE_LINE_NOT_PRICED,
+                    severity="high",
                     message=(
-                        f"行（SAP {original_line.sap}）在链段 {segment[0]}→{segment[1]} 下无单价"
+                        f"行（SAP {original_line.sap}）在链段 {segment[0]}→{segment[1]} 下无单价，将显示占位符"
                     ),
                     sheet=SHEET_PO_RECORD,
                     field="SAP Number",
                 )
             )
-            continue
+            # Still create the line — renderer will write [缺:单价] placeholder
+            unit_price = Decimal("0")
         amount = (unit_price * line_quantity).quantize(Decimal("0.01"))
 
         if packing:
@@ -143,16 +145,17 @@ def _assemble_lines(
             if missing:
                 messages.append(
                     ValidationMessage(
-                        kind="blocking_error",
+                        kind="warning",
                         code=CODE_PACKING_DATA_MISSING,
+                        severity="high",
                         message=(
-                            f"行（SAP {original_line.sap}）缺少装箱数据：{', '.join(missing)}"
+                            f"行（SAP {original_line.sap}）缺少装箱数据：{', '.join(missing)}，将填 0"
                         ),
                         sheet=SHEET_PO_RECORD,
                         field=next(iter(missing)),
                     )
                 )
-                continue
+                # Fall through — line is still created with zeros for missing packing fields
 
         doc_lines.append(
             DocumentLine(
@@ -171,10 +174,6 @@ def _assemble_lines(
             )
         )
 
-    if any(m.code == CODE_LINE_NOT_PRICED for m in messages):
-        return None, messages
-    if packing and any(m.code == CODE_PACKING_DATA_MISSING for m in messages):
-        return None, messages
     return doc_lines, messages
 
 
@@ -302,8 +301,9 @@ def build_invoice_model(
     if not invoice_no:
         messages.append(
             ValidationMessage(
-                kind="blocking_error",
+                kind="warning",
                 code=CODE_INVOICE_NO_MISSING,
+                severity="high",
                 message="Invoice 单据要求 INV#，但 PO record 中未填写",
                 sheet=SHEET_PO_RECORD,
                 field="INV#",
@@ -312,15 +312,14 @@ def build_invoice_model(
     if not factory_doc_no:
         messages.append(
             ValidationMessage(
-                kind="blocking_error",
+                kind="warning",
                 code=CODE_FACTORY_DOC_NO_MISSING,
+                severity="high",
                 message="Invoice 单据要求 FACTORY DOC NO.，但 PO record 中未填写",
                 sheet=SHEET_PO_RECORD,
                 field="FACTORY DOC NO.",
             )
         )
-    if not invoice_no or not factory_doc_no:
-        return BuildResult(model=None, messages=tuple(messages))
 
     total_qty = sum((dl.quantity for dl in doc_lines), Decimal(0))
     total_amt = sum((dl.amount for dl in doc_lines), Decimal(0))
@@ -379,8 +378,9 @@ def build_pl_model(
     if not invoice_no:
         messages.append(
             ValidationMessage(
-                kind="blocking_error",
+                kind="warning",
                 code=CODE_INVOICE_NO_MISSING,
+                severity="high",
                 message="Packing List 要求 INV#，但 PO record 中未填写",
                 sheet=SHEET_PO_RECORD,
                 field="INV#",
@@ -389,15 +389,14 @@ def build_pl_model(
     if not factory_doc_no:
         messages.append(
             ValidationMessage(
-                kind="blocking_error",
+                kind="warning",
                 code=CODE_FACTORY_DOC_NO_MISSING,
+                severity="high",
                 message="Packing List 要求 FACTORY DOC NO.，但 PO record 中未填写",
                 sheet=SHEET_PO_RECORD,
                 field="FACTORY DOC NO.",
             )
         )
-    if not invoice_no or not factory_doc_no:
-        return BuildResult(model=None, messages=tuple(messages))
 
     total_qty = sum((dl.quantity for dl in doc_lines), Decimal(0))
     total_amt = sum((dl.amount for dl in doc_lines), Decimal(0))

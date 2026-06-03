@@ -105,25 +105,32 @@ _HEADER_FIELD_FROM_MODEL: Final[dict[str, str]] = {
 }
 
 
+# 缺值占位符的中文标签（key = mapping key）
+_PLACEHOLDER_LABELS: dict[str, str] = {
+    "invoice_no": "需填: INV#",
+    "factory_doc_no": "需填: FACTORY DOC NO.",
+    "ship_to": "需填: Ship To",
+    "po_no": "需填: PO#",
+    "invoice_month": "需填: 月份",
+    "unit_price": "需填: 单价",
+    "quantity": "需填: 数量",
+}
+
+
 def _write_header(
     ws: Worksheet,
     model: DocumentModel,
     mapping: TemplateMapping,
     builder: SourceIndexBuilder,
 ) -> None:
-    """按 mapping.header 写表头字段。
-
-    - mapping 中没列出的字段跳过
-    - model 中对应字段是 None 时**保留模板原值**（不覆盖样板里的占位文案）
-    """
+    """按 mapping.header 写表头字段。值为 None 时写 [需填: ...] 占位符。"""
     for model_attr, mapping_key in _HEADER_FIELD_FROM_MODEL.items():
         cell_addr = mapping.header.get(mapping_key)
         if not cell_addr:
             continue
         value = getattr(model, model_attr, None)
-        if value is None:
-            continue
-        ws[cell_addr] = value
+        label = _PLACEHOLDER_LABELS.get(mapping_key, f"[需填: {mapping_key}]")
+        ws[cell_addr] = value if value is not None else label
         # 表头字段大多在 sheet 元信息层面（INV# 等），用 row=None 标识"非具体行"
         builder.add(
             cell_addr,
@@ -248,13 +255,11 @@ def _write_data_row(
     builder.add(sap_addr, SourceLocation(SHEET_PO_RECORD, src_row, "SAP Number"))
 
     price_addr = f"{columns.unit_price}{row}"
-    ws[price_addr] = doc_line.unit_price
-    # 单价来源依链段不同，这里只标注它源自 PO record；具体哪一列由调用方根据 model.seller/buyer
-    # 反推（避免 renderer 重新计算链段）
+    ws[price_addr] = doc_line.unit_price if doc_line.unit_price != 0 else "[需填: 单价]"
     builder.add(price_addr, SourceLocation(SHEET_PO_RECORD, src_row, "unit_price"))
 
     qty_addr = f"{columns.quantity}{row}"
-    ws[qty_addr] = doc_line.quantity
+    ws[qty_addr] = doc_line.quantity if doc_line.quantity != 0 else "[需填: 数量]"
     builder.add(qty_addr, SourceLocation(SHEET_PO_RECORD, src_row, "FINALQTY"))
 
     # amount 列写公式：=E{row}*F{row}（保持模板风格，便于 Excel 用户审计）

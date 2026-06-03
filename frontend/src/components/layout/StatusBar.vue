@@ -10,8 +10,8 @@ const wb = useWorkbench();
     <span v-if="wb.selectedPo">PO {{ wb.selectedPo }} </span>
     <span v-if="wb.selectedSegment">{{ wb.selectedSegment.seller }} → {{ wb.selectedSegment.buyer }} </span>
     <span v-if="wb.selectedMonth">/ {{ wb.selectedMonth }}</span>
-    <span v-if="wb.blockingErrors.length" class="err-count"> ⚠ {{ wb.blockingErrors.length }} 阻断</span>
-    <span v-if="wb.warnings.length" class="warn-count"> ⚠ {{ wb.warnings.length }} 警告</span>
+    <span v-if="wb.warnings.length" class="warn-count"> · {{ wb.warnings.length }} 项待补全</span>
+    <span v-if="wb.blockingErrors.length" class="err-count"> · {{ wb.blockingErrors.length }} 阻断</span>
     <span v-if="wb.lastExportFile" class="exported"> · 已导出: {{ wb.lastExportFile.split('/').pop() }}</span>
   </footer>
 </template>

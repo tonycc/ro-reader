@@ -246,18 +246,18 @@ def _resolve_row(
     prices, subtotals, price_messages = _collect_prices(row, quantity, row_number)
     messages.extend(price_messages)
     if not prices:
-        # 任意链段都没价格——这条行无法装配任何单据
+        # 所有链段都没价格——降级为 warning，仍然生成行（缺价格处填占位符）
         messages.append(
             ValidationMessage(
-                kind="blocking_error",
+                kind="warning",
                 code=CODE_NO_PRICES,
                 message=f"SAP {sap!r} 在所有链段下均无可用价格",
                 sheet=SHEET_PO_RECORD,
                 row=row_number,
                 field="SK/YM USD FOB",
+                severity="high",
             )
         )
-        return None, messages
 
     # 月度出货
     monthly = _read_monthly_shipments(row)

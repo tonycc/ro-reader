@@ -59,35 +59,25 @@ export const useWorkbench = defineStore("workbench", () => {
   }
 
   async function selectPo(po_no: string) {
-    console.log("[selectPo] START", { po_no, prevBlockingErrors: blockingErrors.value.length });
     selectedPo.value = po_no;
     preview.value = null;
     blockingErrors.value = [];
     warnings.value = [];
     sourceIndex.value = [];
-    console.log("[selectPo] cleared state, blockingErrors now:", blockingErrors.value.length);
-    if (!baseFile.value) { console.log("[selectPo] no baseFile, returning"); return; }
+    if (!baseFile.value) return;
     const data = await api.getDataView(baseFile.value, po_no);
     dataRows.value = data.rows;
     dataHeaders.value = data.headers;
     const po = poList.value.find((p) => p.po_no === po_no);
-    console.log("[selectPo] po found:", { status: po?.status, segments: po?.chain_segments?.length });
     if (po?.chain_segments.length) {
       selectedSegment.value = po.chain_segments[0];
-      console.log("[selectPo] segment set:", selectedSegment.value);
     }
-    console.log("[selectPo] calling refreshPreview, blockingErrors before:", blockingErrors.value.length);
     await refreshPreview();
-    console.log("[selectPo] DONE, blockingErrors:", blockingErrors.value.length, "errors:", JSON.stringify(blockingErrors.value.slice(0, 3)));
   }
 
   async function refreshPreview(docType?: string) {
-    if (!baseFile.value || !selectedPo.value || !selectedSegment.value) {
-      console.log("[refreshPreview] SKIP - missing:", { base: !!baseFile.value, po: !!selectedPo.value, seg: !!selectedSegment.value });
-      return;
-    }
+    if (!baseFile.value || !selectedPo.value || !selectedSegment.value) return;
     const dt = docType || previewDocType.value || "INVOICE";
-    console.log("[refreshPreview] START", { po: selectedPo.value, segment: selectedSegment.value, doc: dt, month: selectedMonth.value });
     try {
       const result = await api.dryRun({
         base_file: baseFile.value,
@@ -97,24 +87,13 @@ export const useWorkbench = defineStore("workbench", () => {
         invoice_month: selectedMonth.value,
         document: dt,
       });
-      console.log("[refreshPreview] GOT result", {
-        status: result.status,
-        errors: result.errors?.length,
-        warnings: result.warnings?.length,
-        missing_inputs: result.missing_inputs,
-        files: result.files,
-      });
-      if (result.errors?.length) {
-        console.log("[refreshPreview] ERROR DETAILS:", JSON.stringify(result.errors.slice(0, 5)));
-      }
       preview.value = result;
       previewDocType.value = dt;
       sourceIndex.value = result.source_index ?? [];
       warnings.value = result.warnings;
       blockingErrors.value = result.errors;
-      console.log("[refreshPreview] DONE, blockingErrors set to:", blockingErrors.value.length);
     } catch (e) {
-      console.error("[refreshPreview] FAILED:", e);
+      console.error("dry-run failed", e);
     }
   }
 
