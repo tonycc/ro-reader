@@ -25,7 +25,7 @@ const tabs = [
 
 function switchTab(key: typeof previewTab.value) { previewTab.value = key; wb.refreshPreview(key); }
 
-function parseSheet(ws: Record<string, unknown>, sourceIndex: { doc_cell: string }[]) {
+function parseSheet(ws: Record<string, unknown>, tableStartRow: number) {
   const range = utils.decode_range((ws["!ref"] as string) || "A1");
   const merges = (ws["!merges"] || []) as { s: { r: number; c: number }; e: { r: number; c: number } }[];
 
@@ -36,13 +36,9 @@ function parseSheet(ws: Record<string, unknown>, sourceIndex: { doc_cell: string
         if (r !== m.s.r || c !== m.s.c) mergedHidden.add(`${r},${c}`);
   }
 
-  // Find first row with source data → table label row is one above it
-  const sourcedRows = new Set<number>();
-  for (const s of sourceIndex) {
-    try { sourcedRows.add(utils.decode_cell(s.doc_cell).r); } catch { /* skip */ }
-  }
-  const firstDataRow = sourcedRows.size > 0 ? Math.min(...sourcedRows) : -1;
-  const tableLabelRow = firstDataRow > 0 ? firstDataRow - 1 : -1;
+  // 用 mapping 中的 start_row 分割：start_row - 1 行是字段标签行
+  // (openpyxl 行号是 1-based，SheetJS 行号是 0-based)
+  const tableLabelRow = tableStartRow > 0 ? tableStartRow - 2 : -1;
 
   function buildCells(rr: number) {
     const cells: CellData[] = [];
@@ -124,7 +120,8 @@ watch(
       const xls = read(new Uint8Array(buf), { type: "array", cellStyles: true });
       const ws = xls.Sheets[xls.SheetNames[0]];
       if (!ws) { statusMsg.value = "无法读取 sheet"; return; }
-      parseSheet(ws as Record<string, unknown>, wb.sourceIndex);
+      const startRow = Number((result as any).metadata?.table_start_row) || 0;
+      parseSheet(ws as Record<string, unknown>, startRow);
     } catch (e) { statusMsg.value = `加载失败: ${String(e).substring(0, 80)}`; }
   },
   { immediate: true }

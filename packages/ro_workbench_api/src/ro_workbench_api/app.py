@@ -111,6 +111,7 @@ def _result_to_dict(result: GenerationResult) -> dict[str, Any]:
         ]
     else:
         payload["source_index"] = []
+    payload["metadata"] = dict(result.metadata) if result.metadata else {}
     return payload
 
 
