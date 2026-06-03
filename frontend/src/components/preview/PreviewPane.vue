@@ -82,6 +82,7 @@ watch(
   async (result) => {
     headerRows.value = [];
     dataRows.value = [];
+    const labelRow = (result?.summary?.table_label_row as number);
     tableStartRow.value = (result?.summary?.table_start_row as number) || 99;
     if (!result?.output_file) {
       if (result?.status === "needs_input") statusMsg.value = `请选择 ${result.missing_inputs?.join("、") || "..."}`;
@@ -102,9 +103,9 @@ watch(
       const ws = wb.Sheets[wb.SheetNames[0]];
       if (!ws) { statusMsg.value = "无法读取 sheet"; return; }
       const allRows = parseSheet(ws as Record<string, unknown>);
-      const start = tableStartRow.value || 99;
-      headerRows.value = allRows.filter((r) => r.rowNum < start);
-      dataRows.value = allRows.filter((r) => r.rowNum >= start);
+      const splitAt = (result?.summary?.table_label_row as number) || (result?.summary?.table_start_row as number) || 99;
+      headerRows.value = allRows.filter((r) => r.rowNum < splitAt);
+      dataRows.value = allRows.filter((r) => r.rowNum >= splitAt);
       // Mark first data row as label
       if (dataRows.value.length) dataRows.value[0] = { ...dataRows.value[0], isLabel: true } as RowData;
     } catch (e) { statusMsg.value = `加载失败: ${String(e).substring(0, 80)}`; }

@@ -225,8 +225,10 @@ def dry_run(po_no: str, req: DryRunRequest) -> dict[str, Any]:
         try:
             m = load_template_mapping(mapping_path)
             payload["summary"]["table_start_row"] = m.lines.start_row
+            payload["summary"]["table_label_row"] = m.lines.start_row - 1
         except Exception:
             payload["summary"]["table_start_row"] = 99
+            payload["summary"]["table_label_row"] = 17
     return payload
 
 

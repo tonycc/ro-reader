@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 出现问题时，先分析问题原因并在回复时输出问题原因
+
 ## 仓库当前状态
 
 四个 Phase 全部完成，项目可运行。
