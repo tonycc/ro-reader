@@ -68,7 +68,10 @@ function buildTableHtml(ws: Record<string, unknown>): string {
 
       // 数值类型 → 右对齐 + mono 字体
       const isNum = cell?.t === "n" || (!isNaN(Number(value)) && value !== "");
-      const cls = isNum ? "num" : "";
+      // 是否有溯源数据（= mapping 中配的字段）→ 加粗
+      const ref = utils.encode_cell({ r, c });
+      const hasSource = wb.sourceIndex.some((s) => s.doc_cell === ref);
+      const cls = [isNum ? "num" : "", hasSource ? "src" : ""].filter(Boolean).join(" ");
 
       let attrs = `id="${cellId}" class="${cls}"`;
       if (colspan > 1) attrs += ` colspan="${colspan}"`;
@@ -214,6 +217,9 @@ watch(
 }
 .html-preview :deep(.preview-table .num) {
   text-align: right; font-family: var(--font-mono);
+}
+.html-preview :deep(.preview-table .src) {
+  font-weight: 600;
 }
 .html-preview :deep(.preview-table tr:first-child td) {
   font-weight: 600; color: var(--fg-muted); font-size: var(--text-xs);
