@@ -165,8 +165,6 @@ watch(
 .html-preview :deep(tr:first-child) { border-bottom: 2px solid var(--border-strong); }
 .html-preview :deep(tr:first-child td) { font-weight: 600; color: var(--fg-muted); font-size: var(--text-xs); text-transform: none; }
 .html-preview :deep(tr:hover) { background: var(--surface-sunken); }
-.html-preview :deep(td:empty) { color: var(--fg-subtle); }
-.html-preview :deep(td:empty)::after { content: "—"; }
 .placeholder { padding: var(--space-8); text-align: center; color: var(--fg-subtle); }
 
 .tooltip { position: fixed; bottom: 32px; right: 16px; padding: var(--space-1) var(--space-2); background: var(--fg-default); color: var(--fg-on-accent); font-size: var(--text-xs); border-radius: var(--radius-sm); max-width: 320px; z-index: 100; }
