@@ -76,18 +76,8 @@ export const useWorkbench = defineStore("workbench", () => {
   }
 
   async function refreshPreview(docType?: string) {
+    if (!baseFile.value || !selectedPo.value || !selectedSegment.value) return;
     const dt = docType || previewDocType.value || "INVOICE";
-    console.log("[refreshPreview] called", {
-      dt,
-      hasBase: !!baseFile.value,
-      hasPo: !!selectedPo.value,
-      hasSeg: !!selectedSegment.value,
-      seg: selectedSegment.value,
-    });
-    if (!baseFile.value || !selectedPo.value || !selectedSegment.value) {
-      console.log("[refreshPreview] EARLY RETURN - missing required");
-      return;
-    }
     try {
       const result = await api.dryRun({
         base_file: baseFile.value,

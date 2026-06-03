@@ -18,7 +18,6 @@ const tabs: { key: typeof previewTab.value; label: string }[] = [
 ];
 
 function switchTab(key: typeof previewTab.value) {
-  console.log("[PreviewPane] switchTab", { key, hasPo: !!wb.selectedPo, hasSeg: !!wb.selectedSegment });
   previewTab.value = key;
   wb.refreshPreview(key);
 }
@@ -40,14 +39,6 @@ function onCellHover(e: MouseEvent) {
 watch(
   () => wb.preview,
   async (result) => {
-    console.log("[PreviewPane] watch fired", {
-      hasResult: !!result,
-      status: result?.status,
-      hasOutputFile: !!result?.output_file,
-      outputFile: result?.output_file?.substring(0, 60),
-      errors: result?.errors?.length,
-      warnings: result?.warnings?.length,
-    });
     if (!result?.output_file) {
       if (result?.status === "needs_input") {
         htmlContent.value = `<p style="padding:16px;color:#856404;">请选择 ${result.missing_inputs?.join("、") || "..."}</p>`;
