@@ -39,19 +39,24 @@ function buildTableHtml(ws: Record<string, unknown>): string {
     }
   }
 
-  // 收集非空行
+  // 收集非空行 & 有溯源的行
   const nonBlankRows = new Set<number>();
+  const sourcedRows = new Set<number>();
   for (let r = range.s.r; r <= range.e.r; r++) {
     for (let c = range.s.c; c <= range.e.c; c++) {
       const cell = ws[utils.encode_cell({ r, c })] as { v?: unknown } | undefined;
       if (cell && cell.v != null && cell.v !== "") { nonBlankRows.add(r); break; }
     }
   }
+  for (const s of wb.sourceIndex) {
+    try { sourcedRows.add(utils.decode_cell(s.doc_cell).r); } catch { /* skip */ }
+  }
 
   let html = '<table class="preview-table">';
   for (let r = range.s.r; r <= range.e.r; r++) {
     if (!nonBlankRows.has(r)) continue;
-    html += "<tr>";
+    const isLabel = !sourcedRows.has(r);
+    html += `<tr class="${isLabel ? "label-row" : ""}">`;
     for (let c = range.s.c; c <= range.e.c; c++) {
       const key = `${r},${c}`;
       if (mergedHidden.has(key)) continue;
@@ -68,10 +73,8 @@ function buildTableHtml(ws: Record<string, unknown>): string {
 
       // 数值类型 → 右对齐 + mono 字体
       const isNum = cell?.t === "n" || (!isNaN(Number(value)) && value !== "");
-      // 是否有溯源数据（= mapping 中配的字段）→ 加粗
-      const ref = utils.encode_cell({ r, c });
-      const hasSource = wb.sourceIndex.some((s) => s.doc_cell === ref);
-      const cls = [isNum ? "num" : "", hasSource ? "src" : ""].filter(Boolean).join(" ");
+      // 字段标签行（header 区域，未有溯源数据的行）→ 加粗
+      const cls = isNum ? "num" : "";
 
       let attrs = `id="${cellId}" class="${cls}"`;
       if (colspan > 1) attrs += ` colspan="${colspan}"`;
@@ -218,15 +221,12 @@ watch(
 .html-preview :deep(.preview-table .num) {
   text-align: right; font-family: var(--font-mono);
 }
-.html-preview :deep(.preview-table .src) {
-  font-weight: 600;
-}
-.html-preview :deep(.preview-table tr:first-child td) {
+.html-preview :deep(.preview-table .label-row td) {
   font-weight: 600; color: var(--fg-muted); font-size: var(--text-xs);
   border-bottom: 2px solid var(--border-strong); background: var(--surface-sunken);
 }
 .html-preview :deep(.preview-table tr:hover td) { background: var(--surface-sunken); }
-.html-preview :deep(.preview-table tr:first-child:hover td) { background: var(--surface-sunken); }
+.html-preview :deep(.preview-table .label-row:hover td) { background: var(--surface-sunken); }
 
 .preview-msg { padding: var(--space-3); margin: 0; }
 .preview-msg.warn { color: var(--status-partial-fg); }
