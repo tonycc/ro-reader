@@ -85,8 +85,8 @@ function parseSheet(ws: Record<string, unknown>, startRow: number | null): { hea
 
   const headerRows: RowData[] = [];
   const tableRows: RowData[] = [];
-  // startRow is 1-based, r is 0-based
-  const cutoff = startRow ? startRow - 1 : 99;
+  // startRow (1-based) 指向第一条数据行，字段标签在其上一行
+  const cutoff = startRow ? startRow - 2 : 99;
 
   for (let r = range.s.r; r <= range.e.r; r++) {
     if (!nonBlankRows.has(r)) continue;
