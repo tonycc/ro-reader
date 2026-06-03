@@ -8,6 +8,8 @@ header:
 lines:
   start_row: 22
   style_source_row: 22
+  row_fixed:
+    A: China
   columns:
     po_no: B
     item_line_no: C

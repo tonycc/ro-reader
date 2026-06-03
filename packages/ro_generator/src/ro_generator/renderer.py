@@ -178,6 +178,9 @@ def _write_lines_and_totals(
     for offset, doc_line in enumerate(model.lines):
         row = start_row + offset
         _write_data_row(ws, row, doc_line, columns, line_unit_label, builder, po_no=model.po_no)
+        # Write row_fixed values (e.g., Country of The Origin = "China")
+        for col_letter, fixed_val in mapping.lines.row_fixed.items():
+            ws[f"{col_letter}{row}"] = fixed_val
 
     # 4. 写合计（位置已被 openpyxl 自动平移）
     _write_totals(ws, model, mapping, totals_row_offset=insertion_count, builder=builder)

@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
@@ -51,6 +51,7 @@ class LinesSection:
     style_source_row: int
     columns: LineColumns
     unit_label: str | None = None  # 固定写到 unit_label 列的文案
+    row_fixed: dict[str, str] = field(default_factory=dict)  # 每行固定值 {列字母: 值}
 
 
 @dataclass(frozen=True)
@@ -167,11 +168,27 @@ def _parse_lines_section(raw: dict[str, object], yaml_path: Path) -> LinesSectio
     unit_label_default = lines.get("unit_label")
     unit_label = unit_label_default if isinstance(unit_label_default, str) else None
 
+    # Parse row_fixed: per-row fixed values {column_letter: value}
+    row_fixed: dict[str, str] = {}
+    rf = lines.get("row_fixed")
+    if isinstance(rf, dict):
+        for col_letter, val in rf.items():
+            if isinstance(col_letter, str) and isinstance(val, str):
+                col_letter = col_letter.strip().upper()
+                try:
+                    column_index_from_string(col_letter)
+                except (ValueError, KeyError):
+                    raise MappingError(
+                        f"lines.row_fixed 列字母 {col_letter!r} 不合法：{yaml_path}"
+                    )
+                row_fixed[col_letter] = val
+
     return LinesSection(
         start_row=start_row,
         style_source_row=style_source_row,
         columns=columns,
         unit_label=unit_label,
+        row_fixed=row_fixed,
     )
 
 
