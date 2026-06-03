@@ -157,7 +157,7 @@ class TestRenderBasic:
         assert ws["E18"].value == 32.8
         assert ws["F18"].value == 100
         assert ws["G18"].value == "PCS"  # mapping.lines.unit_label
-        assert ws["H18"].value == "=E18*F18"  # 公式
+        assert ws["H18"].value == pytest.approx(3280.0)  # 直接写入计算值，不再写公式
         assert ws["C18"].value == "Q1"
 
         assert ws["D19"].value == "21-44641"
