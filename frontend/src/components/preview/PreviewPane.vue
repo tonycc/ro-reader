@@ -154,8 +154,11 @@ watch(
 /* content */
 .preview-body { flex: 1; overflow: auto; padding: var(--space-2); }
 .html-preview { display: inline-block; min-width: 100%; }
-.html-preview :deep(table) { border-collapse: collapse; font-size: var(--text-xs); }
-.html-preview :deep(td) { border: 1px solid var(--border-default); padding: 1px 3px; }
+.html-preview :deep(table) { border-collapse: collapse; font-size: var(--text-sm); background: #fff; }
+.html-preview :deep(th), .html-preview :deep(td) { border: 1px solid #d4d4d8; padding: 3px 6px; min-width: 40px; white-space: nowrap; }
+.html-preview :deep(tr:nth-child(even)) { background: #fafafa; }
+.html-preview :deep(tr:first-child) { background: #e4e4e7; font-weight: 600; }
+.html-preview :deep(td[data-t="s"]) { text-align: left; }
 .placeholder { padding: var(--space-8); text-align: center; color: var(--fg-subtle); }
 
 .tooltip { position: fixed; bottom: 32px; right: 16px; padding: var(--space-1) var(--space-2); background: var(--fg-default); color: var(--fg-on-accent); font-size: var(--text-xs); border-radius: var(--radius-sm); max-width: 320px; z-index: 100; }
