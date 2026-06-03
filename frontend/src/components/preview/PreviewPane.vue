@@ -62,6 +62,20 @@ watch(
       const workbook = read(new Uint8Array(buf), { type: "array", cellStyles: true });
       const ws = workbook.Sheets[workbook.SheetNames[0]];
       if (!ws) { htmlContent.value = "<p>无法读取 sheet</p>"; return; }
+      // Remove completely blank rows before rendering
+      const range = utils.decode_range(ws["!ref"] || "A1");
+      for (let r = range.s.r; r <= range.e.r; r++) {
+        let hasContent = false;
+        for (let c = range.s.c; c <= range.e.c; c++) {
+          const cell = ws[utils.encode_cell({ r, c })];
+          if (cell && cell.v != null && cell.v !== "") { hasContent = true; break; }
+        }
+        if (!hasContent) {
+          for (let c = range.s.c; c <= range.e.c; c++) {
+            delete ws[utils.encode_cell({ r, c })];
+          }
+        }
+      }
       htmlContent.value = utils.sheet_to_html(ws, { editable: false });
     } catch (e) {
       htmlContent.value = `<p>加载预览失败: ${String(e).substring(0, 80)}</p>`;
