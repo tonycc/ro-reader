@@ -43,8 +43,13 @@ watch(
       if (result?.status === "needs_input") {
         htmlContent.value = `<p style="padding:16px;color:#856404;">请选择 ${result.missing_inputs?.join("、") || "..."}</p>`;
       } else if (result?.status === "error") {
-        const firstErr = (result.errors?.[0] as any)?.code || "...";
-        htmlContent.value = `<p style="padding:16px;color:#991b1b;">生成失败：${firstErr}</p>`;
+        const err = (result.errors?.[0] as any) || {};
+        const code = err.code || "...";
+        if (code === "MAPPING_NOT_FOUND" && wb.selectedSegment?.seller?.includes("SK") || wb.selectedSegment?.seller?.includes("YM")) {
+          htmlContent.value = `<p style="padding:16px;color:#856404;">${wb.selectedSegment?.seller || "该主体"}不提供 PO 模板<br>请切换到 GS PTE 或 EMAX PTE 链段</p>`;
+        } else {
+          htmlContent.value = `<p style="padding:16px;color:#991b1b;">生成失败：${code}<br>${err.message || ""}</p>`;
+        }
       } else {
         htmlContent.value = "";
       }
