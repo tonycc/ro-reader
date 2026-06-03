@@ -6,14 +6,28 @@ style:
   bold:
     - A1
     - A2
-    - B4
-    - B6
-  underline:
-    - B6
+    - A4
+    - A6
+    - A7
+    - A9
+    - A13
+    - A14
     - F6
     - F7
-    - B9
     - F9
+    - F13
+    - F14
+  underline:
+    - B6
+    - B7
+    - B9
+    - B13
+    - B14
+    - G6
+    - G7
+    - G9
+    - G13
+    - G14
 header:
   pi_no: B6
   document_date: F6
