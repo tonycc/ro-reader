@@ -82,7 +82,6 @@ watch(
   async (result) => {
     headerRows.value = [];
     dataRows.value = [];
-    const labelRow = (result?.summary?.table_label_row as number);
     tableStartRow.value = (result?.summary?.table_start_row as number) || 99;
     if (!result?.output_file) {
       if (result?.status === "needs_input") statusMsg.value = `请选择 ${result.missing_inputs?.join("、") || "..."}`;
