@@ -62,13 +62,7 @@ watch(
       const workbook = read(new Uint8Array(buf), { type: "array", cellStyles: true });
       const ws = workbook.Sheets[workbook.SheetNames[0]];
       if (!ws) { htmlContent.value = "<p>无法读取 sheet</p>"; return; }
-      let html = utils.sheet_to_html(ws, { editable: false });
-      // 找到列名行（含 "PO Number" / "SAP ITEM#" 等），加 bold-row class
-      html = html.replace(
-        /<tr>(<td[^>]*>.*?(?:PO Number|SAP ITEM#|Item Number|Description|QTY|DESCRIPT|GOODS).*?<\/tr>)/i,
-        '<tr class="bold-row">$1'
-      );
-      htmlContent.value = html;
+      htmlContent.value = utils.sheet_to_html(ws, { editable: false });
     } catch (e) {
       htmlContent.value = `<p>加载预览失败: ${String(e).substring(0, 80)}</p>`;
     }
@@ -160,6 +154,7 @@ watch(
 /* content */
 .preview-body { flex: 1; overflow: auto; padding: var(--space-2); }
 .html-preview { display: inline-block; min-width: 100%; }
+.html-preview :deep(table) { width: max-content; min-width: 100%; }
 .html-preview :deep(table) {
   border-collapse: collapse; font-size: var(--text-sm); font-family: var(--font-sans);
   border: 1px solid var(--border-default); background: var(--surface-default);
@@ -168,8 +163,8 @@ watch(
   padding: 4px 8px; text-align: left; vertical-align: top;
   border-bottom: 1px solid var(--border-default);
 }
-.html-preview :deep(tr.bold-row) { border-bottom: 2px solid var(--border-strong); }
-.html-preview :deep(tr.bold-row td) { font-weight: 700; color: var(--fg-default); font-size: var(--text-sm); background: var(--surface-sunken); }
+.html-preview :deep(tr:first-child) { border-bottom: 2px solid var(--border-strong); }
+.html-preview :deep(tr:first-child td) { font-weight: 600; color: var(--fg-muted); font-size: var(--text-xs); text-transform: none; }
 .html-preview :deep(tr:hover) { background: var(--surface-sunken); }
 .placeholder { padding: var(--space-8); text-align: center; color: var(--fg-subtle); }
 
