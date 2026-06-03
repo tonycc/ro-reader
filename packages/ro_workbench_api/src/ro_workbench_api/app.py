@@ -216,7 +216,18 @@ def dry_run(po_no: str, req: DryRunRequest) -> dict[str, Any]:
         output_dir=out_dir,
     )
     result = generate(request)
-    return _result_to_dict(result)
+    payload = _result_to_dict(result)
+    # 从 mapping 中获取表格起始行
+    from ro_generator.generator import _builtin_mapping_path
+    mapping_path = _builtin_mapping_path(req.seller, doc)
+    if mapping_path:
+        from ro_generator.template_mapping import load_template_mapping
+        try:
+            m = load_template_mapping(mapping_path)
+            payload["summary"]["table_start_row"] = m.lines.start_row
+        except Exception:
+            payload["summary"]["table_start_row"] = 99
+    return payload
 
 
 @app.post("/po/{po_no}/edit")
