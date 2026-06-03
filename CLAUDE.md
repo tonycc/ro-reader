@@ -19,6 +19,7 @@ tests/fixtures/        合成 base 文件生成脚本
 - `docs/product/ro-document-generator-product-plan.md`：**产品方案**（最权威，所有产品决策以此为准）。
 - `docs/development/ro-document-workbench-ui-design.md`：**前端 UI 与交互设计**。
 - `docs/development/implementation-guide.md`：**工程实施指南**（含各 Phase 细粒度任务清单与状态）。
+- `docs/development/field-data-mapping.md`：**四类单据逐字段取数逻辑**（每个字段的数据来源、取数规则、校验条件）。
 - `docs/development/phase-0-spike-results.md`：Phase 0 spike 结论。
 
 > 当 docs 文件之间冲突时，优先级为：产品方案 > UI 设计 > 实施指南 > CLAUDE.md。
