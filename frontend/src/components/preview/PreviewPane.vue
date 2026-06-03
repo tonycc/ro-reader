@@ -183,7 +183,7 @@ watch(
 .placeholder { padding: var(--space-8); text-align: center; color: var(--fg-subtle); }
 
 .preview-table { border-collapse: collapse; width: max-content; min-width: 100%; font-size: var(--text-sm); font-family: var(--font-sans); background: var(--surface-default); }
-.preview-table td { padding: 5px 10px; border-bottom: 1px solid var(--border-default); vertical-align: middle; white-space: nowrap; min-width: 60px; }
+.preview-table td { padding: 5px 10px; border-bottom: 1px solid var(--border-default); vertical-align: middle; white-space: nowrap; }
 .preview-table td.num { text-align: right; font-family: var(--font-mono); }
 .preview-table .label-row td { font-weight: 600; color: var(--fg-default); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.02em; border-bottom: 2px solid var(--border-strong); background: var(--surface-sunken); }
 .preview-table .label-row td:empty { background: transparent; }
