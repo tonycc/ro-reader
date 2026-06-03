@@ -8,8 +8,10 @@ const previewTab = ref<"INVOICE" | "PI" | "PO" | "PL">("INVOICE");
 const zoom = ref(100);
 
 interface CellData { value: string; colspan: number; rowspan: number; cellRef: string; isNum: boolean }
-interface RowData { cells: CellData[]; isLabel: boolean }
-const tableData = ref<RowData[]>([]);
+interface RowData { cells: CellData[] }
+
+const headerRows = ref<RowData[]>([]);
+const tableRows = ref<RowData[]>([]);
 const statusMsg = ref("");
 const hoveredCell = ref("");
 const hoverSource = ref<string>("");
@@ -23,7 +25,7 @@ const tabs = [
 
 function switchTab(key: typeof previewTab.value) { previewTab.value = key; wb.refreshPreview(key); }
 
-function parseSheet(ws: Record<string, unknown>): RowData[] {
+function parseSheet(ws: Record<string, unknown>, sourceIndex: { doc_cell: string }[]) {
   const range = utils.decode_range((ws["!ref"] as string) || "A1");
   const merges = (ws["!merges"] || []) as { s: { r: number; c: number }; e: { r: number; c: number } }[];
 
@@ -34,37 +36,61 @@ function parseSheet(ws: Record<string, unknown>): RowData[] {
         if (r !== m.s.r || c !== m.s.c) mergedHidden.add(`${r},${c}`);
   }
 
-  const nonBlankRows = new Set<number>();
-  for (let r = range.s.r; r <= range.e.r; r++) {
-    for (let c = range.s.c; c <= range.e.c; c++) {
-      const cell = ws[utils.encode_cell({ r, c })] as { v?: unknown } | undefined;
-      if (cell?.v != null && cell.v !== "") { nonBlankRows.add(r); break; }
-    }
+  // Find first row with source data → table label row is one above it
+  const sourcedRows = new Set<number>();
+  for (const s of sourceIndex) {
+    try { sourcedRows.add(utils.decode_cell(s.doc_cell).r); } catch { /* skip */ }
   }
+  const firstDataRow = sourcedRows.size > 0 ? Math.min(...sourcedRows) : -1;
+  const tableLabelRow = firstDataRow > 0 ? firstDataRow - 1 : -1;
 
-  const rows: RowData[] = [];
-  let rowIdx = 0;
-  for (let r = range.s.r; r <= range.e.r; r++) {
-    if (!nonBlankRows.has(r)) continue;
+  function buildCells(rr: number) {
     const cells: CellData[] = [];
     for (let c = range.s.c; c <= range.e.c; c++) {
-      if (mergedHidden.has(`${r},${c}`)) continue;
-      const cell = ws[utils.encode_cell({ r, c })] as { v?: unknown; t?: string } | undefined;
+      if (mergedHidden.has(`${rr},${c}`)) continue;
+      const cell = ws[utils.encode_cell({ r: rr, c })] as { v?: unknown; t?: string } | undefined;
       const value = cell?.v != null ? String(cell.v) : "";
-      const merge = merges.find((m) => m.s.r === r && m.s.c === c);
-      const isNum = cell?.t === "n" || (value !== "" && !isNaN(Number(value)));
+      const merge = merges.find((m) => m.s.r === rr && m.s.c === c);
       cells.push({
         value,
         colspan: merge ? merge.e.c - merge.s.c + 1 : 1,
         rowspan: merge ? merge.e.r - merge.s.r + 1 : 1,
-        cellRef: utils.encode_cell({ r, c }),
-        isNum,
+        cellRef: utils.encode_cell({ r: rr, c }),
+        isNum: cell?.t === "n" || (value !== "" && !isNaN(Number(value))),
       });
     }
-    rows.push({ cells, isLabel: rowIdx === 0 });
-    rowIdx++;
+    return cells;
   }
-  return rows;
+
+  function isBlank(rr: number) {
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const cell = ws[utils.encode_cell({ r: rr, c })] as { v?: unknown } | undefined;
+      if (cell?.v != null && cell.v !== "") return false;
+    }
+    return true;
+  }
+
+  const hRows: RowData[] = [];
+  const tRows: RowData[] = [];
+
+  if (tableLabelRow >= 0) {
+    // Header: rows before the table label row
+    for (let r = range.s.r; r < tableLabelRow; r++) {
+      if (!isBlank(r)) hRows.push({ cells: buildCells(r) });
+    }
+    // Table: label row + data rows
+    for (let r = tableLabelRow; r <= range.e.r; r++) {
+      if (!isBlank(r)) tRows.push({ cells: buildCells(r) });
+    }
+  } else {
+    // Fallback: all rows in header if no source data
+    for (let r = range.s.r; r <= range.e.r; r++) {
+      if (!isBlank(r)) hRows.push({ cells: buildCells(r) });
+    }
+  }
+
+  headerRows.value = hRows;
+  tableRows.value = tRows;
 }
 
 function onCellEnter(cellRef: string) {
@@ -74,13 +100,12 @@ function onCellEnter(cellRef: string) {
     ? `${entry.source.sheet} · ${entry.source.field}` + (entry.source.row ? ` row ${entry.source.row}` : "")
     : "";
 }
-
 function onCellLeave() { hoveredCell.value = ""; hoverSource.value = ""; }
 
 watch(
   () => wb.preview,
   async (result) => {
-    tableData.value = [];
+    headerRows.value = []; tableRows.value = [];
     if (!result?.output_file) {
       if (result?.status === "needs_input") statusMsg.value = `请选择 ${result.missing_inputs?.join("、") || "..."}`;
       else if (result?.status === "error") {
@@ -96,10 +121,10 @@ watch(
       const resp = await fetch(`http://127.0.0.1:54321/download?path=${encodeURIComponent(result.output_file)}`);
       if (!resp.ok) { statusMsg.value = `下载失败 HTTP ${resp.status}`; return; }
       const buf = await resp.arrayBuffer();
-      const wb = read(new Uint8Array(buf), { type: "array", cellStyles: true });
-      const ws = wb.Sheets[wb.SheetNames[0]];
+      const xls = read(new Uint8Array(buf), { type: "array", cellStyles: true });
+      const ws = xls.Sheets[xls.SheetNames[0]];
       if (!ws) { statusMsg.value = "无法读取 sheet"; return; }
-      tableData.value = parseSheet(ws as Record<string, unknown>);
+      parseSheet(ws as Record<string, unknown>, wb.sourceIndex);
     } catch (e) { statusMsg.value = `加载失败: ${String(e).substring(0, 80)}`; }
   },
   { immediate: true }
@@ -139,16 +164,32 @@ watch(
     <div class="preview-body">
       <div v-if="!wb.selectedPo" class="placeholder">选择 PO 后自动预览</div>
       <div v-else-if="statusMsg" class="status-msg" :class="{ err: statusMsg.includes('失败') || statusMsg.includes('不提供') }">{{ statusMsg }}</div>
-      <div v-else-if="!tableData.length" class="placeholder">加载预览中…</div>
-      <table v-else class="preview-table" :style="{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left' }">
-        <tr v-for="(row, ri) in tableData" :key="ri" :class="{ 'label-row': row.isLabel }">
-          <td v-for="(cell, ci) in row.cells" :key="ci"
-            :class="{ num: cell.isNum }"
-            :colspan="cell.colspan" :rowspan="cell.rowspan"
-            @mouseenter="onCellEnter(cell.cellRef)" @mouseleave="onCellLeave"
-          >{{ cell.value }}</td>
-        </tr>
-      </table>
+      <div v-else-if="!headerRows.length && !tableRows.length" class="placeholder">加载预览中…</div>
+      <template v-else>
+        <!-- 表头区：单据元信息 -->
+        <div v-if="headerRows.length" class="doc-header" :style="{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left' }">
+          <table class="header-table">
+            <tr v-for="(row, ri) in headerRows" :key="ri">
+              <td v-for="(cell, ci) in row.cells" :key="ci"
+                :colspan="cell.colspan" :rowspan="cell.rowspan"
+                :class="{ num: cell.isNum }"
+              >{{ cell.value }}</td>
+            </tr>
+          </table>
+        </div>
+        <!-- 数据表格区：行项目 -->
+        <div v-if="tableRows.length" class="table-wrap" :style="{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left' }">
+          <table class="preview-table">
+            <tr v-for="(row, ri) in tableRows" :key="ri" :class="{ 'label-row': ri === 0 }">
+              <td v-for="(cell, ci) in row.cells" :key="ci"
+                :class="{ num: cell.isNum }"
+                :colspan="cell.colspan" :rowspan="cell.rowspan"
+                @mouseenter="onCellEnter(cell.cellRef)" @mouseleave="onCellLeave"
+              >{{ cell.value }}</td>
+            </tr>
+          </table>
+        </div>
+      </template>
     </div>
     <div v-if="hoverSource" class="tooltip">{{ hoverSource }} · {{ hoveredCell }}</div>
   </div>
@@ -182,6 +223,14 @@ watch(
 .status-msg.err { color: var(--status-blocked-fg); }
 .placeholder { padding: var(--space-8); text-align: center; color: var(--fg-subtle); }
 
+/* 单据表头 */
+.doc-header { margin-bottom: var(--space-4); }
+.header-table { border-collapse: collapse; font-size: var(--text-sm); font-family: var(--font-sans); }
+.header-table td { padding: 2px 8px; vertical-align: middle; }
+.header-table td.num { font-family: var(--font-mono); }
+
+/* 数据表格 */
+.table-wrap { overflow-x: auto; }
 .preview-table {
   border-collapse: separate; border-spacing: 0;
   width: max-content; min-width: 100%;
