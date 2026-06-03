@@ -163,11 +163,10 @@ watch(
   border-bottom: 1px solid var(--border-default);
 }
 .html-preview :deep(tr:first-child) { border-bottom: 2px solid var(--border-strong); background: var(--surface-sunken); }
-.html-preview :deep(tr:first-child td) { color: var(--fg-default); font-size: var(--text-sm); }
-/* 模板中所有文本字段（公司名、标题、标签、表头等）加粗 */
-.html-preview :deep(td[data-t="s"]) { font-weight: 700; }
-/* 数字和空单元格保持正常 */
-.html-preview :deep(td[data-t="n"]) { font-weight: 400; }
+.html-preview :deep(tr:first-child td) { font-weight: 700; color: var(--fg-default); font-size: var(--text-sm); }
+/* 模板标签行（前 17 行是公司名、标题、表头等）全部加粗 */
+.html-preview :deep(tr:nth-child(-n+17) td) { font-weight: 700; }
+.html-preview :deep(tr:nth-child(n+18) td) { font-weight: 400; }
 .html-preview :deep(tr:hover) { background: var(--surface-sunken); }
 .placeholder { padding: var(--space-8); text-align: center; color: var(--fg-subtle); }
 
