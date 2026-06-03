@@ -76,6 +76,7 @@ function onCellEnter(cellRef: string) {
 }
 
 function onCellLeave() { hoveredCell.value = ""; hoverSource.value = ""; }
+function hasSource(cellRef: string): boolean { return wb.sourceIndex.some((s) => s.doc_cell === cellRef); }
 
 watch(
   () => wb.preview,
@@ -153,6 +154,7 @@ watch(
           <table class="header-table">
             <tr v-for="(row, ri) in headerRows" :key="'h'+ri">
               <td v-for="(cell, ci) in row.cells" :key="ci"
+                :class="{ sourced: hasSource(cell.cellRef) }"
                 :colspan="cell.colspan" :rowspan="cell.rowspan"
               >{{ cell.value }}</td>
             </tr>
@@ -205,6 +207,7 @@ watch(
 .preview-header { margin-bottom: var(--space-3); }
 .header-table { border-collapse: collapse; font-size: var(--text-sm); font-family: var(--font-sans); }
 .header-table td { padding: 2px 6px; vertical-align: middle; white-space: nowrap; }
+.header-table td.sourced { border-bottom: 1.5px solid var(--accent-default); }
 
 .preview-table {
   border-collapse: separate; border-spacing: 0;
