@@ -270,7 +270,16 @@ def _write_data_row(
 
     if columns.unit_label and fixed_unit_label:
         ws[f"{columns.unit_label}{row}"] = fixed_unit_label
-        # 单位标签是模板里的固定文案，不溯源
+
+    # PL 专属：装箱字段按行写入
+    if columns.net_weight and doc_line.net_weight is not None:
+        ws[f"{columns.net_weight}{row}"] = doc_line.net_weight
+    if columns.gross_weight and doc_line.gross_weight is not None:
+        ws[f"{columns.gross_weight}{row}"] = doc_line.gross_weight
+    if columns.carton_count and doc_line.carton_count is not None:
+        ws[f"{columns.carton_count}{row}"] = doc_line.carton_count
+    if columns.cbm and doc_line.cbm is not None:
+        ws[f"{columns.cbm}{row}"] = doc_line.cbm
 
 
 def _write_totals(

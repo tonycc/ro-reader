@@ -28,11 +28,7 @@ from ro_generator.models import DocumentType
 
 @dataclass(frozen=True)
 class LineColumns:
-    """订单行各业务字段对应的模板列字母（如 "B"、"H"）。
-
-    必填项保证 renderer 在装配每行时知道写到哪一列。
-    可选项（如 unit_label）允许模板用固定文案覆盖，YAML 不提供时跳过。
-    """
+    """订单行各业务字段对应的模板列字母。"""
 
     sap: str
     quantity: str
@@ -42,7 +38,11 @@ class LineColumns:
     item_line_no: str | None = None
     description: str | None = None
     gs_model: str | None = None
-    unit_label: str | None = None  # PCS 等单位列
+    unit_label: str | None = None
+    net_weight: str | None = None  # PL 专用
+    gross_weight: str | None = None  # PL 专用
+    carton_count: str | None = None  # PL 专用
+    cbm: str | None = None  # PL 专用
 
 
 @dataclass(frozen=True)
@@ -204,7 +204,8 @@ def _parse_lines_section(raw: dict[str, object], yaml_path: Path) -> LinesSectio
 
 def _parse_columns(raw: dict[object, object], yaml_path: Path) -> LineColumns:
     required = ["sap", "quantity", "unit_price", "amount"]
-    optional = ["po_no", "item_line_no", "description", "gs_model", "unit_label"]
+    optional = ["po_no", "item_line_no", "description", "gs_model", "unit_label",
+                "net_weight", "gross_weight", "carton_count", "cbm"]
 
     parsed: dict[str, str] = {}
     for key in required + optional:

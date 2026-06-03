@@ -2,8 +2,14 @@ document: pl
 template_version: "v1"
 template: templates/emax/pl.xlsx
 sheet: PL
+style:
+  bold:
+    - A1
+    - A2
+  underline:
+    - I6
 header:
-  invoice_no: F4
+  invoice_no: I6
 lines:
   start_row: 13
   style_source_row: 14
@@ -16,6 +22,9 @@ lines:
     unit_label: F
     unit_price: B
     amount: B
+    net_weight: G
+    gross_weight: I
 totals:
   quantity: E21
-  unit_label: F21
+  net_weight: G21
+  gross_weight: I21
