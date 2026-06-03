@@ -186,7 +186,8 @@ class TestSuccessPath:
 
 
 class TestNeedsInput:
-    def test_multiple_months_returns_options(self, tmp_path: Path) -> None:
+    def test_multiple_months_auto_selects_first(self, tmp_path: Path) -> None:
+        """多月→自动选第一个月，产生 AUTO_SELECTED_MONTH warning。"""
         path = make_base_file(
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
@@ -201,14 +202,10 @@ class TestNeedsInput:
             output_dir=str(tmp_path / "out"),
         )
         result = generate(request)
-        assert result.status == "needs_input"
-        assert INPUT_INVOICE_MONTH in result.missing_inputs
-        opts = result.options[INPUT_INVOICE_MONTH]
-        values = {o["value"] for o in opts}
-        assert values == {"2601", "2602"}
-        # label 应包含数量信息
-        for o in opts:
-            assert "出货" in o["label"]
+        assert result.status == "success"
+        assert result.summary["invoice_month"] == "2601"
+        codes = {m.code for m in result.warnings}
+        assert "AUTO_SELECTED_MONTH" in codes
 
     def test_single_month_auto_selects(self, tmp_path: Path) -> None:
         """只有一个月份有出货时不应触发 needs_input。"""

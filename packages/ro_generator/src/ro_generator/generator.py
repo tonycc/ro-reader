@@ -200,13 +200,19 @@ def _generate(request: DocumentRequest) -> GenerationResult:
                 )
             )
         if len(candidates) > 1:
-            return GenerationResult(
-                status="needs_input",
-                missing_inputs=(INPUT_INVOICE_MONTH,),
-                options={INPUT_INVOICE_MONTH: candidates},
-                warnings=warnings_resolver,
+            # 自动选第一个月，加一条 warning 告知用户当前用的是哪个月
+            invoice_month = candidates[0]["value"]
+            warnings_resolver = warnings_resolver + (
+                ValidationMessage(
+                    kind="warning",
+                    code="AUTO_SELECTED_MONTH",
+                    severity="high",
+                    message=f"PO {request.po_no} 存在多个月份的出货数据，已自动选择 {invoice_month} 月"
+                    f"（{candidates[0]['label']}）。可点击月份切换。",
+                ),
             )
-        invoice_month = candidates[0]["value"]
+        elif len(candidates) == 1:
+            invoice_month = candidates[0]["value"]
 
     # 6. 同一 (po, month) 多个 INV# → needs_input
     invoiced_docs = [d for d in documents if d in ("INVOICE", "PL")]

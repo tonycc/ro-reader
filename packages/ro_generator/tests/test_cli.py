@@ -391,8 +391,8 @@ class TestErrorExitCode:
 
 
 class TestNeedsInputExitCode:
-    def test_needs_input_exit_code(self, tmp_path: Path) -> None:
-        # 多月份触发 needs_input
+    def test_multi_month_auto_selects_first(self, tmp_path: Path) -> None:
+        """多月→自动选第一月，退出码 0（success）。"""
         wb = Workbook()
         default = wb.active
         if default is not None:
@@ -454,10 +454,9 @@ class TestNeedsInputExitCode:
                 "--json",
             ]
         )
-        assert code == EXIT_NEEDS_INPUT
+        assert code == EXIT_SUCCESS
         payload = json.loads(stdout)
-        assert payload["status"] == "needs_input"
-        assert "invoice_month" in payload["missing_inputs"]
+        assert payload["status"] == "success"
 
 
 # ————————————————————————————————————————
