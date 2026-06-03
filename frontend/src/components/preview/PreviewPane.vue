@@ -8,7 +8,7 @@ const previewTab = ref<"INVOICE" | "PI" | "PO" | "PL">("INVOICE");
 const htmlContent = ref("");
 const hoveredCell = ref("");
 const hoverSource = ref<string>("");
-const zoom = ref(100); // 50–150
+const zoom = ref(100);
 
 const tabs: { key: typeof previewTab.value; label: string }[] = [
   { key: "PI", label: "PI" },
@@ -73,6 +73,36 @@ watch(
 
 <template>
   <div class="preview-pane">
+    <!-- 主体 + 月份选择 -->
+    <div class="preview-toolbar">
+      <div class="seller-group">
+        <span class="label">主体:</span>
+        <button
+          v-for="s in wb.poEntry?.sellers ?? []"
+          :key="s"
+          class="sel-btn"
+          :class="{ active: wb.selectedSeller === s }"
+          @click="wb.selectSeller(s)"
+        >{{ s }}</button>
+        <span v-if="!wb.selectedPo" class="hint">选择 PO</span>
+      </div>
+      <div class="month-group">
+        <span class="label">月份:</span>
+        <template v-if="wb.poEntry?.monthly_months?.length">
+          <button
+            v-for="m in wb.poEntry!.monthly_months"
+            :key="m"
+            class="sel-btn mono"
+            :class="{ active: wb.selectedMonth === m }"
+            @click="wb.selectMonth(wb.selectedMonth === m ? null : m)"
+          >{{ m }}</button>
+          <span v-if="wb.selectedMonth" class="clear" @click="wb.selectMonth(null)">清除</span>
+        </template>
+        <span v-else class="hint">无月度数据</span>
+      </div>
+    </div>
+
+    <!-- 单据切换标签 + 缩放 -->
     <div class="tab-bar">
       <button
         v-for="tab in tabs" :key="tab.key"
@@ -85,6 +115,8 @@ watch(
         <button class="zoom-btn" @click="zoom = Math.min(150, zoom + 10)" :disabled="zoom >= 150">+</button>
       </span>
     </div>
+
+    <!-- 预览内容 -->
     <div class="preview-body" @mouseover="onCellHover">
       <div v-if="!wb.selectedPo" class="placeholder">选择 PO 后自动预览</div>
       <div v-else-if="!htmlContent" class="placeholder">加载预览中…</div>
@@ -97,6 +129,18 @@ watch(
 <style scoped>
 .preview-pane { display: flex; flex-direction: column; height: 100%; }
 
+/* toolbar */
+.preview-toolbar { padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border-default); background: var(--surface-sunken); display: flex; flex-direction: column; gap: 4px; }
+.seller-group, .month-group { display: flex; align-items: center; gap: var(--space-1); }
+.label { color: var(--fg-muted); font-size: var(--text-xs); white-space: nowrap; width: 32px; flex-shrink: 0; }
+.sel-btn { padding: 2px var(--space-2); border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--surface-default); cursor: pointer; font-size: var(--text-xs); color: var(--fg-muted); }
+.sel-btn.active { background: var(--accent-subtle); border-color: var(--accent-default); color: var(--accent-default); font-weight: 600; }
+.sel-btn:hover { border-color: var(--accent-default); }
+.sel-btn.mono { font-family: var(--font-mono); }
+.clear { cursor: pointer; font-size: var(--text-xs); color: var(--accent-default); }
+.hint { font-size: var(--text-xs); color: var(--fg-subtle); }
+
+/* tabs */
 .tab-bar { display: flex; align-items: center; border-bottom: 1px solid var(--border-default); padding: 0 var(--space-2); gap: var(--space-1); }
 .tab-btn { padding: var(--space-2) var(--space-3); border: none; border-bottom: 2px solid transparent; background: none; cursor: pointer; font-size: var(--text-sm); color: var(--fg-muted); }
 .tab-btn.active { border-bottom-color: var(--accent-default); color: var(--accent-default); font-weight: 600; }
@@ -105,9 +149,9 @@ watch(
 .zoom-control { margin-left: auto; display: flex; align-items: center; gap: 2px; padding-right: var(--space-2); }
 .zoom-btn { width: 22px; height: 22px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--surface-default); cursor: pointer; font-size: 13px; line-height: 1; color: var(--fg-muted); display: flex; align-items: center; justify-content: center; }
 .zoom-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-.zoom-btn:hover:not(:disabled) { border-color: var(--accent-default); color: var(--accent-default); }
 .zoom-label { font-size: var(--text-xs); color: var(--fg-muted); width: 36px; text-align: center; font-family: var(--font-mono); }
 
+/* content */
 .preview-body { flex: 1; overflow: auto; padding: var(--space-2); }
 .html-preview { display: inline-block; min-width: 100%; }
 .html-preview :deep(table) { border-collapse: collapse; font-size: var(--text-xs); }
