@@ -10,8 +10,7 @@ const zoom = ref(100);
 interface CellData { value: string; colspan: number; rowspan: number; cellRef: string; isNum: boolean }
 interface RowData { cells: CellData[] }
 /** 描述列表项：label 来自表头区域某列的值，value 来自同行的相邻列 */
-interface FieldItem { label: string; value: string; cellRef: string }
-const headerFields = ref<FieldItem[]>([]);
+const headerRows = ref<HeaderRow[]>([]);
 const tableData = ref<RowData[]>([]);
 const tableStartRow = ref<number | null>(null);
 const statusMsg = ref("");
@@ -27,25 +26,9 @@ const tabs = [
 
 function switchTab(key: typeof previewTab.value) { previewTab.value = key; wb.refreshPreview(key); }
 
-function extractPairs(rows: RowData[]): FieldItem[] {
-  /** 从表头区域中提取 label: value 对。
-   *  规则：同一行中非空列相邻配对，或者跨行配对（当前行非空 + 下一行对应列非空）。
-   *  简化为：同行的非空单元格两两配对。
-   */
-  const pairs: FieldItem[] = [];
-  for (const row of rows) {
-    const vals = row.cells.filter((c) => c.value);
-    for (let i = 0; i < vals.length - 1; i += 2) {
-      pairs.push({ label: vals[i].value, value: vals[i + 1]?.value || "", cellRef: vals[i].cellRef });
-    }
-    if (vals.length % 2 === 1) {
-      pairs.push({ label: vals[vals.length - 1].value, value: "", cellRef: vals[vals.length - 1].cellRef });
-    }
-  }
-  return pairs;
-}
+interface HeaderRow { cells: { value: string; cellRef: string }[] }
 
-function parseSheet(ws: Record<string, unknown>, startRow: number | null): { headers: FieldItem[]; table: RowData[] } {
+function parseSheet(ws: Record<string, unknown>, startRow: number | null): { headers: HeaderRow[]; table: RowData[] } {
   const range = utils.decode_range((ws["!ref"] as string) || "A1");
   const merges = (ws["!merges"] || []) as { s: { r: number; c: number }; e: { r: number; c: number } }[];
 
@@ -83,19 +66,22 @@ function parseSheet(ws: Record<string, unknown>, startRow: number | null): { hea
     return cells;
   }
 
-  const headerRows: RowData[] = [];
+  const hdrRows: HeaderRow[] = [];
   const tableRows: RowData[] = [];
-  // startRow (1-based) 指向第一条数据行，字段标签在其上一行
   const cutoff = startRow ? startRow - 2 : 99;
 
   for (let r = range.s.r; r <= range.e.r; r++) {
     if (!nonBlankRows.has(r)) continue;
     const cells = readRow(r);
-    if (r < cutoff) headerRows.push({ cells });
-    else tableRows.push({ cells });
+    if (r < cutoff) {
+      const vals = cells.filter((c) => c.value).map((c) => ({ value: c.value, cellRef: c.cellRef }));
+      if (vals.length) hdrRows.push({ cells: vals });
+    } else {
+      tableRows.push({ cells });
+    }
   }
 
-  return { headers: extractPairs(headerRows), table: tableRows };
+  return { headers: hdrRows, table: tableRows };
 }
 
 function onCellEnter(cellRef: string) {
@@ -110,7 +96,7 @@ function onCellLeave() { hoveredCell.value = ""; hoverSource.value = ""; }
 watch(
   () => wb.preview,
   async (result) => {
-    tableData.value = []; headerFields.value = []; tableStartRow.value = null;
+    tableData.value = []; headerRows.value = []; tableStartRow.value = null;
     if (!result?.output_file) {
       if (result?.status === "needs_input") statusMsg.value = `请选择 ${result.missing_inputs?.join("、") || "..."}`;
       else if (result?.status === "error") {
@@ -131,7 +117,7 @@ watch(
       const ws = wb.Sheets[wb.SheetNames[0]];
       if (!ws) { statusMsg.value = "无法读取 sheet"; return; }
       const parsed = parseSheet(ws as Record<string, unknown>, tableStartRow.value);
-      headerFields.value = parsed.headers;
+      headerRows.value = parsed.headers;
       tableData.value = parsed.table;
     } catch (e) { statusMsg.value = `加载失败: ${String(e).substring(0, 80)}`; }
   },
@@ -172,15 +158,16 @@ watch(
     <div class="preview-body">
       <div v-if="!wb.selectedPo" class="placeholder">选择 PO 后自动预览</div>
       <div v-else-if="statusMsg" class="status-msg" :class="{ err: statusMsg.includes('失败') || statusMsg.includes('不提供') }">{{ statusMsg }}</div>
-      <div v-else-if="!headerFields.length && !tableData.length" class="placeholder">加载预览中…</div>
+      <div v-else-if="!headerRows.length && !tableData.length" class="placeholder">加载预览中…</div>
 
-      <!-- 表头区域：描述列表 -->
-      <dl v-if="headerFields.length" class="header-fields" :style="{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left' }">
-        <div v-for="(f, i) in headerFields" :key="i" class="field-pair" @mouseenter="onCellEnter(f.cellRef)" @mouseleave="onCellLeave">
-          <dt>{{ f.label }}</dt>
-          <dd>{{ f.value }}</dd>
+      <!-- 表头区域：逐行展示 -->
+      <div v-if="headerRows.length" class="header-area" :style="{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left' }">
+        <div v-for="(row, ri) in headerRows" :key="ri" class="header-row">
+          <span v-for="(cell, ci) in row.cells" :key="ci" class="header-cell"
+            @mouseenter="onCellEnter(cell.cellRef)" @mouseleave="onCellLeave"
+          >{{ cell.value }}</span>
         </div>
-      </dl>
+      </div>
 
       <!-- 表格区域 -->
       <table v-if="tableData.length" class="preview-table" :style="{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left' }">
@@ -225,13 +212,13 @@ watch(
 .status-msg.err { color: var(--status-blocked-fg); }
 .placeholder { padding: var(--space-8); text-align: center; color: var(--fg-subtle); }
 
-/* 表头描述列表 */
-.header-fields { display: grid; grid-template-columns: auto 1fr; gap: 0; margin-bottom: var(--space-4); border: 1px solid var(--border-default); border-radius: var(--radius-md); overflow: hidden; background: var(--surface-default); }
-.field-pair { display: contents; }
-.field-pair dt { padding: 4px 12px; background: var(--surface-sunken); color: var(--fg-muted); font-size: var(--text-xs); font-weight: 600; border-bottom: 1px solid var(--border-default); white-space: nowrap; }
-.field-pair dd { padding: 4px 12px; border-bottom: 1px solid var(--border-default); margin: 0; font-size: var(--text-sm); }
-.field-pair:last-of-type dt, .field-pair:last-of-type dd { border-bottom: none; }
-.field-pair:hover dt, .field-pair:hover dd { background: var(--accent-subtle); }
+/* 表头区域 */
+.header-area { margin-bottom: var(--space-4); border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--surface-default); overflow: hidden; }
+.header-row { display: flex; flex-wrap: wrap; padding: 4px 12px; gap: 12px; border-bottom: 1px solid var(--border-default); }
+.header-row:last-child { border-bottom: none; }
+.header-cell { font-size: var(--text-sm); white-space: nowrap; }
+.header-cell:first-child { font-weight: 600; color: var(--fg-muted); min-width: 80px; }
+.header-row:hover { background: var(--accent-subtle); }
 
 /* 表格 */
 .preview-table {
