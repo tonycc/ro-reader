@@ -2,6 +2,18 @@ document: pi
 template_version: "v1"
 template: templates/emax/pi.xlsx
 sheet: "PF Standard Invoice format"
+style:
+  bold:
+    - A1
+    - A2
+    - B4
+    - B6
+  underline:
+    - B6
+    - F6
+    - F7
+    - B9
+    - F9
 header:
   pi_no: B6
   document_date: F6

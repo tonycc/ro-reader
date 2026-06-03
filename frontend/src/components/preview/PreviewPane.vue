@@ -11,6 +11,8 @@ interface CellData { value: string; colspan: number; rowspan: number; cellRef: s
 interface RowData { cells: CellData[]; rowNum: number; isLabel?: boolean }
 const headerRows = ref<RowData[]>([]);
 const dataRows = ref<RowData[]>([]);
+const styleBold = ref<string[]>([]);
+const styleUnderline = ref<string[]>([]);
 const tableStartRow = ref(99);
 const statusMsg = ref("");
 const hoveredCell = ref("");
@@ -76,7 +78,12 @@ function onCellEnter(cellRef: string) {
 }
 
 function onCellLeave() { hoveredCell.value = ""; hoverSource.value = ""; }
-function hasSource(cellRef: string): boolean { return wb.sourceIndex.some((s) => s.doc_cell === cellRef); }
+function headerCellClass(cellRef: string): string {
+  const cls: string[] = [];
+  if (styleBold.value.includes(cellRef)) cls.push("bold");
+  if (styleUnderline.value.includes(cellRef)) cls.push("underline");
+  return cls.join(" ");
+}
 
 watch(
   () => wb.preview,
@@ -84,6 +91,8 @@ watch(
     headerRows.value = [];
     dataRows.value = [];
     tableStartRow.value = (result?.summary?.table_start_row as number) || 99;
+    styleBold.value = ((result as any)?.style?.bold as string[]) || [];
+    styleUnderline.value = ((result as any)?.style?.underline as string[]) || [];
     if (!result?.output_file) {
       if (result?.status === "needs_input") statusMsg.value = `请选择 ${result.missing_inputs?.join("、") || "..."}`;
       else if (result?.status === "error") {
@@ -154,7 +163,7 @@ watch(
           <table class="header-table">
             <tr v-for="(row, ri) in headerRows" :key="'h'+ri">
               <td v-for="(cell, ci) in row.cells" :key="ci"
-                :class="{ sourced: hasSource(cell.cellRef) }"
+                :class="headerCellClass(cell.cellRef)"
                 :colspan="cell.colspan" :rowspan="cell.rowspan"
               >{{ cell.value }}</td>
             </tr>
@@ -206,8 +215,9 @@ watch(
 
 .preview-header { margin-bottom: var(--space-3); }
 .header-table { border-collapse: collapse; font-size: var(--text-sm); font-family: var(--font-sans); }
-.header-table td { padding: 2px 6px; vertical-align: middle; white-space: nowrap; font-weight: 600; color: var(--fg-muted); }
-.header-table td.sourced { font-weight: 400; color: var(--fg-default); border-bottom: 1.5px solid var(--accent-default); }
+.header-table td { padding: 2px 6px; vertical-align: middle; white-space: nowrap; }
+.header-table td.bold { font-weight: 600; }
+.header-table td.underline { border-bottom: 1.5px solid var(--accent-default); }
 
 .preview-table {
   border-collapse: separate; border-spacing: 0;

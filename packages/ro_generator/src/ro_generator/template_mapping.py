@@ -55,6 +55,13 @@ class LinesSection:
 
 
 @dataclass(frozen=True)
+class CellStyles:
+    """可选的单元格样式声明（来自 mapping YAML 的 style 节）。"""
+    bold: tuple[str, ...] = ()
+    underline: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class TemplateMapping:
     """单份 mapping 加载后的不可变结构。"""
 
@@ -62,10 +69,11 @@ class TemplateMapping:
     template_version: str
     template_path: Path
     sheet: str
-    header: dict[str, str]  # 字段名 → 单元格地址，如 invoice_no → H6
+    header: dict[str, str]
     lines: LinesSection
-    totals: dict[str, str]  # 合计字段名 → 单元格地址
-    notes: dict[str, str]  # 其他文案位（carton_summary 等）
+    totals: dict[str, str]
+    notes: dict[str, str]
+    style: CellStyles = field(default_factory=CellStyles)
 
 
 # —————————————————————————————————————
@@ -128,6 +136,7 @@ def _parse_mapping(raw: dict[str, object], yaml_path: Path) -> TemplateMapping:
     lines = _parse_lines_section(raw, yaml_path)
     totals = _require_dict_of_str(raw, "totals", yaml_path)
     notes = _optional_dict_of_str(raw, "notes")
+    style = _parse_style(raw.get("style"), yaml_path)
 
     return TemplateMapping(
         document=document,
@@ -138,6 +147,7 @@ def _parse_mapping(raw: dict[str, object], yaml_path: Path) -> TemplateMapping:
         lines=lines,
         totals=totals,
         notes=notes,
+        style=style,
     )
 
 
@@ -334,6 +344,32 @@ def _require_dict_of_str(raw: dict[str, object], key: str, yaml_path: Path) -> d
             raise MappingError(f"{key}.{k!r} 的键和值都必须是字符串：{yaml_path}")
         out[k] = val.strip()
     return out
+
+
+def _parse_style(raw: object, yaml_path: Path) -> CellStyles:
+    """解析可选的 style 节。格式：
+    style:
+      bold: [A1, B4]        # 加粗的单元格地址
+      underline: [H6, F6]   # 下划线的单元格地址
+    """
+    if not isinstance(raw, dict):
+        return CellStyles()
+    bold = _parse_cell_list(raw.get("bold"), yaml_path)
+    underline = _parse_cell_list(raw.get("underline"), yaml_path)
+    return CellStyles(bold=tuple(bold), underline=tuple(underline))
+
+
+def _parse_cell_list(raw: object, yaml_path: Path) -> list[str]:
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise MappingError(f"style 中的值必须是列表：{raw!r} ({yaml_path})")
+    result: list[str] = []
+    for item in raw:
+        if not isinstance(item, str):
+            raise MappingError(f"style 列表项必须是字符串：{item!r} ({yaml_path})")
+        result.append(item.strip().upper())
+    return result
 
 
 def _optional_dict_of_str(raw: dict[str, object], key: str) -> dict[str, str]:
