@@ -84,6 +84,7 @@ export const useWorkbench = defineStore("workbench", () => {
       const result = await api.exportDocuments({
         base_file: baseFile.value, po_no: selectedPo.value,
         seller: selectedSeller.value, invoice_month: selectedMonth.value,
+        document: previewDocType.value,
       });
       lastExportFile.value = result.output_file ?? "";
       return result;

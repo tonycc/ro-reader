@@ -270,12 +270,12 @@ def export_documents(req: DryRunRequest) -> dict[str, Any]:
     import tempfile
 
     out_dir = tempfile.mkdtemp(prefix="ro-export-")
+    doc = req.document.upper() if req.document else "INVOICE"
     request = DocumentRequest(
         base_file=req.base_file,
         po_no=req.po_no,
-        documents=("INVOICE",),
+        documents=(doc,),  # type: ignore[arg-type]
         seller=req.seller,
-        buyer=req.buyer,
         invoice_month=req.invoice_month,
         invoice_no=req.invoice_no,
         output_dir=out_dir,
