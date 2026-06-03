@@ -22,12 +22,73 @@ function switchTab(key: typeof previewTab.value) {
   wb.refreshPreview(key);
 }
 
+/** 把 SheetJS worksheet 转成自定义 HTML table */
+function buildTableHtml(ws: Record<string, unknown>): string {
+  const range = utils.decode_range((ws["!ref"] as string) || "A1");
+  const merges = (ws["!merges"] || []) as { s: { r: number; c: number }; e: { r: number; c: number } }[];
+
+  // 标记哪些单元格是合并区域的"被吞掉"的格子
+  const mergedHidden = new Set<string>();
+  for (const m of merges) {
+    for (let r = m.s.r; r <= m.e.r; r++) {
+      for (let c = m.s.c; c <= m.e.c; c++) {
+        if (r !== m.s.r || c !== m.s.c) {
+          mergedHidden.add(`${r},${c}`);
+        }
+      }
+    }
+  }
+
+  // 收集非空行
+  const nonBlankRows = new Set<number>();
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const cell = ws[utils.encode_cell({ r, c })] as { v?: unknown } | undefined;
+      if (cell && cell.v != null && cell.v !== "") { nonBlankRows.add(r); break; }
+    }
+  }
+
+  let html = '<table class="preview-table">';
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    if (!nonBlankRows.has(r)) continue;
+    html += "<tr>";
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const key = `${r},${c}`;
+      if (mergedHidden.has(key)) continue;
+
+      const cell = ws[utils.encode_cell({ r, c })] as { v?: unknown; t?: string } | undefined;
+      const value = cell?.v != null ? String(cell.v) : "";
+
+      // 合并单元格的 span
+      const merge = merges.find((m) => m.s.r === r && m.s.c === c);
+      const rowspan = merge ? merge.e.r - merge.s.r + 1 : 1;
+      const colspan = merge ? merge.e.c - merge.s.c + 1 : 1;
+
+      const cellId = `cell-${utils.encode_cell({ r, c })}`;
+
+      // 数值类型 → 右对齐 + mono 字体
+      const isNum = cell?.t === "n" || (!isNaN(Number(value)) && value !== "");
+      const cls = isNum ? "num" : "";
+
+      let attrs = `id="${cellId}" class="${cls}"`;
+      if (colspan > 1) attrs += ` colspan="${colspan}"`;
+      if (rowspan > 1) attrs += ` rowspan="${rowspan}"`;
+
+      html += `<td ${attrs}>${value}</td>`;
+    }
+    html += "</tr>";
+  }
+  html += "</table>";
+  return html;
+}
+
 function onCellHover(e: MouseEvent) {
   const el = e.target as HTMLElement;
   const id = el.id || "";
   hoveredCell.value = id;
   if (id && wb.sourceIndex.length) {
-    const entry = wb.sourceIndex.find((s) => s.doc_cell === id.replace("sjs-", ""));
+    const cellRef = id.replace("cell-", "");
+    const entry = wb.sourceIndex.find((s) => s.doc_cell === cellRef);
     if (entry) {
       hoverSource.value = `${entry.source.sheet} · ${entry.source.field}` + (entry.source.row ? ` row ${entry.source.row}` : "");
       return;
@@ -41,14 +102,14 @@ watch(
   async (result) => {
     if (!result?.output_file) {
       if (result?.status === "needs_input") {
-        htmlContent.value = `<p style="padding:16px;color:#856404;">请选择 ${result.missing_inputs?.join("、") || "..."}</p>`;
+        htmlContent.value = `<p class="preview-msg warn">请选择 ${result.missing_inputs?.join("、") || "..."}</p>`;
       } else if (result?.status === "error") {
         const err = (result.errors?.[0] as any) || {};
         const code = err.code || "...";
         if (code === "MAPPING_NOT_FOUND" && (wb.selectedSeller?.includes("SK") || wb.selectedSeller?.includes("YM"))) {
-          htmlContent.value = `<p style="padding:16px;color:#856404;">${wb.selectedSeller || "该主体"}不提供 PO 模板<br>请切换到 GS PTE 或 EMAX PTE</p>`;
+          htmlContent.value = `<p class="preview-msg warn">${wb.selectedSeller || "该主体"}不提供 PO 模板<br>请切换到 GS PTE 或 EMAX PTE</p>`;
         } else {
-          htmlContent.value = `<p style="padding:16px;color:#991b1b;">生成失败：${code}<br>${err.message || ""}</p>`;
+          htmlContent.value = `<p class="preview-msg err">生成失败：${code}<br>${err.message || ""}</p>`;
         }
       } else {
         htmlContent.value = "";
@@ -62,21 +123,7 @@ watch(
       const workbook = read(new Uint8Array(buf), { type: "array", cellStyles: true });
       const ws = workbook.Sheets[workbook.SheetNames[0]];
       if (!ws) { htmlContent.value = "<p>无法读取 sheet</p>"; return; }
-      // Remove completely blank rows before rendering
-      const range = utils.decode_range(ws["!ref"] || "A1");
-      for (let r = range.s.r; r <= range.e.r; r++) {
-        let hasContent = false;
-        for (let c = range.s.c; c <= range.e.c; c++) {
-          const cell = ws[utils.encode_cell({ r, c })];
-          if (cell && cell.v != null && cell.v !== "") { hasContent = true; break; }
-        }
-        if (!hasContent) {
-          for (let c = range.s.c; c <= range.e.c; c++) {
-            delete ws[utils.encode_cell({ r, c })];
-          }
-        }
-      }
-      htmlContent.value = utils.sheet_to_html(ws, { editable: false });
+      htmlContent.value = buildTableHtml(ws as Record<string, unknown>);
     } catch (e) {
       htmlContent.value = `<p>加载预览失败: ${String(e).substring(0, 80)}</p>`;
     }
@@ -87,42 +134,27 @@ watch(
 
 <template>
   <div class="preview-pane">
-    <!-- 主体 + 月份选择 -->
     <div class="preview-toolbar">
       <div class="seller-group">
         <span class="label">主体:</span>
-        <button
-          v-for="s in wb.poEntry?.sellers ?? []"
-          :key="s"
-          class="sel-btn"
-          :class="{ active: wb.selectedSeller === s }"
-          @click="wb.selectSeller(s)"
-        >{{ s }}</button>
+        <button v-for="s in wb.poEntry?.sellers ?? []" :key="s" class="sel-btn"
+          :class="{ active: wb.selectedSeller === s }" @click="wb.selectSeller(s)">{{ s }}</button>
         <span v-if="!wb.selectedPo" class="hint">选择 PO</span>
       </div>
       <div class="month-group">
         <span class="label">月份:</span>
         <template v-if="wb.poEntry?.monthly_months?.length">
-          <button
-            v-for="m in wb.poEntry!.monthly_months"
-            :key="m"
-            class="sel-btn mono"
-            :class="{ active: wb.selectedMonth === m }"
-            @click="wb.selectMonth(wb.selectedMonth === m ? null : m)"
-          >{{ m }}</button>
+          <button v-for="m in wb.poEntry!.monthly_months" :key="m" class="sel-btn mono"
+            :class="{ active: wb.selectedMonth === m }" @click="wb.selectMonth(wb.selectedMonth === m ? null : m)">{{ m }}</button>
           <span v-if="wb.selectedMonth" class="clear" @click="wb.selectMonth(null)">清除</span>
         </template>
         <span v-else class="hint">无月度数据</span>
       </div>
     </div>
 
-    <!-- 单据切换标签 + 缩放 -->
     <div class="tab-bar">
-      <button
-        v-for="tab in tabs" :key="tab.key"
-        class="tab-btn" :class="{ active: previewTab === tab.key }"
-        @click="switchTab(tab.key)"
-      >{{ tab.label }}</button>
+      <button v-for="tab in tabs" :key="tab.key" class="tab-btn"
+        :class="{ active: previewTab === tab.key }" @click="switchTab(tab.key)">{{ tab.label }}</button>
       <span class="zoom-control">
         <button class="zoom-btn" @click="zoom = Math.max(50, zoom - 10)" :disabled="zoom <= 50">−</button>
         <span class="zoom-label">{{ zoom }}%</span>
@@ -130,11 +162,12 @@ watch(
       </span>
     </div>
 
-    <!-- 预览内容 -->
     <div class="preview-body" @mouseover="onCellHover">
       <div v-if="!wb.selectedPo" class="placeholder">选择 PO 后自动预览</div>
       <div v-else-if="!htmlContent" class="placeholder">加载预览中…</div>
-      <div v-else class="html-preview" :style="{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left' }" v-html="htmlContent"></div>
+      <div v-else class="html-preview"
+        :style="{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left' }"
+        v-html="htmlContent"></div>
     </div>
     <div v-if="hoverSource" class="tooltip">{{ hoverSource }} · {{ hoveredCell }}</div>
   </div>
@@ -168,18 +201,30 @@ watch(
 /* content */
 .preview-body { flex: 1; overflow: auto; padding: var(--space-2); }
 .html-preview { display: inline-block; min-width: 100%; }
-.html-preview :deep(table) { width: max-content; min-width: 100%; }
-.html-preview :deep(table) {
-  border-collapse: collapse; font-size: var(--text-sm); font-family: var(--font-sans);
-  border: 1px solid var(--border-default); background: var(--surface-default);
+
+/* custom table */
+.html-preview :deep(.preview-table) {
+  border-collapse: collapse; width: max-content; min-width: 100%;
+  font-size: var(--text-sm); font-family: var(--font-sans);
+  background: var(--surface-default);
 }
-.html-preview :deep(th), .html-preview :deep(td) {
-  padding: 4px 8px; text-align: left; vertical-align: top;
-  border-bottom: 1px solid var(--border-default);
+.html-preview :deep(.preview-table td) {
+  padding: 5px 10px; border-bottom: 1px solid var(--border-default);
+  vertical-align: middle; white-space: nowrap; min-width: 60px;
 }
-.html-preview :deep(tr:first-child) { border-bottom: 2px solid var(--border-strong); }
-.html-preview :deep(tr:first-child td) { font-weight: 600; color: var(--fg-muted); font-size: var(--text-xs); text-transform: none; }
-.html-preview :deep(tr:hover) { background: var(--surface-sunken); }
+.html-preview :deep(.preview-table .num) {
+  text-align: right; font-family: var(--font-mono);
+}
+.html-preview :deep(.preview-table tr:first-child td) {
+  font-weight: 600; color: var(--fg-muted); font-size: var(--text-xs);
+  border-bottom: 2px solid var(--border-strong); background: var(--surface-sunken);
+}
+.html-preview :deep(.preview-table tr:hover td) { background: var(--surface-sunken); }
+.html-preview :deep(.preview-table tr:first-child:hover td) { background: var(--surface-sunken); }
+
+.preview-msg { padding: var(--space-3); margin: 0; }
+.preview-msg.warn { color: var(--status-partial-fg); }
+.preview-msg.err { color: var(--status-blocked-fg); }
 .placeholder { padding: var(--space-8); text-align: center; color: var(--fg-subtle); }
 
 .tooltip { position: fixed; bottom: 32px; right: 16px; padding: var(--space-1) var(--space-2); background: var(--fg-default); color: var(--fg-on-accent); font-size: var(--text-xs); border-radius: var(--radius-sm); max-width: 320px; z-index: 100; }
