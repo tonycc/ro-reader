@@ -39,16 +39,34 @@ function onCellHover(e: MouseEvent) {
 watch(
   () => wb.preview,
   async (result) => {
-    if (!result?.output_file) { htmlContent.value = ""; return; }
+    console.log("[PreviewPane] watch fired", {
+      hasResult: !!result,
+      status: result?.status,
+      hasOutputFile: !!result?.output_file,
+      outputFile: result?.output_file?.substring(0, 60),
+      errors: result?.errors?.length,
+      warnings: result?.warnings?.length,
+    });
+    if (!result?.output_file) {
+      if (result?.status === "needs_input") {
+        htmlContent.value = `<p style="padding:16px;color:#856404;">请选择 ${result.missing_inputs?.join("、") || "..."}</p>`;
+      } else if (result?.status === "error") {
+        htmlContent.value = `<p style="padding:16px;color:#991b1b;">生成失败：${result.errors?.[0]?.code || "..."}</p>`;
+      } else {
+        htmlContent.value = "";
+      }
+      return;
+    }
     try {
       const resp = await fetch(`http://127.0.0.1:54321/download?path=${encodeURIComponent(result.output_file)}`);
+      if (!resp.ok) { htmlContent.value = `<p>下载失败 HTTP ${resp.status}</p>`; return; }
       const buf = await resp.arrayBuffer();
       const workbook = read(new Uint8Array(buf), { type: "array", cellStyles: true });
       const ws = workbook.Sheets[workbook.SheetNames[0]];
       if (!ws) { htmlContent.value = "<p>无法读取 sheet</p>"; return; }
       htmlContent.value = utils.sheet_to_html(ws, { editable: false });
-    } catch {
-      htmlContent.value = "<p>加载预览失败</p>";
+    } catch (e) {
+      htmlContent.value = `<p>加载预览失败: ${String(e).substring(0, 80)}</p>`;
     }
   },
   { immediate: true }
