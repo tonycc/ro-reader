@@ -45,7 +45,7 @@ resolver.py
   ├─ Product
   └─ OrderLine
       ↓
-document_model.py
+document_model.py  ← line_rules.py / header_rules.py（字段来源分派）
   ├─ DocumentModel
   └─ DocumentLine
       ↓
@@ -55,10 +55,11 @@ document_model.py
 
 一句话记忆：
 
-- `base_schema` 解决“从哪张表、哪一列读”
-- `resolver` 解决“base 里有什么”
-- `document_model` 解决“这张单据该显示什么”
-- `document_preview` / `renderer` 解决“怎么展示”
+- `base_schema` 解决”从哪张表、哪一列读”
+- `resolver` 解决”base 里有什么”
+- `line_rules` / `header_rules` 解决”同一字段在不同单据/主体下来源是否不同”
+- `document_model` 解决”这张单据该显示什么”
+- `document_preview` / `renderer` 解决”怎么展示”
 
 ## 3. 三张 Base Sheet 的定位
 
@@ -909,9 +910,26 @@ totals:
       ├─ 来源列错 -> 改 base_schema.yaml
       ├─ 取值/回退错 -> 改 resolver.py
       ├─ 单据口径错 -> 改 document_model.py
+      ├─ 主体/单据类型差异导致来源不同 -> 改 line_rules.py / header_rules.py
       ├─ 预览条款错 -> 改 header_fixed / terms_fields / static_terms
       └─ 模型值对、渲染错 -> 改 renderer.py 或 document_preview.py
 ```
+
+### 9.3 字段来源的三层分派机制
+
+`line_rules.py` 和 `header_rules.py` 实现了一套三层分派，决定"同一字段在不同上下文下取哪里的值"：
+
+| 层级 | 数据结构 | 覆盖范围 | 典型例子 |
+| --- | --- | --- | --- |
+| 默认规则 | `get_line_field_spec()` / `HEADER_FIELD_SPECS` | 全部单据、全部主体 | `quantity` 来自 `FINALQTY` |
+| 单据族覆盖 | `_DOC_FAMILY_OVERRIDES` | Invoice 或 PL 与 PI/PO 的来源差异 | Invoice/PL 的 `quantity` 改取 `SHIP QTY`；`description` 改取 PO record 的 `DESCRIPTION`；PL 的 `cbm` 改取 `TOTAL CBM` |
+| 主体专属覆盖 | `_SELLER_LINE_OVERRIDES` / `_HEADER_SELLER_OVERRIDES` | 特定 seller 集合 | SK/YM/GS 的 `confirmed_ex_factory_date` 和 `ex_factory_date` 取 `FINAL EX-FACTORY DATE`；GS PTE 的 `pi_no` 取 `Purchasing Document` |
+
+**架构纪律**：
+
+- 字段来源的主体差异只写在 `_SELLER_LINE_OVERRIDES` / `_HEADER_SELLER_OVERRIDES` 里。
+- `document_preview.py` 和 `renderer.py` **禁止**出现 `if seller == ...` 这类分派判断。
+- 新增主体专属来源规则：在对应的 `_*_OVERRIDES` 数据字典中加 entry，key 用 `frozenset` 包住 seller 名称集合。
 
 ## 10. Agent 修改代码决策表
 
@@ -923,7 +941,9 @@ totals:
 | 描述、重量、箱数回退逻辑错 | resolver 逻辑错 | `resolver.py` |
 | Invoice 数量用了 `FINALQTY` 而不是 `SHIP QTY` | 单据口径错 | `document_model.py` |
 | `Document Date` / `Invoice Date` 显示错、格式错或来源规则要改 | 系统生成字段规则错 | `document_preview.py` / `renderer.py` |
-| `EX-FACTORY DATE` 被当成系统生成、人工填写或模板固定文本 | header 来源标注错 | `document_model.py` / `document_preview.py` / `renderer.py` |
+| `EX-FACTORY DATE` 被当成系统生成、人工填写或模板固定文本 | header 来源标注错 | `document_model.py` / `header_rules.py` |
+| 某字段在特定主体下来源错（如 GS 的 `pi_no` 应取 `Purchasing Document`） | 主体专属来源规则缺失或错误 | `header_rules.py` 的 `_HEADER_SELLER_OVERRIDES` |
+| Invoice/PL 的字段来源与 PI/PO 不一致（如 `quantity` 来源错） | 单据族来源规则错 | `line_rules.py` 的 `_DOC_FAMILY_OVERRIDES` |
 | 预览里条款值不对，但 Excel 正常 | 预览配置错 | `header_fixed` / `terms_fields` / `static_terms` |
 | 预览里字段顺序不对 | 预览布局错 | `preview_content.layout` / `terms_fields` |
 | Excel 和预览都错，但模型值对 | 渲染/预览层错 | `renderer.py` / `document_preview.py` |
@@ -1073,7 +1093,9 @@ totals:
 | 单据口径逻辑 | `quantity`、`amount`、`invoice_no` 过滤 | `document_model.py` | 当不同单据类型的取值口径不正确 |
 | 表头位置 | `invoice_no -> H6`、`ship_to -> G10` | 对应 mapping YAML 的 `header` | 值对但单元格错 |
 | 系统生成日期字段 | `document_date`、`invoice_date`、`signature_date` | `document_preview.py` / `renderer.py` | 这些字段通常取当前日期，不来自 base |
-| Base 来源的表头字段 | `ex_factory_date` | `document_model.py` / `document_preview.py` / `renderer.py` | 当前来自 `客户PO` 的 `ship DATE`，不应被标成系统生成或人工填写 |
+| Base 来源的表头字段 | `ex_factory_date` | `header_rules.py` / `document_model.py` | 来源规则在 `header_rules.py`；SK/YM/GS 主体有专属覆盖 |
+| 主体专属 header 来源字段 | `ex_factory_date`（SK/YM/GS 取 `FINAL EX-FACTORY DATE`）、`pi_no`（GS 取 `Purchasing Document`） | `header_rules.py` 的 `_HEADER_SELLER_OVERRIDES` | 不在此修改 `document_preview.py` |
+| 单据族差异化明细来源 | Invoice/PL 的 `quantity`（`SHIP QTY`）、`description`（`DESCRIPTION`）；PL 的 `cbm`（`TOTAL CBM`） | `line_rules.py` 的 `_DOC_FAMILY_OVERRIDES` | 不在 `document_model.py` 里写 if 分支 |
 | 表头固定文案 | `payment_terms`、`port_of_loading`、`final_destination` | 对应 mapping YAML 的 `header_fixed` | 字段有 header 单元格，且文案固定 |
 | 明细固定列 | `PCS`、`KGS`、`CBM`、`China` | 对应 mapping YAML 的 `lines.row_fixed` | 每一行都一样的固定值 |
 | 明细动态列 | `quantity`、`unit_price`、`amount` | 对应 mapping YAML 的 `lines.columns` | 列字母映射错，且字段值本身是对的 |
@@ -1097,6 +1119,8 @@ totals:
 - 预览条款错了：先看 `header_fixed` / `terms_fields` / `static_terms`
 - 预览值对不上 YAML：再看 `document_preview.py`
 - Excel 导出不对但预览对：再看 `renderer.py`
+- 特定主体的字段来源不对：先看 `header_rules.py` 的 `_HEADER_SELLER_OVERRIDES` 或 `line_rules.py` 的 `_SELLER_LINE_OVERRIDES`
+- Invoice/PL 字段来源与 PI/PO 不一致：先看 `line_rules.py` 的 `_DOC_FAMILY_OVERRIDES`
 
 ### 16.3 两步排查法
 

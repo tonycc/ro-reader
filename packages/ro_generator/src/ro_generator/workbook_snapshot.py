@@ -81,11 +81,12 @@ class WorkbookSnapshot:
     IMPORTANT: po_rows 使用 tuple 包装，但其中每个元素是 dict[str, object]。
     消费者必须将 row dict 视为 read-only，不得原地修改。
     如需加工数据，请在消费者侧创建 copy。
+
+    文件签名（mtime_ns + size）由 WorkbookCacheManager 通过 FileSignature
+    独立管理，不重复存储在快照中。
     """
 
     base_file: str
-    file_mtime_ns: int
-    file_size: int
     headers_data_base: tuple[str, ...]
     headers_po_record: tuple[str, ...]
     headers_customer_po: tuple[str, ...] = ()
@@ -201,8 +202,6 @@ def build_workbook_snapshot(base_file: str) -> WorkbookSnapshot:
 
         return WorkbookSnapshot(
             base_file=str(Path(base_file).resolve()),
-            file_mtime_ns=signature.mtime_ns,
-            file_size=signature.size,
             headers_data_base=headers_db,
             headers_po_record=headers_po,
             headers_customer_po=headers_cp,

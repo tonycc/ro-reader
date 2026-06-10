@@ -180,6 +180,12 @@ class TestWorkbookSnapshot:
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
             po_record_rows=[basic_po_row()],
+            customer_po_rows=[{
+                "Purchasing Document": "4500030844",
+                "Item": "10",
+                "Material": "21-44640",
+                "Order Quantity": 100,
+            }],
         )
         snap = build_workbook_snapshot(path)
         assert len(snap.po_summary) == 1
@@ -234,6 +240,9 @@ class TestWorkbookSnapshot:
             po_record_rows=[basic_po_row()],
         )
         snap = build_workbook_snapshot(path)
-        assert snap.file_size > 0
-        assert snap.file_mtime_ns > 0
         assert snap.created_at > 0
+        # 文件签名由 FileSignature 管理，不存储在快照中
+        from ro_generator.workbook_snapshot import FileSignature
+        sig = FileSignature.from_file(str(path))
+        assert sig.size > 0
+        assert sig.mtime_ns > 0

@@ -389,8 +389,8 @@ class TestRenderBasic:
         assert ws["F21"].value == 100
         assert ws["G21"].value == pytest.approx(3280.0)
         assert ws["H21"].value.date() == date(2026, 3, 15)
-        assert ws["H23"].value == pytest.approx(3280.0)
-        assert "d/mmm/yy" not in ws["H23"].number_format.lower()
+        assert ws["G23"].value == pytest.approx(3280.0)
+        assert "d/mmm/yy" not in ws["G23"].number_format.lower()
         loc = result.source_index.lookup_source("B21")
         assert loc is not None
         assert loc.sheet == "客户PO"
@@ -570,14 +570,15 @@ class TestSourceIndex:
         assert loc is not None
         assert loc.field == "SHIP QTY"
 
-    def test_description_traces_to_data_base_material_description(self, tmp_path: Path) -> None:
+    def test_description_traces_to_po_record_for_invoice(self, tmp_path: Path) -> None:
+        # Invoice/PL 的 description 来自 PO record（出货时的商品描述），不是 DATA BASE
         mapping = load_template_mapping(GS_INVOICE_MAPPING)
         result = render_document(build_three_line_invoice(), mapping, tmp_path / "out.xlsx")
         loc = result.source_index.lookup_source("C18")
         assert loc is not None
-        assert loc.sheet == "DATA BASE"
-        assert loc.row is None
-        assert loc.field == "Material Description"
+        assert loc.sheet == "PO record"
+        assert isinstance(loc.row, int)  # PO record 逐行数据，有源行号
+        assert loc.field == "DESCRIPTION"
 
     def test_emax_pi_unit_price_traces_to_data_base_price_column(self, tmp_path: Path) -> None:
         mapping = load_template_mapping(EMAX_PI_MAPPING)

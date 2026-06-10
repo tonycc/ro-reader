@@ -2,6 +2,9 @@
 
 不包含新的领域模型。不依赖 renderer 阶段的 SourceIndex。
 不包含 HTTP 逻辑。
+
+preview_content 由 template_mapping.load_template_mapping() 加载时解析，
+build_preview() 直接通过 mapping.preview_content 读取，不再重复打开 YAML。
 """
 
 from __future__ import annotations
@@ -11,15 +14,13 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-import yaml
-
 from ro_generator.document_model import DocumentModel
-from ro_generator.generator import BuildDocumentResult, builtin_mapping_path
+from ro_generator.generator import BuildDocumentResult
 from ro_generator.header_rules import (
     HEADER_DATE_KEYS,
-    HEADER_FIELD_SPECS,
     HEADER_MANUAL_KEYS,
     build_header_resolved_values,
+    resolve_header_field_spec,
 )
 from ro_generator.line_rules import (
     line_display_value,
@@ -128,8 +129,8 @@ def build_preview(build: BuildDocumentResult) -> DocumentPreview:
 
     doc_type = model.document_type
 
-    # 读取模板固定内容配置
-    preview_config = _load_preview_config(doc_type, model.seller)
+    # 从 mapping 对象读取 preview_content（YAML 加载时已解析，不再重复读文件）
+    preview_config: dict[str, Any] = mapping.preview_content if mapping is not None else {}
 
     # 列标签（同时返回列键顺序，供 _build_lines 使用）
     column_labels, line_columns = _build_column_labels(preview_config)
@@ -236,22 +237,6 @@ def _merge_layout(config_layout: object) -> dict[str, object]:
                     if position in merged[section] and isinstance(cfg_section[position], list):
                         merged[section][position] = list(cfg_section[position])
     return merged  # type: ignore[return-type]
-
-
-def _load_preview_config(doc_type: str, seller: str) -> dict[str, Any]:
-    """从 mapping YAML 读取 preview_content 配置。"""
-    path = builtin_mapping_path(seller, doc_type)
-    if path is None:
-        return {}
-    try:
-        with path.open(encoding="utf-8") as fp:
-            raw = yaml.safe_load(fp)
-    except Exception:
-        return {}
-    if not isinstance(raw, dict):
-        return {}
-    pc = raw.get("preview_content")
-    return pc if isinstance(pc, dict) else {}
 
 
 def _merge_custom_mapping_totals(
@@ -517,7 +502,9 @@ def _build_source_entries(
                     continue
                 seen_header.add(field_name)
 
-                spec = HEADER_FIELD_SPECS.get(field_name)
+                spec = resolve_header_field_spec(
+                    field_name, seller=model.seller, document_type=model.document_type
+                )
                 label = spec.label if spec is not None else field_name
                 if field_name in HEADER_DATE_KEYS:
                     source_type, sheet, field = ("system_generated", None, None)
@@ -542,18 +529,6 @@ def _build_source_entries(
                     field = override["field"]
                 if override.get("rule"):
                     rule = override["rule"]
-
-                # ex_factory_date: SK/YM/GS 从 PO record 取值，EMAX 从客户 PO
-                if field_name == "ex_factory_date" and model.seller in {"SK", "YM", "GS PTE"}:
-                    sheet = "PO record"
-                    field = "FINAL EX-FACTORY DATE"
-                    rule = 'PO record 的 "FINAL EX-FACTORY DATE" 列'
-
-                # pi_no: GS 从客户 PO 取值，SK 用 E10 PO，YM 用 YM PO
-                if field_name == "pi_no" and model.seller == "GS PTE":
-                    sheet = "客户PO"
-                    field = "Purchasing Document"
-                    rule = '客户PO A列 "Purchasing Document"'
 
                 value = ""
                 model_attr = spec.model_attr if spec is not None else None

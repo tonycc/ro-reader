@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import { useWorkbench } from "../../stores/workbench";
+import { api } from "../../stores/api";
 
 const wb = useWorkbench();
 const STORAGE_KEY = "ro-workbench-base-path";
@@ -43,15 +44,10 @@ async function checkPath() {
   pathCheckResult.value = "checking";
   pathCheckMsg.value = "";
   try {
-    const resp = await fetch("/api/check-path", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: p }),
-    });
-    const data = await resp.json();
+    const data = await api.checkPath(p);
     if (data.ok) {
       pathCheckResult.value = "ok";
-      pathCheckMsg.value = `有效 · ${data.sheets?.length || 0} 个 Sheet · ${(data.size / 1024).toFixed(0)} KB`;
+      pathCheckMsg.value = `有效 · ${data.sheets?.length || 0} 个 Sheet · ${data.size ? (data.size / 1024).toFixed(0) : 0} KB`;
     } else {
       pathCheckResult.value = "fail";
       pathCheckMsg.value = data.error || "检测失败";
@@ -130,9 +126,9 @@ async function loadData() {
           <div class="setting-group">
             <label>软件版本</label>
             <div class="version-info">
-              <div class="version-row"><span>RO Generator</span><code>v0.0.0</code></div>
-              <div class="version-row"><span>RO Workbench API</span><code>v0.0.0</code></div>
-              <div class="version-row"><span>前端界面</span><code>v0.0.0</code></div>
+              <div class="version-row"><span>RO Generator</span><code>v0.1.0</code></div>
+              <div class="version-row"><span>RO Workbench API</span><code>v0.1.0</code></div>
+              <div class="version-row"><span>前端界面</span><code>v0.1.0</code></div>
             </div>
           </div>
         </div>

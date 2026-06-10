@@ -10,11 +10,44 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from ro_generator.errors import WorkbookOpenError
 from ro_generator.models import ValidationMessage
 from ro_generator.workbook_cache import get_cache_manager
 from ro_generator.workbook_snapshot import BuildSnapshotError, PoInspection
+
+
+@dataclass(frozen=True)
+class FileInspectionResult:
+    ok: bool
+    sheets: tuple[str, ...] = ()
+    size: int = 0
+    error: str = ""
+
+
+def inspect_file_path(path: str) -> FileInspectionResult:
+    """检查文件路径是否有效，返回 sheet 列表和文件大小。
+
+    API 层不应直接使用 openpyxl——此函数封装了文件检测逻辑。
+    """
+    from openpyxl import load_workbook
+
+    p = Path(path)
+    if not p.exists():
+        return FileInspectionResult(ok=False, error=f"文件不存在：{path}")
+    if not p.is_file():
+        return FileInspectionResult(ok=False, error=f"路径不是文件：{path}")
+    if p.suffix.lower() not in (".xlsx", ".xls", ".xlsm"):
+        return FileInspectionResult(ok=False, error=f"不支持的文件格式：{p.suffix}")
+
+    try:
+        wb = load_workbook(str(p), read_only=True)
+        sheets = tuple(wb.sheetnames)
+        wb.close()
+        return FileInspectionResult(ok=True, sheets=sheets, size=p.stat().st_size)
+    except Exception as e:
+        return FileInspectionResult(ok=False, error=f"无法打开文件：{e}")
 
 
 @dataclass(frozen=True)
@@ -73,9 +106,11 @@ def get_customer_po_data(base_file: str, po_no: str) -> dict[str, object]:
 
 
 __all__ = [
+    "FileInspectionResult",
     "PoInspection",
     "WorkbookInspectionResult",
     "get_customer_po_data",
     "get_po_data",
+    "inspect_file_path",
     "inspect_workbook",
 ]

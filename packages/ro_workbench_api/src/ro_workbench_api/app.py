@@ -27,10 +27,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from ro_generator.errors import WorkbookOpenError
-from ro_generator.generator import generate, preview, preview_from_snapshot
+from ro_generator.generator import generate, preview_from_snapshot
 from ro_generator.models import DocumentRequest, GenerationResult, ValidationMessage
 from ro_generator.source_index import SourceIndex
-from ro_generator.workbench_service import get_customer_po_data, get_po_data, inspect_workbook
+from ro_generator.workbench_service import get_customer_po_data, get_po_data, inspect_file_path, inspect_workbook
 from ro_generator.workbook_cache import get_cache_manager
 from ro_generator.workbook_editor import edit_workbook_cell
 from ro_generator.workbook_reader import WorkbookReader
@@ -51,11 +51,16 @@ async def lifespan(_app: FastAPI):
             _cleanup_timer.cancel()
 
 
-app = FastAPI(title="RO Workbench API", version="0.0.0", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-
 # 生产模式（非开发模式）下 serve 前端静态资源
 FRONTEND_DIST = os.environ.get("RO_WORKBENCH_FRONTEND_DIST", "")
+
+app = FastAPI(title="RO Workbench API", version="0.1.0", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://127.0.0.1:*", "http://localhost:*"] if FRONTEND_DIST else ["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 if FRONTEND_DIST:
     from fastapi.staticfiles import StaticFiles
 
@@ -122,7 +127,7 @@ def _get_session(session_id: str) -> SessionInfo | None:
 
 
 def _cleanup_expired_sessions() -> None:
-    """清理过期 session 的临时目录。"""
+    """清理过期 session 的临时目录和过期缓存。"""
     now = time.time()
     with _lock:
         expired = [
@@ -133,6 +138,7 @@ def _cleanup_expired_sessions() -> None:
             info = _sessions.pop(sid)
             with suppress(Exception):
                 shutil.rmtree(info.temp_dir, ignore_errors=True)
+    get_cache_manager().clear_expired()
 
 
 def _schedule_cleanup_timer() -> None:
@@ -166,7 +172,6 @@ class DryRunRequest(BaseModel):
     base_file: str
     po_no: str
     seller: str
-    buyer: str | None = None
     invoice_no: str | None = None
     document: str = "INVOICE"
 
@@ -236,22 +241,10 @@ class CheckPathRequest(BaseModel):
 @app.post("/api/check-path")
 def check_path(req: CheckPathRequest) -> dict[str, object]:
     """检查文件路径是否有效。"""
-    p = Path(req.path)
-    if not p.exists():
-        return {"ok": False, "error": f"文件不存在：{req.path}"}
-    if not p.is_file():
-        return {"ok": False, "error": f"路径不是文件：{req.path}"}
-    if p.suffix.lower() not in (".xlsx", ".xls", ".xlsm"):
-        return {"ok": False, "error": f"不支持的文件格式：{p.suffix}"}
-
-    try:
-        from openpyxl import load_workbook
-        wb = load_workbook(str(p), read_only=True)
-        sheets = wb.sheetnames
-        wb.close()
-        return {"ok": True, "sheets": sheets, "size": p.stat().st_size}
-    except Exception as e:
-        return {"ok": False, "error": f"无法打开文件：{e}"}
+    result = inspect_file_path(req.path)
+    if result.ok:
+        return {"ok": True, "sheets": list(result.sheets), "size": result.size}
+    return {"ok": False, "error": result.error}
 
 
 @app.post("/api/session/open")
@@ -309,9 +302,7 @@ def dry_run(
         base_file=req.base_file,
         po_no=po_no,
         documents=(doc,),  # type: ignore[arg-type]
-        seller=req.seller,
-        buyer=req.buyer,
-        invoice_no=req.invoice_no,
+        seller=req.seller,invoice_no=req.invoice_no,
         output_dir=session.temp_dir,
     )
     result = generate(request)
@@ -342,9 +333,7 @@ def preview_document(
         base_file=req.base_file,
         po_no=po_no,
         documents=(doc,),  # type: ignore[arg-type]
-        seller=req.seller,
-        buyer=req.buyer,
-        invoice_no=req.invoice_no,
+        seller=req.seller,invoice_no=req.invoice_no,
         output_dir=session.temp_dir,
     )
 
@@ -406,8 +395,9 @@ def edit_field(po_no: str, req: EditFieldRequest) -> EditFieldResponse:
     return EditFieldResponse(ok=result.ok, message=result.message)
 
 
-@app.post("/api/export")
+@app.post("/api/po/{po_no}/export")
 def export_documents(
+    po_no: str,
     req: DryRunRequest,
     x_session_id: str = Header(..., alias="X-Session-Id"),
 ) -> dict[str, Any]:
@@ -422,10 +412,9 @@ def export_documents(
     doc = req.document.upper() if req.document else "INVOICE"
     request = DocumentRequest(
         base_file=req.base_file,
-        po_no=req.po_no,
+        po_no=po_no,
         documents=(doc,),  # type: ignore[arg-type]
-        seller=req.seller,
-        invoice_no=req.invoice_no,
+        seller=req.seller,invoice_no=req.invoice_no,
         output_dir=session.temp_dir,
     )
     result = generate(request)

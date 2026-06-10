@@ -2,11 +2,13 @@
 
 双击 .app 后直接运行此脚本。
 服务器在后台线程中运行，避免子进程复杂度。
+退出托盘时通过信号优雅关闭，让 uvicorn 清理连接再退出。
 """
 
 from __future__ import annotations
 
 import os
+import signal
 import socket
 import sys
 import threading
@@ -15,6 +17,8 @@ import webbrowser
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
+
+_shutdown_requested = threading.Event()
 
 
 def _resource_root() -> Path:
@@ -40,11 +44,20 @@ def _find_free_port() -> int:
 
 
 def _run_server(port: int) -> None:
-    """在后台线程启动 uvicorn。"""
+    """在后台线程启动 uvicorn，监听 shutdown 事件退出。"""
     import uvicorn
     from ro_workbench_api.app import app
 
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+    server = uvicorn.Server(config)
+
+    def _poll_shutdown() -> None:
+        while not _shutdown_requested.is_set():
+            time.sleep(0.5)
+        server.should_exit = True
+
+    threading.Thread(target=_poll_shutdown, daemon=True).start()
+    server.run()
 
 
 def _wait_until_ready(port: int, timeout: float = 10.0) -> bool:
@@ -69,10 +82,11 @@ def _run_tray(port: int) -> None:
         print(f"工作台运行中: http://127.0.0.1:{port}", file=sys.stderr)
         print("按 Ctrl+C 退出", file=sys.stderr)
         try:
-            while True:
+            while not _shutdown_requested.is_set():
                 time.sleep(1)
         except KeyboardInterrupt:
             pass
+        _shutdown_requested.set()
         return
 
     img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
@@ -81,8 +95,7 @@ def _run_tray(port: int) -> None:
 
     def on_quit(icon: pystray.Icon) -> None:
         icon.stop()
-        import os
-        os._exit(0)
+        _shutdown_requested.set()
 
     icon = pystray.Icon(
         "RO Workbench", img, "RO 单据工作台",

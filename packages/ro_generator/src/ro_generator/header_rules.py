@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, replace
 from datetime import date
-from typing import Final, Iterable, Mapping, TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from ro_generator.header_multiline import (
     MANUFACTURER_ADDRESS_FIELDS,
@@ -153,6 +154,49 @@ HEADER_FIELD_SPECS: Final[dict[str, HeaderFieldSpec]] = {
         render_keys=("ex_factory_date",),
     ),
 }
+# —————————————————————————————————————
+# 主体专属覆盖
+# field_name → [(seller_set, override_kwargs), ...]
+# —————————————————————————————————————
+
+_HEADER_SELLER_OVERRIDES: Final[dict[str, list[tuple[frozenset[str], dict[str, str | None]]]]] = {
+    "ex_factory_date": [
+        (frozenset({"SK", "YM", "GS PTE"}), {
+            "source_sheet": SHEET_PO_RECORD,
+            "source_field": "FINAL EX-FACTORY DATE",
+            "rule": 'PO record 的 "FINAL EX-FACTORY DATE" 列',
+        }),
+    ],
+    "pi_no": [
+        (frozenset({"GS PTE"}), {
+            "source_sheet": SHEET_CUSTOMER_PO,
+            "source_field": "Purchasing Document",
+            "rule": '客户PO A列 "Purchasing Document"',
+        }),
+    ],
+}
+
+
+def resolve_header_field_spec(
+    field_name: str,
+    *,
+    seller: str,
+    document_type: str,
+) -> HeaderFieldSpec | None:
+    """获取 header 字段规格，已应用主体专属来源覆盖。
+
+    与 resolve_line_field_spec 对称：先取全局默认，再按主体叠加覆盖。
+    返回 None 表示该字段没有对应 spec（模板固定文本或未知字段）。
+    """
+    spec = HEADER_FIELD_SPECS.get(field_name)
+    if spec is None:
+        return None
+    for seller_set, kwargs in _HEADER_SELLER_OVERRIDES.get(field_name, []):
+        if seller in seller_set:
+            return replace(spec, **kwargs)
+    return spec
+
+
 def build_ship_to_header_values(
     ship_to: str | None,
     header_keys: Iterable[str],

@@ -74,7 +74,11 @@ style:
 preview_content:
   title: PROFORMA INVOICE
   terms_fields:
+  - payment_terms
+  - port_of_loading
+  - final_destination
   static_terms:
+    incoterm: FOB GUANGDONG
   notes: []
   source_overrides:
     po_no:

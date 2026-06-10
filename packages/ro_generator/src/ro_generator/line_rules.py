@@ -117,6 +117,57 @@ LINE_FIELD_SPECS: Final[dict[str, LineFieldSpec]] = {
 }
 
 
+# —————————————————————————————————————
+# 单据族差异表
+# PI/PO 沿用 LINE_FIELD_SPECS 默认值（订单时数据）
+# INVOICE/PL 用出货时数据；PL 额外覆盖 cbm
+# —————————————————————————————————————
+
+_INVOICE_PL_OVERRIDES: Final[dict[str, dict[str, str | None]]] = {
+    "quantity": {
+        "rule": "Invoice/PL 使用 PO record 的月度出货数量",
+        "source_sheet": SHEET_PO_RECORD,
+        "source_field": "SHIP QTY",
+    },
+    "description": {
+        "rule": "Invoice/PL 使用 PO record 的 DESCRIPTION 列",
+        "source_sheet": SHEET_PO_RECORD,
+        "source_field": "DESCRIPTION",
+    },
+}
+
+_PL_ONLY_OVERRIDES: Final[dict[str, dict[str, str | None]]] = {
+    **_INVOICE_PL_OVERRIDES,
+    "cbm": {
+        "rule": 'PL 使用 PO record AJ列 "TOTAL CBM"',
+        "source_sheet": SHEET_PO_RECORD,
+        "source_field": "TOTAL CBM",
+        "source_type": "base_field",
+    },
+}
+
+# document_type → {field_name → override_kwargs}
+_DOC_FAMILY_OVERRIDES: Final[dict[str, dict[str, dict[str, str | None]]]] = {
+    "INVOICE": _INVOICE_PL_OVERRIDES,
+    "PL": _PL_ONLY_OVERRIDES,
+}
+
+# —————————————————————————————————————
+# 主体专属来源覆盖
+# field_name → [(seller_set, override_kwargs), ...]
+# —————————————————————————————————————
+
+_SELLER_LINE_OVERRIDES: Final[dict[str, list[tuple[frozenset[str], dict[str, str | None]]]]] = {
+    "confirmed_ex_factory_date": [
+        (frozenset({"SK", "YM", "GS PTE"}), {
+            "rule": 'PO record 的 "FINAL EX-FACTORY DATE" 列',
+            "source_sheet": SHEET_PO_RECORD,
+            "source_field": "FINAL EX-FACTORY DATE",
+        }),
+    ],
+}
+
+
 def get_line_field_spec(field_name: str) -> LineFieldSpec:
     return LINE_FIELD_SPECS.get(
         field_name,
@@ -127,6 +178,23 @@ def get_line_field_spec(field_name: str) -> LineFieldSpec:
     )
 
 
+def _apply_seller_line_override(spec: LineFieldSpec, field_name: str, seller: str) -> LineFieldSpec:
+    """按主体查找来源覆盖，找到则返回替换后的 spec，否则原样返回。"""
+    for seller_set, kwargs in _SELLER_LINE_OVERRIDES.get(field_name, []):
+        if seller in seller_set:
+            return replace(spec, **kwargs)
+    return spec
+
+
+def _resolve_unit_price_spec(spec: LineFieldSpec, seller: str, category: int | None) -> LineFieldSpec:
+    """unit_price 按 seller × category 叉积查列名，结果无法预先声明，单独处理。"""
+    category_name = CATEGORY_NAMES.get(category or -1, "")
+    column = DATA_BASE_PRICE_COLUMNS.get(f"{seller}/{category_name}")
+    if column:
+        return replace(spec, rule=f"DATA BASE 的 {column} 列", source_sheet=SHEET_DATA_BASE, source_field=column)
+    return spec
+
+
 def resolve_line_field_spec(
     field_name: str,
     *,
@@ -134,46 +202,17 @@ def resolve_line_field_spec(
     seller: str,
     category: int | None = None,
 ) -> LineFieldSpec:
-    spec = get_line_field_spec(field_name)
-    if field_name == "description" and document_type in {"INVOICE", "PL"}:
-        return replace(
-            spec,
-            rule=f"{document_type} 使用 PO record 的 DESCRIPTION 列",
-            source_sheet=SHEET_PO_RECORD,
-            source_field="DESCRIPTION",
-        )
-    if field_name == "quantity" and document_type in {"INVOICE", "PL"}:
-        return replace(
-            spec,
-            rule="Invoice/PL 使用 PO record 的 SHIP QTY",
-            source_sheet=SHEET_PO_RECORD,
-            source_field="SHIP QTY",
-        )
-    if field_name == "cbm" and document_type == "PL":
-        return replace(
-            spec,
-            rule='PL 使用 PO record AJ列 "TOTAL CBM"',
-            source_sheet=SHEET_PO_RECORD,
-            source_field="TOTAL CBM",
-            source_type="base_field",
-        )
+    # 1. 按单据族叠加覆盖（INVOICE/PL 使用出货数据；PI/PO 沿用默认）
+    doc_kwargs = _DOC_FAMILY_OVERRIDES.get(document_type, {}).get(field_name)
+    spec = replace(get_line_field_spec(field_name), **doc_kwargs) if doc_kwargs else get_line_field_spec(field_name)
+
+    # 2. 主体专属来源覆盖（数据驱动，无 if 链）
+    spec = _apply_seller_line_override(spec, field_name, seller)
+
+    # 3. unit_price：seller × category 叉积，无法预先声明
     if field_name == "unit_price":
-        category_name = CATEGORY_NAMES.get(category or -1, "")
-        column = DATA_BASE_PRICE_COLUMNS.get(f"{seller}/{category_name}")
-        if column:
-            return replace(
-                spec,
-                rule=f"DATA BASE 的 {column} 列",
-                source_sheet=SHEET_DATA_BASE,
-                source_field=column,
-            )
-    if field_name == "confirmed_ex_factory_date" and seller in {"SK", "YM", "GS PTE"}:
-        return replace(
-            spec,
-            rule='PO record 的 "FINAL EX-FACTORY DATE" 列',
-            source_sheet=SHEET_PO_RECORD,
-            source_field="FINAL EX-FACTORY DATE",
-        )
+        spec = _resolve_unit_price_spec(spec, seller, category)
+
     return spec
 
 

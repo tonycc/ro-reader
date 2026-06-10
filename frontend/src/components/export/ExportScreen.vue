@@ -62,6 +62,7 @@ async function handleExport() {
         <button class="primary-btn" :disabled="!selectedDocs.size || wb.exporting" @click="handleExport">
           {{ wb.exporting ? "导出中…" : "确认导出" }}
         </button>
+        <div v-if="wb.exportError" class="export-err">{{ wb.exportError }}</div>
       </div>
     </div>
   </div>
@@ -95,4 +96,5 @@ async function handleExport() {
   font-weight: 700; cursor: pointer; font: inherit; font-size: 13px;
 }
 .primary-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.export-err { margin-top: 8px; padding: 8px 10px; border-radius: 6px; background: #fff5f5; border: 1px solid #fecaca; color: var(--red); font-size: 12px; line-height: 1.5; }
 </style>

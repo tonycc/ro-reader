@@ -5,6 +5,15 @@ let _sessionId = "";
 export function setSessionId(id: string) { _sessionId = id; }
 export function getSessionId(): string { return _sessionId; }
 
+export class ApiError extends Error {
+  code: string;
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.code = code;
+  }
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = {};
   if (body) headers["Content-Type"] = "application/json";
@@ -18,7 +27,11 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   const resp = await fetch(BASE + path, opts);
   if (!resp.ok) {
     const errBody = await resp.json().catch(() => ({ detail: resp.statusText }));
-    throw new Error(errBody.detail ?? resp.statusText);
+    const detail = errBody.detail;
+    if (typeof detail === "object" && detail !== null && "code" in detail && "message" in detail) {
+      throw new ApiError(String(detail.code), String(detail.message));
+    }
+    throw new ApiError("HTTP_ERROR", typeof detail === "string" ? detail : resp.statusText);
   }
   return resp.json() as Promise<T>;
 }
@@ -34,7 +47,6 @@ export interface PoListItem {
 
 export interface DryRunRequest {
   base_file: string; po_no: string; seller: string
-  buyer?: string | null
   invoice_no?: string | null; document?: string
 }
 
@@ -116,7 +128,16 @@ export interface OpenSessionResponse {
   errors?: unknown[]
 }
 
+export interface CheckPathResult {
+  ok: boolean
+  sheets?: string[]
+  size?: number
+  error?: string
+}
+
 export const api = {
+  checkPath: (path: string): Promise<CheckPathResult> =>
+    request("POST", "/check-path", { path }),
   openSession: (base_file: string): Promise<OpenSessionResponse> =>
     request("POST", "/session/open", { base_file }),
   getDataView: (base_file: string, po_no: string): Promise<{ po_no: string; headers: string[]; rows: Record<string, unknown>[] }> =>
@@ -127,5 +148,5 @@ export const api = {
     request("POST", `/po/${req.po_no}/preview`, req),
   editField: (po_no: string, req: Omit<EditRequest, "po_no">): Promise<{ ok: boolean; message: string }> =>
     request("POST", `/po/${po_no}/edit`, req),
-  exportDocuments: (req: DryRunRequest): Promise<DryRunResult> => request("POST", "/export", req),
+  exportDocuments: (req: DryRunRequest): Promise<DryRunResult> => request("POST", `/po/${req.po_no}/export`, req),
 };

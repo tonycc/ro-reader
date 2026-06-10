@@ -11,9 +11,15 @@ on:
       - 'frontend/**'
       - '.github/workflows/build-launcher.yml'
 
+env:
+  APP_VERSION: "0.1.0"
+  # Opt into Node.js 24 now — GitHub will force it on 2026-06-16
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     strategy:
+      fail-fast: false          # let both platforms finish even if one fails
       matrix:
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
@@ -42,7 +48,7 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: |
           APP="dist/RO Workbench.app"
-          DMG="dist/RO-Workbench-0.1.0-mac.dmg"
+          DMG="dist/RO-Workbench-${{ env.APP_VERSION }}-mac.dmg"
           hdiutil create -volname "RO Workbench" \
             -srcfolder "$APP" \
             -ov -format UDZO "$DMG"
@@ -52,7 +58,7 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          $v = "0.1.0"
+          $v = "${{ env.APP_VERSION }}"
           $d = Get-Date -Format "yyyy-MM-dd"
 
           # VERSION.txt

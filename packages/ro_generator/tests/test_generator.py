@@ -120,7 +120,7 @@ class TestSuccessPath:
     def test_invoice_with_seller_and_invoice_no(self, tmp_path):
         path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
         request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-                                  seller="GS PTE", buyer="EMAX PTE", invoice_no="INV-001", output_dir=str(tmp_path / "out"))
+                                  seller="GS PTE", invoice_no="INV-001", output_dir=str(tmp_path / "out"))
         result = generate(request)
         assert result.status == "success", result.errors
         assert result.output_file is not None
@@ -145,7 +145,7 @@ class TestSuccessPath:
             }],
         )
         request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-                                  seller="GS PTE", buyer="EMAX PTE", invoice_no="INV-001", output_dir=str(tmp_path / "out"))
+                                  seller="GS PTE", invoice_no="INV-001", output_dir=str(tmp_path / "out"))
         result = generate(request)
         wb = load_workbook(result.output_file)
         ws = wb["INV"]
@@ -159,7 +159,7 @@ class TestNeedsInput:
             po_record_rows=[basic_po_row(FINALQTY=100, **{"INV#": "INV-001"}),
                             basic_po_row(**{"ITEM LINE#": "20", "FINALQTY": 100, "INV#": "INV-002"})])
         request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-                                  seller="GS PTE", buyer="EMAX PTE", output_dir=str(tmp_path / "out"))
+                                  seller="GS PTE", output_dir=str(tmp_path / "out"))
         result = generate(request)
         assert result.status == "needs_input"
         assert INPUT_INVOICE_NO in result.missing_inputs
@@ -167,7 +167,7 @@ class TestNeedsInput:
     def test_single_invoice_auto_selects(self, tmp_path):
         path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
         request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-                                  seller="GS PTE", buyer="EMAX PTE", output_dir=str(tmp_path / "out"))
+                                  seller="GS PTE", output_dir=str(tmp_path / "out"))
         result = generate(request)
         assert result.status == "success", result.errors
 
@@ -184,7 +184,7 @@ class TestErrorPath:
     def test_unknown_po(self, tmp_path):
         path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
         request = DocumentRequest(base_file=str(path), po_no="9999999", documents=("INVOICE",),
-                                  seller="GS PTE", buyer="EMAX PTE", invoice_no="INV-001", output_dir=str(tmp_path / "out"))
+                                  seller="GS PTE", invoice_no="INV-001", output_dir=str(tmp_path / "out"))
         result = generate(request)
         assert result.status == "error"
         assert any(m.code == "PO_NOT_FOUND" for m in result.errors)
@@ -193,14 +193,14 @@ class TestErrorPath:
         path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT],
                               po_record_rows=[basic_po_row(**{"INV#": None})])
         request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-                                  seller="GS PTE", buyer="EMAX PTE", invoice_no="INV-001", output_dir=str(tmp_path / "out"))
+                                  seller="GS PTE", invoice_no="INV-001", output_dir=str(tmp_path / "out"))
         result = generate(request)
         assert result.status == "error"
 
     def test_multi_doc_generates_both(self, tmp_path):
         path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
         request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("PI", "INVOICE"),
-                                  seller="GS PTE", buyer="EMAX PTE", invoice_no="INV-001", output_dir=str(tmp_path / "out"))
+                                  seller="GS PTE", invoice_no="INV-001", output_dir=str(tmp_path / "out"))
         result = generate(request)
         assert result.status == "success", result.errors
         assert len(result.files) == 2
@@ -208,14 +208,14 @@ class TestErrorPath:
     def test_sk_ym_po_blocked(self, tmp_path):
         path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
         request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("PO",),
-                                  seller="SK", buyer="YM", output_dir=str(tmp_path / "out"))
+                                  seller="SK", output_dir=str(tmp_path / "out"))
         result = generate(request)
         assert result.status == "error"
         assert any(m.code == CODE_MAPPING_NOT_FOUND for m in result.errors)
 
     def test_missing_workbook_returns_error(self, tmp_path):
         request = DocumentRequest(base_file=str(tmp_path / "nope.xlsx"), po_no="4500030844",
-                                  documents=("INVOICE",), seller="GS PTE", buyer="EMAX PTE",
+                                  documents=("INVOICE",), seller="GS PTE",
                                   invoice_no="INV-001", output_dir=str(tmp_path / "out"))
         result = generate(request)
         assert result.status == "error"
@@ -230,7 +230,7 @@ class TestErrorPath:
         path = tmp_path / "incomplete.xlsx"
         wb.save(path)
         request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-                                  seller="GS PTE", buyer="EMAX PTE", invoice_no="INV-001", output_dir=str(tmp_path / "out"))
+                                  seller="GS PTE", invoice_no="INV-001", output_dir=str(tmp_path / "out"))
         result = generate(request)
         assert result.status == "error"
         assert any(m.code == "SHEET_MISSING" for m in result.errors)
@@ -241,7 +241,7 @@ class TestWarningsPropagation:
         path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT],
                               po_record_rows=[basic_po_row(FINALQTY=240, **{"CTNS": None, "TOTAL CBM": None})])
         request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-                                  seller="GS PTE", buyer="EMAX PTE", invoice_no="INV-001", output_dir=str(tmp_path / "out"))
+                                  seller="GS PTE", invoice_no="INV-001", output_dir=str(tmp_path / "out"))
         result = generate(request)
         assert result.status == "success", result.errors
         assert any(m.code == "FORMULA_FALLBACK" for m in result.warnings)
@@ -251,7 +251,7 @@ class TestConflictStrategy:
     def test_overwrite_replaces_existing(self, tmp_path):
         path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
         request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-                                  seller="GS PTE", buyer="EMAX PTE", invoice_no="INV-001",
+                                  seller="GS PTE", invoice_no="INV-001",
                                   output_dir=str(tmp_path / "out"), on_conflict="overwrite")
         first = generate(request)
         assert first.status == "success"
@@ -264,7 +264,7 @@ class TestConflictStrategy:
 def test_generation_result_immutable(tmp_path, _label):
     path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
     request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-                              seller="GS PTE", buyer="EMAX PTE", invoice_no="INV-001", output_dir=str(tmp_path / "out"))
+                              seller="GS PTE", invoice_no="INV-001", output_dir=str(tmp_path / "out"))
     import dataclasses
     result = generate(request)
     with pytest.raises(dataclasses.FrozenInstanceError):
@@ -318,7 +318,7 @@ class TestPreviewFunction:
         path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
         request = DocumentRequest(
             base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-            seller="GS PTE", buyer="EMAX PTE", invoice_no="INV-001",
+            seller="GS PTE", invoice_no="INV-001",
             output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
@@ -339,7 +339,7 @@ class TestPreviewFunction:
         path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
         request = DocumentRequest(
             base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-            seller="GS PTE", buyer="EMAX PTE", invoice_no="INV-001",
+            seller="GS PTE", invoice_no="INV-001",
             output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
@@ -353,7 +353,7 @@ class TestPreviewFunction:
                             basic_po_row(**{"ITEM LINE#": "20", "FINALQTY": 100, "INV#": "INV-002"})])
         request = DocumentRequest(
             base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-            seller="GS PTE", buyer="EMAX PTE",
+            seller="GS PTE",
             output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
@@ -364,7 +364,7 @@ class TestPreviewFunction:
         path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
         request = DocumentRequest(
             base_file=str(path), po_no="9999999", documents=("INVOICE",),
-            seller="GS PTE", buyer="EMAX PTE", invoice_no="INV-001",
+            seller="GS PTE", invoice_no="INV-001",
             output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
@@ -374,7 +374,7 @@ class TestPreviewFunction:
         path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
         request = DocumentRequest(
             base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-            seller="GS PTE", buyer="EMAX PTE", invoice_no="INV-001",
+            seller="GS PTE", invoice_no="INV-001",
             output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
@@ -387,7 +387,7 @@ class TestPreviewFunction:
         path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
         request = DocumentRequest(
             base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-            seller="GS PTE", buyer="EMAX PTE", invoice_no="INV-001",
+            seller="GS PTE", invoice_no="INV-001",
             output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
@@ -404,7 +404,7 @@ class TestPreviewFunction:
         path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
         request = DocumentRequest(
             base_file=str(path), po_no="4500030844", documents=("PI",),
-            seller="EMAX PTE", buyer="PF", output_dir=str(tmp_path / "out"),
+            seller="EMAX PTE", output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
         assert result.status == "success"
@@ -435,7 +435,7 @@ class TestPreviewFunction:
         path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
         request = DocumentRequest(
             base_file=str(path), po_no="4500030844", documents=("PI",),
-            seller="EMAX PTE", buyer="PF", output_dir=str(tmp_path / "out"),
+            seller="EMAX PTE", output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
         assert result.status == "success"
@@ -451,7 +451,7 @@ class TestPreviewFunction:
         path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
         request = DocumentRequest(
             base_file=str(path), po_no="4500030844", documents=("PI",),
-            seller="EMAX PTE", buyer="PF", output_dir=str(tmp_path / "out"),
+            seller="EMAX PTE", output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
         assert result.status == "success"
@@ -482,7 +482,7 @@ class TestPreviewFunction:
         )
         request = DocumentRequest(
             base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-            seller="GS PTE", buyer="EMAX PTE", invoice_no="INV-001",
+            seller="GS PTE", invoice_no="INV-001",
             output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
@@ -514,7 +514,7 @@ class TestPreviewFunction:
         )
         request = DocumentRequest(
             base_file=str(path), po_no="4500030844", documents=("PI",),
-            seller="EMAX PTE", buyer="PF", output_dir=str(tmp_path / "out"),
+            seller="EMAX PTE", output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
         assert result.status == "success"
@@ -556,7 +556,7 @@ class TestPreviewFunction:
         )
         request = DocumentRequest(
             base_file=str(path), po_no="4500030844", documents=("PI",),
-            seller="EMAX PTE", buyer="PF", output_dir=str(tmp_path / "out"),
+            seller="EMAX PTE", output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
         assert result.status == "success"
@@ -586,7 +586,7 @@ class TestPreviewFunction:
         )
         request = DocumentRequest(
             base_file=str(path), po_no="4500030844", documents=("PO",),
-            seller="GS PTE", buyer="EMAX PTE", output_dir=str(tmp_path / "out"),
+            seller="GS PTE", output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
         assert result.status == "success"
@@ -619,7 +619,7 @@ class TestPreviewFunction:
         )
         request = DocumentRequest(
             base_file=str(path), po_no="4500030844", documents=("PI",),
-            seller="EMAX PTE", buyer="PF", output_dir=str(tmp_path / "out"),
+            seller="EMAX PTE", output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
         assert result.status == "success"
@@ -649,7 +649,7 @@ class TestPreviewFunction:
         path = make_base_file(tmp_path, data_base_rows=[db_row], po_record_rows=[po_row])
         request = DocumentRequest(
             base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-            seller="GS PTE", buyer="EMAX PTE", invoice_no="INV-001",
+            seller="GS PTE", invoice_no="INV-001",
         )
         result = preview(request)
         assert result.status == "success"
@@ -668,7 +668,7 @@ class TestPreviewFunction:
         path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
         request = DocumentRequest(
             base_file=str(path), po_no="4500030844", documents=("PL",),
-            seller="GS PTE", buyer="EMAX PTE", invoice_no="INV-001",
+            seller="GS PTE", invoice_no="INV-001",
         )
         result = preview(request)
         assert result.status == "success"
@@ -706,7 +706,7 @@ class TestPreviewFunction:
         path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
         request = DocumentRequest(
             base_file=str(path), po_no="4500030844", documents=("PL",),
-            seller="EMAX PTE", buyer="PF", invoice_no="INV-001",
+            seller="EMAX PTE", invoice_no="INV-001",
         )
         result = preview(request)
         assert result.status == "success"
@@ -732,7 +732,7 @@ class TestPreviewFunction:
         path = make_base_file(tmp_path, data_base_rows=[db_row], po_record_rows=[po_row])
         request = DocumentRequest(
             base_file=str(path), po_no="4500030844", documents=("PL",),
-            seller="EMAX PTE", buyer="PF", invoice_no="INV-001",
+            seller="EMAX PTE", invoice_no="INV-001",
         )
         result = preview(request)
         assert result.status == "success"
@@ -754,7 +754,7 @@ class TestPreviewFunction:
         path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
         request = DocumentRequest(
             base_file=str(path), po_no="4500030844", documents=("PL",),
-            seller="EMAX PTE", buyer="PF", invoice_no="INV-001",
+            seller="EMAX PTE", invoice_no="INV-001",
         )
         result = preview(request)
         assert result.status == "success"
@@ -784,7 +784,7 @@ class TestPreviewFunction:
         )
         request = DocumentRequest(
             base_file=str(path), po_no="4500030844", documents=("PL",),
-            seller="EMAX PTE", buyer="PF", invoice_no="INV-001",
+            seller="EMAX PTE", invoice_no="INV-001",
         )
         result = preview(request)
         assert result.status == "success"
@@ -815,7 +815,7 @@ class TestPreviewFunction:
 
         request = DocumentRequest(
             base_file=str(path), po_no="4500030844", documents=("PL",),
-            seller="EMAX PTE", buyer="PF", invoice_no="INV-001",
+            seller="EMAX PTE", invoice_no="INV-001",
         )
         result = preview(request)
         assert result.status == "success"
@@ -833,7 +833,7 @@ class TestPreviewFunction:
         path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
         request = DocumentRequest(
             base_file=str(path), po_no="4500030844", documents=("PL",),
-            seller=seller, buyer="GS PTE", invoice_no="INV-001",
+            seller=seller, invoice_no="INV-001",
         )
         result = preview(request)
         assert result.status == "success"
@@ -851,7 +851,7 @@ class TestPreviewFunction:
         path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
         request = DocumentRequest(
             base_file=str(path), po_no="4500030844", documents=("PI",),
-            seller="EMAX PTE", buyer="PF", output_dir=str(tmp_path / "out"),
+            seller="EMAX PTE", output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
         assert result.status == "success"

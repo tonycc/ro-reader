@@ -93,6 +93,7 @@ class TemplateMapping:
     table_header_row: list[int] = field(default_factory=list)
     header_fixed: dict[str, str] = field(default_factory=dict)
     style: CellStyles = field(default_factory=CellStyles)
+    preview_content: dict[str, object] = field(default_factory=dict)
 
 
 # —————————————————————————————————————
@@ -168,6 +169,7 @@ def _parse_mapping(raw: dict[str, object], yaml_path: Path) -> TemplateMapping:
                 f"table_header_row 每一项都必须小于 lines.start_row={lines.start_row}，但 {r} >= {lines.start_row}（{yaml_path}）"
             )
     style = _parse_style(raw.get("style"), yaml_path)
+    preview_content = _parse_preview_content(raw.get("preview_content"), yaml_path)
 
     return TemplateMapping(
         document=document,
@@ -181,6 +183,7 @@ def _parse_mapping(raw: dict[str, object], yaml_path: Path) -> TemplateMapping:
         table_header_row=table_header_row,
         header_fixed=header_fixed,
         style=style,
+        preview_content=preview_content,
     )
 
 
@@ -487,6 +490,19 @@ def _require_dict_of_str(raw: dict[str, object], key: str, yaml_path: Path) -> d
             raise MappingError(f"{key}.{k!r} 的键和值都必须是字符串：{yaml_path}")
         out[k] = val.strip()
     return out
+
+
+def _parse_preview_content(raw: object, yaml_path: Path) -> dict[str, object]:
+    """解析 preview_content 节，在 load 阶段与其余 mapping 一同校验。
+
+    preview_content 由 document_preview.build_preview() 消费，
+    不再需要单独重新读取 YAML 文件。
+    """
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise MappingError(f"preview_content 必须是 dict：{yaml_path}")
+    return raw  # type: ignore[return-value]
 
 
 def _parse_style(raw: object, yaml_path: Path) -> CellStyles:

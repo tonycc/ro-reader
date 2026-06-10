@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import type { PoListItem, DryRunResult, SourceIndexEntry, PreviewPayload, PreviewSourceEntry } from "./api";
-import { api, setSessionId, getSessionId } from "./api";
+import { api, setSessionId, getSessionId, ApiError } from "./api";
 
 export const useWorkbench = defineStore("workbench", () => {
   const baseFile = ref("");
@@ -29,6 +29,9 @@ export const useWorkbench = defineStore("workbench", () => {
 
   const blockingErrors = ref<unknown[]>([]);
   const warnings = ref<unknown[]>([]);
+
+  const previewError = ref("");
+  const exportError = ref("");
 
   const poEntry = computed(() => poList.value.find((p) => p.po_no === selectedPo.value));
   const poStatus = computed(() => poEntry.value?.status ?? "");
@@ -63,6 +66,7 @@ export const useWorkbench = defineStore("workbench", () => {
     if (!baseFile.value || !selectedPo.value || !selectedSeller.value) return;
     const dt = docType || previewDocType.value || "INVOICE";
     previewLoading.value = true;
+    previewError.value = "";
     try {
       const result = await api.preview({
         base_file: baseFile.value, po_no: selectedPo.value,
@@ -73,8 +77,9 @@ export const useWorkbench = defineStore("workbench", () => {
       previewSourceEntries.value = result.preview?.source_entries ?? [];
       warnings.value = result.warnings;
       blockingErrors.value = result.errors;
-    } catch (e) { console.error("preview failed", e); }
-    finally { previewLoading.value = false; }
+    } catch (e) {
+      previewError.value = e instanceof ApiError ? e.message : `预览失败：${e}`;
+    } finally { previewLoading.value = false; }
   }
 
   async function editCell(field: string, row: number, value: unknown) {
@@ -88,6 +93,7 @@ export const useWorkbench = defineStore("workbench", () => {
   async function doExport() {
     if (!baseFile.value || !selectedPo.value || !selectedSeller.value) return;
     exporting.value = true;
+    exportError.value = "";
     try {
       const result = await api.exportDocuments({
         base_file: baseFile.value, po_no: selectedPo.value,
@@ -105,7 +111,7 @@ export const useWorkbench = defineStore("workbench", () => {
       }
       return result;
     } catch (e) {
-      console.error("[doExport] FAILED:", e);
+      exportError.value = e instanceof ApiError ? e.message : `导出失败：${e}`;
     } finally { exporting.value = false; }
   }
 
@@ -119,6 +125,7 @@ export const useWorkbench = defineStore("workbench", () => {
     preview, previewData, previewDocType, previewLoading, sourceIndex, previewSourceEntries,
     exporting, lastExportFile,
     blockingErrors, warnings,
+    previewError, exportError,
     poEntry, poStatus,
     openSession, selectPo, refreshPreview, editCell, doExport,
     selectSeller, selectInvoice,

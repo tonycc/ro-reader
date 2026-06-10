@@ -166,14 +166,18 @@ DocumentType = Literal["PI", "PO", "INVOICE", "PL"]
 class DocumentRequest:
     """一次装配请求。
 
-    seller / buyer 可空：留给 resolver 在数据可推断单段时自动填，否则返回 needs_input。
+    seller 可空：留给 resolver 在数据可推断单段时自动填，否则返回 needs_input。
+    buyer 始终由 _resolve_segment() 从 seller 通过 SELLER_TO_BUYER 推导，
+    不由调用方指定。
+
+    output_format / output_dir / on_conflict 仅对 generate() 路径有意义；
+    preview_from_snapshot() 忽略这些字段。
     """
 
     base_file: str
     po_no: str
     documents: tuple[DocumentType, ...]
     seller: str | None = None
-    buyer: str | None = None
     invoice_no: str | None = None
     output_format: Literal["xlsx", "zip"] = "xlsx"
     output_dir: str = "outputs"

@@ -105,6 +105,7 @@ MVP 形态为**本地启动器 + 浏览器**：双击 PyInstaller 打包的可�
 - **公式回退**：当 `data_only` 读到 None 时核心包按公式现算，并在数据视图中以橙色边框标记。
 - **双向溯源**：核心包构建 `SourceIndex`，前端可点文档预览定位到源字段，反之亦然。
 - **openpyxl `insert_rows` 陷阱**：该函数只平移单元格内容和公式，**不平移 `row_dimensions`**。不修复会导致插入行之后所有行的高度错位。修复方法：调用 `insert_rows` 之前，倒序把 `row_dimensions` 的行号 += 1（详见 `renderer._insert_styled_row` 和 Phase 0 Spike A 结论）。
+- **字段来源三层分派**：字段来源规则写在 `line_rules.py` / `header_rules.py` 的声明式数据表里，而非散落在 `document_preview.py` / `renderer.py` 的 `if` 链中。三层：①全局默认（`get_line_field_spec` / `HEADER_FIELD_SPECS`）→ ②单据族覆盖（`_DOC_FAMILY_OVERRIDES`：Invoice/PL 与 PI/PO 的来源差异）→ ③主体专属覆盖（`_SELLER_LINE_OVERRIDES` / `_HEADER_SELLER_OVERRIDES`）。新增主体/单据差异只加 dict entry，不改下游代码。
 
 ## 源数据结构（`RO DATA BASE.xlsx`）
 

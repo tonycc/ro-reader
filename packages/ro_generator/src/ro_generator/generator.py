@@ -154,109 +154,33 @@ def preview(request: DocumentRequest) -> "PreviewResult":
 
 
 def _preview(request: DocumentRequest) -> "PreviewResult":
-    from ro_generator.document_preview import DocumentPreview, build_preview
+    """通过构建 snapshot 后委托 preview_from_snapshot 实现预览。
 
-    documents = tuple(d.upper() for d in request.documents)
-    if not documents:
-        return PreviewResult(
-            status="error",
-            errors=(
-                ValidationMessage(
-                    kind="blocking_error", code=CODE_UNSUPPORTED_DOCUMENT,
-                    message="documents 不能为空",
-                ),
-            ),
-        )
-    doc_type = documents[0]  # preview 只处理单文档
+    与直接读 Excel 的旧路径行为等价，但复用 snapshot 缓存并消除重复逻辑。
+    """
+    from ro_generator.workbook_snapshot import build_workbook_snapshot
 
+    # Struct validation via WorkbookReader before building snapshot
     with WorkbookReader(request.base_file) as reader:
         struct_messages = validate_workbook_structure(reader)
         if struct_messages:
             return PreviewResult(status="error", errors=struct_messages)
-        resolve_result = resolve_po_lines(reader, request.po_no)
 
-    blocking = tuple(m for m in resolve_result.messages if m.kind == "blocking_error")
-    warnings_resolver = tuple(m for m in resolve_result.messages if m.kind == "warning")
-    if blocking:
-        return PreviewResult(status="error", errors=blocking, warnings=warnings_resolver)
-
-    lines = resolve_result.lines
-    if not lines:
+    try:
+        snapshot = build_workbook_snapshot(request.base_file)
+    except Exception as exc:
+        msg = str(exc)
+        code = getattr(exc, "code", "WORKBOOK_OPEN_ERROR")
         return PreviewResult(
             status="error",
-            errors=(
-                ValidationMessage(
-                    kind="blocking_error", code="NO_LINES_RESOLVED",
-                    message=f"PO {request.po_no} 没有可装配的订单行",
-                ),
-            ),
+            errors=(ValidationMessage(kind="blocking_error", code=code, message=msg),),
         )
 
-    # 推断 seller / buyer
-    seller, buyer, segment_messages = _resolve_segment(request, lines)
-    if seller is None or buyer is None:
-        blocking = tuple(m for m in segment_messages if m.kind == "blocking_error")
-        if blocking:
-            return PreviewResult(status="error", errors=blocking, warnings=warnings_resolver)
-        # needs_input — 返回可选的 seller 列表
-        options: dict[str, tuple[dict[str, str], ...]] = {}
-        if INPUT_SELLER in [m.code for m in segment_messages if hasattr(m, 'code')]:
-            options[INPUT_SELLER] = tuple({"value": s, "label": s} for s in SELLERS)
-        return PreviewResult(
-            status="needs_input",
-            missing_inputs=tuple(INPUT_SELLER if INPUT_SELLER in [m.code for m in segment_messages if hasattr(m, 'code')] else ()),  # type: ignore[arg-type]
-            options=options,
-            warnings=warnings_resolver,
-        )
-
-    # Invoice/PL 需要 INV#
-    invoice_no = request.invoice_no
-    if doc_type in ("INVOICE", "PL"):
-        distinct_invs = _collect_distinct_invoice_nos(lines)
-        if len(distinct_invs) > 1 and invoice_no is None:
-            return PreviewResult(
-                status="needs_input",
-                missing_inputs=(INPUT_INVOICE_NO,),
-                options={"invoice_no": distinct_invs},
-                warnings=warnings_resolver,
-            )
-        if invoice_no is not None:
-            inv_values = {item["value"] for item in distinct_invs}
-            if invoice_no not in inv_values:
-                return PreviewResult(
-                    status="error",
-                    errors=(
-                        ValidationMessage(
-                            kind="blocking_error", code="INVOICE_NO_NOT_FOUND",
-                            message=f"指定的 INVOICE# {invoice_no!r} 在 PO {request.po_no} 中不存在",
-                        ),
-                    ),
-                )
-        if len(distinct_invs) == 1 and invoice_no is None:
-            invoice_no = distinct_invs[0]["value"]
-
-    # 构建 DocumentModel
-    build = build_document_model(
-        lines, seller=seller, buyer=buyer, po_no=request.po_no,
-        invoice_no=invoice_no, doc_type=doc_type,  # type: ignore[arg-type]
-    )
-
-    all_warnings = list(warnings_resolver)
-    doc_warnings = tuple(m for m in build.messages if m.kind == "warning")
-    all_warnings.extend(doc_warnings)
-
-    preview_data = build_preview(build)
-
-    return PreviewResult(
-        status="success" if build.model is not None else "error",
-        preview=preview_data if build.model is not None else None,
-        errors=tuple(m for m in build.messages if m.kind == "blocking_error"),
-        warnings=tuple(all_warnings),
-    )
+    return preview_from_snapshot(snapshot, request)
 
 
 def preview_from_snapshot(
-    snapshot: object,  # WorkbookSnapshot
+    snapshot: "WorkbookSnapshot",
     request: DocumentRequest,
 ) -> "PreviewResult":
     """基于缓存的 WorkbookSnapshot 生成预览，不读 Excel。
@@ -265,7 +189,6 @@ def preview_from_snapshot(
     seller / buyer 推断、invoice_no 校验、DocumentModel 构建与 preview() 相同。
     """
     from ro_generator.document_preview import build_preview
-    from ro_generator.workbook_snapshot import WorkbookSnapshot
 
     snap: WorkbookSnapshot = snapshot  # type: ignore[assignment]
 
@@ -724,6 +647,5 @@ __all__ = [
     "build_document_model",
     "builtin_mapping_path",
     "generate",
-    "preview",
     "preview_from_snapshot",
 ]

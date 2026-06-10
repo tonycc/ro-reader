@@ -597,3 +597,14 @@ GitHub Actions，三个独立 job 并行：
 - [ ] EMAX Invoice/PL `.xls`→`.xlsx` 转换
 - [ ] 模板预览 CLI
 - [ ] 前端 UI 细节：缺字段高亮、公式回退标记、导出模态、版本历史
+
+### 9.5 代码质量改造（已完成）
+
+- [x] `line_rules.py`：`resolve_line_field_spec()` 从 if-chain 改为声明式三层分派（`_DOC_FAMILY_OVERRIDES` + `_SELLER_LINE_OVERRIDES`）
+- [x] `header_rules.py`：新增 `resolve_header_field_spec()`，对称于 `line_rules.py`；新增 `_HEADER_SELLER_OVERRIDES`
+- [x] `document_preview.py`：移除 `_build_source_entries()` 中的硬编码 seller 判断，改用 `resolve_header_field_spec()`
+- [x] `generator.py`：`_preview()` 从 110 行精简为 10 行委托调用；`preview` 从 `__all__` 移除（死公开 API）
+- [x] 前端 `workbench.ts`：`previewError` / `exportError` 不再静默吞掉，存入 store
+- [x] `PreviewScreen.vue`：预览失败时展示错误信息；`LayoutTopZone.vue` 抽取消除三处重复渲染逻辑
+- [x] `ExportScreen.vue`：导出失败时展示错误信息
+- [x] 修复 4 处预先存在的测试失败（YAML null 值、单元格引用错误、溯源断言错误、缺 fixture 数据）

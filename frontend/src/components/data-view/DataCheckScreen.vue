@@ -64,7 +64,7 @@ function cancelEdit() { editingCell.value = null; }
                   @dblclick="startEdit(Number(row.__row_number__), h, row[h])"
                 >
                   <template v-if="editingCell?.row === row.__row_number__ && editingCell?.field === h">
-                    <input v-model="editValue" @keydown.enter="commitEdit" @keydown.escape="cancelEdit" @blur="commitEdit" class="edit-input" autofocus />
+                    <input v-model="editValue" data-testid="cell-edit-input" @keydown.enter="commitEdit" @keydown.escape="cancelEdit" @blur="commitEdit" class="edit-input" autofocus />
                   </template>
                   <template v-else>{{ row[h] }}</template>
                 </td>

@@ -109,7 +109,6 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
     )
     parser.add_argument("--seller", default=None)
-    parser.add_argument("--buyer", default=None)
     parser.add_argument("--invoice-no", dest="invoice_no", default=None)
     parser.add_argument(
         "--output-format",
@@ -152,6 +151,9 @@ def _build_request(args: argparse.Namespace) -> DocumentRequest:
         if not isinstance(raw, dict):
             raise _UsageError("--input 的 JSON 根节点必须是对象")
 
+    # buyer 由 _resolve_segment() 自动推导，输入中的 buyer 忽略
+    raw.pop("buyer", None)
+
     # 命令行参数覆盖 JSON
     if args.base is not None:
         raw["base_file"] = args.base
@@ -161,8 +163,6 @@ def _build_request(args: argparse.Namespace) -> DocumentRequest:
         raw["documents"] = [d.strip().upper() for d in args.docs.split(",") if d.strip()]
     if args.seller is not None:
         raw["seller"] = args.seller
-    if args.buyer is not None:
-        raw["buyer"] = args.buyer
     if args.invoice_no is not None:
         raw["invoice_no"] = args.invoice_no
     if args.output_format is not None:
@@ -198,9 +198,7 @@ def _build_request(args: argparse.Namespace) -> DocumentRequest:
         base_file=str(raw["base_file"]),
         po_no=str(raw["po_no"]),
         documents=tuple(documents_upper),  # type: ignore[arg-type]
-        seller=_optional_str(raw.get("seller")),
-        buyer=_optional_str(raw.get("buyer")),
-        invoice_no=_optional_str(raw.get("invoice_no")),
+        seller=_optional_str(raw.get("seller")),invoice_no=_optional_str(raw.get("invoice_no")),
         output_format=output_format,
         output_dir=str(raw.get("output_dir") or "outputs"),
         on_conflict=on_conflict,
