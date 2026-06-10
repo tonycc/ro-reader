@@ -77,12 +77,14 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data)
 
+APP_NAME = "赛肯单据生成工具"
+
 if sys.platform == "darwin":
     # ── macOS ────────────────────────────────────────────────────────────────
     # BUNDLE requires an EXE (not COLLECT) in PyInstaller 6.x on macOS.
     exe = EXE(
         pyz, a.scripts, a.binaries, a.zipfiles, a.datas, [],
-        name="RO Workbench",
+        name=APP_NAME,
         debug=False, strip=False, upx=True, upx_exclude=[],
         runtime_tmpdir=None, console=False,
         disable_windowed_traceback=False,
@@ -91,12 +93,12 @@ if sys.platform == "darwin":
     )
     app = BUNDLE(
         exe,
-        name="RO Workbench.app",
+        name=f"{APP_NAME}.app",
         icon=None,
-        bundle_identifier="com.roworkbench.app",
+        bundle_identifier="com.saiken.doctools",
         info_plist={
             "CFBundleShortVersionString": "0.1.0",
-            "CFBundleName": "RO Workbench",
+            "CFBundleName": APP_NAME,
             "LSBackgroundOnly": "0",
             "LSUIElement": "1",
         },
@@ -107,7 +109,7 @@ else:
     # onedir: EXE stub + COLLECT → folder, no temp extraction, no AV trigger.
     exe = EXE(
         pyz, a.scripts, [],
-        name="RO Workbench",
+        name=APP_NAME,
         debug=False, strip=False, upx=True, upx_exclude=[],
         runtime_tmpdir=None, console=False,
         disable_windowed_traceback=False,
@@ -117,5 +119,5 @@ else:
     coll = COLLECT(
         exe, a.binaries, a.zipfiles, a.datas,
         strip=False, upx=True, upx_exclude=[],
-        name="RO Workbench",
+        name=APP_NAME,
     )

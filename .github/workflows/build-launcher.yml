@@ -47,9 +47,9 @@ jobs:
       - name: Package DMG (macOS)
         if: matrix.os == 'macos-latest'
         run: |
-          APP="dist/RO Workbench.app"
-          DMG="dist/RO-Workbench-${{ env.APP_VERSION }}-mac.dmg"
-          hdiutil create -volname "RO Workbench" \
+          APP="dist/赛肯单据生成工具.app"
+          DMG="dist/赛肯单据工具-${{ env.APP_VERSION }}-mac.dmg"
+          hdiutil create -volname "赛肯单据生成工具" \
             -srcfolder "$APP" \
             -ov -format UDZO "$DMG"
 
@@ -63,43 +63,43 @@ jobs:
 
           # VERSION.txt
           $lines = @(
-            "RO Workbench v$v",
-            "Build date: $d",
-            "Source: GitHub Actions"
+            "赛肯单据生成工具 v$v",
+            "构建日期：$d",
+            "来源：GitHub Actions"
           )
           [System.IO.File]::WriteAllLines("$PWD\dist\VERSION.txt", $lines, [System.Text.Encoding]::UTF8)
 
           # launch.bat（bat 文件名用 ASCII，避免编码问题）
-          $bat = "@echo off`r`nstart `"`" `"%~dp0RO Workbench\RO Workbench.exe`"`r`n"
-          [System.IO.File]::WriteAllText("$PWD\dist\launch.bat", $bat, [System.Text.Encoding]::ASCII)
+          $bat = "@echo off`r`nstart `"`" `"%~dp0赛肯单据生成工具\赛肯单据生成工具.exe`"`r`n"
+          [System.IO.File]::WriteAllText("$PWD\dist\launch.bat", $bat, [System.Text.Encoding]::UTF8)
 
-          # README.txt
+          # README.txt（中文）
           $readme = @(
-            "RO Workbench v$v",
+            "赛肯单据生成工具 v$v",
             "",
-            "[First Run]",
-            "1. Extract this ZIP to a fixed location",
-            "   e.g. C:\Users\<username>\RO Workbench\",
-            "2. Double-click launch.bat",
-            "3. Browser opens automatically",
-            "4. Click Settings (top-right) to set BASE file path",
+            "【首次使用】",
+            "1. 将 ZIP 解压到固定位置",
+            "   例如：C:\Users\<用户名>\赛肯单据工具\",
+            "2. 双击 launch.bat 启动",
+            "3. 浏览器会自动打开",
+            "4. 点击右上角设置，配置 BASE 文件路径",
             "",
-            "[Updating]",
-            "1. Right-click tray icon -> Exit",
-            "2. Delete the old 'RO Workbench' folder",
-            "3. Extract new ZIP's 'RO Workbench' folder to same location",
-            "4. Double-click launch.bat again",
-            "   (file path setting is saved in the browser, restored automatically)",
+            "【更新升级】",
+            "1. 右键托盘图标 → 退出",
+            "2. 删除旧的「赛肯单据生成工具」文件夹",
+            "3. 将新 ZIP 中的「赛肯单据生成工具」文件夹解压到同一位置",
+            "4. 再次双击 launch.bat 启动",
+            "   （文件路径已保存在浏览器中，自动恢复）",
             "",
-            "[FAQ]",
-            "Q: Windows shows 'Windows protected your PC'",
-            "A: Click 'More info' -> 'Run anyway'",
+            "【常见问题】",
+            "Q：Windows 提示「已阻止此应用」",
+            "A：点击「更多信息」→「仍要运行」",
             "",
-            "Q: Browser did not open automatically",
-            "A: Visit http://127.0.0.1:<port> shown in tray icon tooltip",
+            "Q：浏览器没有自动打开",
+            "A：请访问托盘图标提示中显示的地址 http://127.0.0.1:<端口号>",
             "",
-            "Q: How to exit",
-            "A: Right-click the tray icon (bottom-right) -> Exit"
+            "Q：如何退出",
+            "A：右键任务栏右下角托盘图标 → 退出"
           )
           [System.IO.File]::WriteAllLines("$PWD\dist\README.txt", $readme, [System.Text.Encoding]::UTF8)
 
@@ -108,8 +108,8 @@ jobs:
 
           # 打包（只含程序文件夹和辅助文件，不含中间产物）
           Compress-Archive `
-            -Path "dist\RO Workbench", "dist\launch.bat", "dist\VERSION.txt", "dist\README.txt" `
-            -DestinationPath "dist\RO-Workbench-$v-windows.zip"
+            -Path "dist\赛肯单据生成工具", "dist\launch.bat", "dist\VERSION.txt", "dist\README.txt" `
+            -DestinationPath "dist\赛肯单据工具-$v-windows.zip"
 
       - uses: actions/upload-artifact@v4
         with:

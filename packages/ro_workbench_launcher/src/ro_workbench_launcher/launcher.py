@@ -106,7 +106,7 @@ def _run_tray(port: int) -> None:
         import pystray
         from PIL import Image, ImageDraw
     except ImportError:
-        print(f"工作台运行中: http://127.0.0.1:{port}", file=sys.stderr)
+        print(f"赛肯单据生成工具运行中: http://127.0.0.1:{port}", file=sys.stderr)
         print("按 Ctrl+C 退出", file=sys.stderr)
         try:
             while not _shutdown_requested.is_set():
@@ -125,10 +125,10 @@ def _run_tray(port: int) -> None:
         _shutdown_requested.set()
 
     icon = pystray.Icon(
-        "RO Workbench", img, "RO 单据工作台",
+        "赛肯单据生成工具", img, "赛肯单据生成工具",
         menu=pystray.Menu(
             pystray.MenuItem(
-                f"打开工作台 (:{port})",
+                f"打开赛肯单据工具 (:{port})",
                 lambda: webbrowser.open(f"http://127.0.0.1:{port}"),
             ),
             pystray.Menu.SEPARATOR,
@@ -144,7 +144,7 @@ def _fatal(msg: str) -> None:
     if sys.platform == "win32":
         try:
             import ctypes
-            ctypes.windll.user32.MessageBoxW(0, msg, "RO 工作台启动失败", 0x10)
+            ctypes.windll.user32.MessageBoxW(0, msg, "赛肯单据工具 - 启动失败", 0x10)
         except Exception:
             pass
     sys.exit(1)
