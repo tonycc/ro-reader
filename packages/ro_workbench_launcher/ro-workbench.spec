@@ -1,5 +1,14 @@
 # PyInstaller spec for RO Workbench launcher
 # Build: pyinstaller ro-workbench.spec
+#
+# onedir mode: produces a folder (not a single .exe).
+# - Windows: dist/RO Workbench/  →  zip and send
+# - macOS:   dist/RO Workbench.app  →  wrap in DMG
+#
+# Advantages of onedir over onefile:
+#   - No temp-dir extraction on every launch
+#   - Windows Defender / antivirus don't flag it
+#   - Faster startup, more reliable path resolution
 
 import sys
 from pathlib import Path
@@ -70,12 +79,10 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=None)
 
+# onedir: EXE 只含 bootloader + bytecode，binaries/datas 由 COLLECT 管理
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
     name="RO Workbench",
     debug=False,
@@ -93,9 +100,20 @@ exe = EXE(
     icon=None,
 )
 
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name="RO Workbench",
+)
+
 if sys.platform == "darwin":
     app = BUNDLE(
-        exe,
+        coll,
         name="RO Workbench.app",
         icon=None,
         bundle_identifier="com.roworkbench.app",

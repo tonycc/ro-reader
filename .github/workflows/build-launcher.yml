@@ -34,25 +34,25 @@ jobs:
       - run: npx vite build
         working-directory: frontend
 
-      # PyInstaller build
+      # PyInstaller build (onedir mode)
       - run: uv run pyinstaller packages/ro_workbench_launcher/ro-workbench.spec --distpath dist --workpath build --noconfirm
 
       # macOS: package as .dmg
-      - name: Package DMG
+      - name: Package DMG (macOS)
         if: matrix.os == 'macos-latest'
         run: |
           APP="dist/RO Workbench.app"
-          DMG="dist/RO-Workbench-0.1.0.dmg"
+          DMG="dist/RO-Workbench-0.1.0-mac.dmg"
           hdiutil create -volname "RO Workbench" \
             -srcfolder "$APP" \
             -ov -format UDZO "$DMG"
 
-      # Windows: build installer with Inno Setup
-      - name: Build Windows installer
+      # Windows: zip the output folder, no installer needed
+      - name: Package ZIP (Windows)
         if: matrix.os == 'windows-latest'
+        shell: pwsh
         run: |
-          choco install innosetup --no-progress -y
-          iscc packages/ro_workbench_launcher/installer.iss
+          Compress-Archive -Path "dist\RO Workbench" -DestinationPath "dist\RO-Workbench-0.1.0-windows.zip"
 
       - uses: actions/upload-artifact@v4
         with:
