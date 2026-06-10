@@ -30,7 +30,7 @@ jobs:
           version: latest
       - run: pnpm install --frozen-lockfile
         working-directory: frontend
-      - run: pnpm run build
+      - run: npx vite build
         working-directory: frontend
 
       # PyInstaller build
