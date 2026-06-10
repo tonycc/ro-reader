@@ -35,9 +35,7 @@ jobs:
         working-directory: frontend
 
       # PyInstaller build
-      - run: |
-          uv run pyinstaller packages/ro_workbench_launcher/ro-workbench.spec \
-            --distpath dist --workpath build --noconfirm
+      - run: uv run pyinstaller packages/ro_workbench_launcher/ro-workbench.spec --distpath dist --workpath build --noconfirm
 
       # macOS: package as .dmg
       - name: Package DMG
