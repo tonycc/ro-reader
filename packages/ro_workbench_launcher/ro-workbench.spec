@@ -1,19 +1,16 @@
 # PyInstaller spec for RO Workbench launcher
-# Build: pyinstaller ro-workbench.spec
 #
-# onedir mode: produces a folder (not a single .exe).
-# - Windows: dist/RO Workbench/  →  zip and send
-# - macOS:   dist/RO Workbench.app  →  wrap in DMG
+# Platform strategy:
+#   macOS  : EXE (all-in) + BUNDLE → RO Workbench.app → DMG
+#   Windows: EXE (stub) + COLLECT  → RO Workbench/ folder → ZIP
 #
-# Advantages of onedir over onefile:
-#   - No temp-dir extraction on every launch
-#   - Windows Defender / antivirus don't flag it
-#   - Faster startup, more reliable path resolution
+# Why different strategies:
+#   - macOS BUNDLE requires an EXE directly; COLLECT+BUNDLE crashes in PyInstaller 6.x.
+#   - Windows onedir avoids temp-dir extraction that triggers antivirus / Defender.
 
 import sys
 from pathlib import Path
 
-# SPECPATH is the directory containing this spec file
 ROOT = Path(SPECPATH).parent.parent
 DATAS = []
 for source, target in [
@@ -23,8 +20,7 @@ for source, target in [
     if source.exists():
         DATAS.append((str(source), target))
 
-a = Analysis(
-    [str(ROOT / "packages/ro_workbench_launcher/src/ro_workbench_launcher/launcher.py")],
+COMMON = dict(
     pathex=[
         str(ROOT / "packages/ro_generator/src"),
         str(ROOT / "packages/ro_workbench_api/src"),
@@ -71,49 +67,30 @@ a = Analysis(
     hookspath=[],
     runtime_hooks=[],
     excludes=[],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=None,
     noarchive=False,
 )
 
-pyz = PYZ(a.pure, a.zipped_data, cipher=None)
-
-# onedir: EXE 只含 bootloader + bytecode，binaries/datas 由 COLLECT 管理
-exe = EXE(
-    pyz,
-    a.scripts,
-    [],
-    name="RO Workbench",
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=False,
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-    icon=None,
+a = Analysis(
+    [str(ROOT / "packages/ro_workbench_launcher/src/ro_workbench_launcher/launcher.py")],
+    **COMMON,
 )
 
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    name="RO Workbench",
-)
+pyz = PYZ(a.pure, a.zipped_data)
 
 if sys.platform == "darwin":
+    # ── macOS ────────────────────────────────────────────────────────────────
+    # BUNDLE requires an EXE (not COLLECT) in PyInstaller 6.x on macOS.
+    exe = EXE(
+        pyz, a.scripts, a.binaries, a.zipfiles, a.datas, [],
+        name="RO Workbench",
+        debug=False, strip=False, upx=True, upx_exclude=[],
+        runtime_tmpdir=None, console=False,
+        disable_windowed_traceback=False,
+        argv_emulation=False, target_arch=None,
+        codesign_identity=None, entitlements_file=None, icon=None,
+    )
     app = BUNDLE(
-        coll,
+        exe,
         name="RO Workbench.app",
         icon=None,
         bundle_identifier="com.roworkbench.app",
@@ -123,4 +100,22 @@ if sys.platform == "darwin":
             "LSBackgroundOnly": "0",
             "LSUIElement": "1",
         },
+    )
+
+else:
+    # ── Windows (and Linux) ──────────────────────────────────────────────────
+    # onedir: EXE stub + COLLECT → folder, no temp extraction, no AV trigger.
+    exe = EXE(
+        pyz, a.scripts, [],
+        name="RO Workbench",
+        debug=False, strip=False, upx=True, upx_exclude=[],
+        runtime_tmpdir=None, console=False,
+        disable_windowed_traceback=False,
+        argv_emulation=False, target_arch=None,
+        codesign_identity=None, entitlements_file=None, icon=None,
+    )
+    coll = COLLECT(
+        exe, a.binaries, a.zipfiles, a.datas,
+        strip=False, upx=True, upx_exclude=[],
+        name="RO Workbench",
     )
