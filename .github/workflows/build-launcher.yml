@@ -52,60 +52,55 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          $version = "0.1.0"
-          $date = Get-Date -Format "yyyy-MM-dd"
+          $v = "0.1.0"
+          $d = Get-Date -Format "yyyy-MM-dd"
 
           # VERSION.txt
-          @"
-RO Workbench v$version
-构建日期：$date
-构建来源：GitHub Actions
-"@ | Out-File -Encoding utf8 "dist\VERSION.txt"
+          $lines = @(
+            "RO Workbench v$v",
+            "Build date: $d",
+            "Source: GitHub Actions"
+          )
+          [System.IO.File]::WriteAllLines("$PWD\dist\VERSION.txt", $lines, [System.Text.Encoding]::UTF8)
 
-          # 启动 RO 工作台.bat（放在 ZIP 根目录，双击即启动）
-          @'
-@echo off
-start "" "%~dp0RO Workbench\RO Workbench.exe"
-'@ | Out-File -Encoding ascii "dist\启动 RO 工作台.bat"
+          # launch.bat（bat 文件名用 ASCII，避免编码问题）
+          $bat = "@echo off`r`nstart `"`" `"%~dp0RO Workbench\RO Workbench.exe`"`r`n"
+          [System.IO.File]::WriteAllText("$PWD\dist\launch.bat", $bat, [System.Text.Encoding]::ASCII)
 
-          # 使用说明.txt
-          @"
-【RO 单据工作台 v$version 使用说明】
+          # README.txt
+          $readme = @(
+            "RO Workbench v$v",
+            "",
+            "[First Run]",
+            "1. Extract this ZIP to a fixed location",
+            "   e.g. C:\Users\<username>\RO Workbench\",
+            "2. Double-click launch.bat",
+            "3. Browser opens automatically",
+            "4. Click Settings (top-right) to set BASE file path",
+            "",
+            "[Updating]",
+            "1. Right-click tray icon -> Exit",
+            "2. Delete the old 'RO Workbench' folder",
+            "3. Extract new ZIP's 'RO Workbench' folder to same location",
+            "4. Double-click launch.bat again",
+            "   (file path setting is saved in the browser, restored automatically)",
+            "",
+            "[FAQ]",
+            "Q: Windows shows 'Windows protected your PC'",
+            "A: Click 'More info' -> 'Run anyway'",
+            "",
+            "Q: Browser did not open automatically",
+            "A: Visit http://127.0.0.1:<port> shown in tray icon tooltip",
+            "",
+            "Q: How to exit",
+            "A: Right-click the tray icon (bottom-right) -> Exit"
+          )
+          [System.IO.File]::WriteAllLines("$PWD\dist\README.txt", $readme, [System.Text.Encoding]::UTF8)
 
-首次使用
---------
-1. 将整个文件夹解压到固定位置
-   建议路径：C:\Users\<你的用户名>\RO Workbench\
-2. 双击"启动 RO 工作台.bat"
-3. 浏览器自动打开工作台界面
-4. 点右上角"系统设置"，配置 BASE 文件路径
-
-更新版本
---------
-1. 右键托盘图标 → 退出
-2. 删除旧的 "RO Workbench" 文件夹（保留 bat 和 txt 文件）
-3. 将新版 ZIP 中的 "RO Workbench" 文件夹解压到同一位置
-4. 重新双击"启动 RO 工作台.bat"
-   （文件路径配置保存在浏览器中，更新后自动恢复）
-
-常见问题
---------
-Q：首次运行弹出"Windows 已保护你的电脑"
-A：点"更多信息" → "仍要运行"
-
-Q：浏览器没有自动打开
-A：手动访问 http://127.0.0.1:xxxxx（端口号见托盘图标提示）
-
-Q：如何退出程序
-A：右键系统托盘右下角图标 → 退出
-
-技术支持：请联系发给你此文件的同事
-"@ | Out-File -Encoding utf8 "dist\使用说明.txt"
-
-          # 打包（根目录放 bat、txt；RO Workbench 文件夹是程序本体）
+          # 打包
           Compress-Archive `
-            -Path "dist\RO Workbench", "dist\启动 RO 工作台.bat", "dist\VERSION.txt", "dist\使用说明.txt" `
-            -DestinationPath "dist\RO-Workbench-$version-windows.zip"
+            -Path "dist\RO Workbench", "dist\launch.bat", "dist\VERSION.txt", "dist\README.txt" `
+            -DestinationPath "dist\RO-Workbench-$v-windows.zip"
 
       - uses: actions/upload-artifact@v4
         with:
