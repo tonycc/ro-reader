@@ -8,17 +8,18 @@
 from __future__ import annotations
 
 import os
-import signal
 import socket
 import sys
 import threading
 import time
+import traceback
 import webbrowser
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
 
 _shutdown_requested = threading.Event()
+_server_error: BaseException | None = None  # 服务线程捕获的异常，供主线程读取
 
 
 def _resource_root() -> Path:
@@ -44,32 +45,49 @@ def _find_free_port() -> int:
 
 
 def _run_server(port: int) -> None:
-    """在后台线程启动 uvicorn，监听 shutdown 事件退出。"""
-    import uvicorn
-    from ro_workbench_api.app import app
+    """在后台线程启动 uvicorn，监听 shutdown 事件退出。
 
-    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
-    server = uvicorn.Server(config)
+    Windows 注意：必须在线程内设置 SelectorEventLoop，
+    ProactorEventLoop（Windows 默认）在 frozen 环境下与 uvicorn 不兼容。
+    """
+    global _server_error
+    try:
+        # Windows frozen 环境必须用 SelectorEventLoop；ProactorEventLoop 不兼容
+        if sys.platform == "win32":
+            import asyncio
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-    def _poll_shutdown() -> None:
-        while not _shutdown_requested.is_set():
-            time.sleep(0.5)
-        server.should_exit = True
+        import uvicorn
+        from ro_workbench_api.app import app
 
-    threading.Thread(target=_poll_shutdown, daemon=True).start()
-    server.run()
+        config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="info")
+        server = uvicorn.Server(config)
+
+        def _poll_shutdown() -> None:
+            while not _shutdown_requested.is_set():
+                time.sleep(0.5)
+            server.should_exit = True
+
+        threading.Thread(target=_poll_shutdown, daemon=True).start()
+        server.run()
+    except Exception as exc:
+        _server_error = exc
 
 
-def _wait_until_ready(port: int, timeout: float = 10.0) -> bool:
+def _wait_until_ready(port: int, timeout: float = 30.0) -> bool:
+    """等待 uvicorn 就绪。Windows PyInstaller 首次启动较慢，给 30 秒。"""
     deadline = time.time() + timeout
     url = f"http://127.0.0.1:{port}/api/health"
     while time.time() < deadline:
+        # 如果服务线程已报错，立即放弃等待
+        if _server_error is not None:
+            return False
         try:
-            with urlopen(url, timeout=0.5) as resp:
+            with urlopen(url, timeout=1.0) as resp:
                 if resp.status == 200:
                     return True
         except URLError:
-            time.sleep(0.2)
+            time.sleep(0.3)
     return False
 
 
@@ -147,11 +165,29 @@ def main() -> None:
     server_thread.start()
 
     if not _wait_until_ready(port):
-        raise RuntimeError("工作台服务启动失败：健康检查超时")
+        if _server_error is not None:
+            details = "".join(traceback.format_exception(
+                type(_server_error), _server_error, _server_error.__traceback__
+            ))
+            _fatal(
+                f"工作台服务启动失败（端口 {port}）：\n\n"
+                f"{type(_server_error).__name__}: {_server_error}\n\n"
+                f"详细信息：\n{details}"
+            )
+        _fatal(
+            f"工作台服务启动失败：30 秒内未响应健康检查。\n\n"
+            f"可能原因：\n"
+            f"• 端口 {port} 被防火墙或杀毒软件拦截\n"
+            f"• 系统资源不足\n\n"
+            f"请以管理员身份运行，或检查防火墙设置。"
+        )
 
     webbrowser.open(f"http://127.0.0.1:{port}")
     _run_tray(port)
 
 
 if __name__ == "__main__":
+    # Windows PyInstaller 必需：防止 multiprocessing spawn 无限递归
+    import multiprocessing
+    multiprocessing.freeze_support()
     main()
