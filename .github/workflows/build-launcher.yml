@@ -8,6 +8,7 @@ on:
       - 'packages/ro_workbench_launcher/**'
       - 'packages/ro_workbench_api/**'
       - 'packages/ro_generator/**'
+      - 'frontend/**'
       - '.github/workflows/build-launcher.yml'
 
 jobs:
