@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
-import type { PoListItem, DryRunResult, SourceIndexEntry } from "./api";
-import { api } from "./api";
+import type { PoListItem, DryRunResult, SourceIndexEntry, PreviewPayload, PreviewSourceEntry } from "./api";
+import { api, setSessionId, getSessionId } from "./api";
 
 export const useWorkbench = defineStore("workbench", () => {
   const baseFile = ref("");
@@ -15,11 +15,14 @@ export const useWorkbench = defineStore("workbench", () => {
 
   // Selected seller (one of: SK/YM, GS PTE, EMAX PTE)
   const selectedSeller = ref("");
-  const selectedMonth = ref<string | null>(null);
+  const selectedInvoiceNo = ref<string | null>(null);
 
   const preview = ref<DryRunResult | null>(null);
+  const previewData = ref<PreviewPayload | null>(null);
   const previewDocType = ref("INVOICE");
+  const previewLoading = ref(false);
   const sourceIndex = ref<SourceIndexEntry[]>([]);
+  const previewSourceEntries = ref<PreviewSourceEntry[]>([]);
 
   const exporting = ref(false);
   const lastExportFile = ref("");
@@ -38,6 +41,7 @@ export const useWorkbench = defineStore("workbench", () => {
       baseFile.value = file;
       const data = await api.openSession(file);
       if (!data.ok) throw new Error(data.errors?.[0] ? String((data.errors[0] as Record<string, unknown>).message) : "session failed");
+      if (data.session_id) setSessionId(data.session_id);
       poList.value = data.po_list;
     } catch (e) { error.value = String(e); }
     finally { loading.value = false; }
@@ -51,22 +55,26 @@ export const useWorkbench = defineStore("workbench", () => {
     dataRows.value = data.rows; dataHeaders.value = data.headers;
     const po = poList.value.find((p) => p.po_no === po_no);
     if (po?.sellers.length) selectedSeller.value = po.sellers[0];
-    if (po?.monthly_months.length) selectedMonth.value = po.monthly_months[0];
+    if (po?.invoice_nos.length) selectedInvoiceNo.value = po.invoice_nos[0];
     await refreshPreview();
   }
 
   async function refreshPreview(docType?: string) {
     if (!baseFile.value || !selectedPo.value || !selectedSeller.value) return;
     const dt = docType || previewDocType.value || "INVOICE";
+    previewLoading.value = true;
     try {
-      const result = await api.dryRun({
+      const result = await api.preview({
         base_file: baseFile.value, po_no: selectedPo.value,
-        seller: selectedSeller.value, invoice_month: selectedMonth.value, document: dt,
+        seller: selectedSeller.value, invoice_no: selectedInvoiceNo.value, document: dt,
       });
-      preview.value = result; previewDocType.value = dt;
-      sourceIndex.value = result.source_index ?? [];
-      warnings.value = result.warnings; blockingErrors.value = result.errors;
-    } catch (e) { console.error("dry-run failed", e); }
+      previewDocType.value = dt;
+      previewData.value = result.preview;
+      previewSourceEntries.value = result.preview?.source_entries ?? [];
+      warnings.value = result.warnings;
+      blockingErrors.value = result.errors;
+    } catch (e) { console.error("preview failed", e); }
+    finally { previewLoading.value = false; }
   }
 
   async function editCell(field: string, row: number, value: unknown) {
@@ -83,13 +91,13 @@ export const useWorkbench = defineStore("workbench", () => {
     try {
       const result = await api.exportDocuments({
         base_file: baseFile.value, po_no: selectedPo.value,
-        seller: selectedSeller.value, invoice_month: selectedMonth.value,
+        seller: selectedSeller.value, invoice_no: selectedInvoiceNo.value,
         document: previewDocType.value,
       });
       lastExportFile.value = result.output_file ?? "";
       // Trigger browser download
       if (result.output_file) {
-        const downloadUrl = `http://127.0.0.1:54321/download?path=${encodeURIComponent(result.output_file)}`;
+        const downloadUrl = `/api/download?path=${encodeURIComponent(result.output_file)}&session_id=${getSessionId()}`;
         const a = document.createElement("a");
         a.href = downloadUrl;
         a.download = result.files[0] || "export.xlsx";
@@ -102,17 +110,17 @@ export const useWorkbench = defineStore("workbench", () => {
   }
 
   function selectSeller(seller: string) { selectedSeller.value = seller; refreshPreview(); }
-  function selectMonth(month: string | null) { selectedMonth.value = month; refreshPreview(); }
+  function selectInvoice(inv: string | null) { selectedInvoiceNo.value = inv; refreshPreview(); }
 
   return {
     baseFile, poList, loading, error,
     selectedPo, dataRows, dataHeaders,
-    selectedSeller, selectedMonth,
-    preview, previewDocType, sourceIndex,
+    selectedSeller, selectedInvoiceNo,
+    preview, previewData, previewDocType, previewLoading, sourceIndex, previewSourceEntries,
     exporting, lastExportFile,
     blockingErrors, warnings,
     poEntry, poStatus,
     openSession, selectPo, refreshPreview, editCell, doExport,
-    selectSeller, selectMonth,
+    selectSeller, selectInvoice,
   };
 });

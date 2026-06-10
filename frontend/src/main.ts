@@ -9,7 +9,9 @@ const pinia = createPinia();
 app.use(pinia);
 app.mount("#app");
 
-// Expose for E2E tests (bypass prompt() dialog which is unreliable in headless browsers).
-(window as any).__workbench__ = {
-  openSession: (path: string) => useWorkbench(pinia).openSession(path),
-};
+if (import.meta.env.DEV || import.meta.env.MODE === "test") {
+  // Expose for E2E tests (bypass prompt() dialog which is unreliable in headless browsers).
+  (window as any).__workbench__ = {
+    openSession: (path: string) => useWorkbench(pinia).openSession(path),
+  };
+}

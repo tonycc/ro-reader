@@ -15,52 +15,106 @@ async function openBaseFile(page: import("@playwright/test").Page) {
 test.describe("RO Workbench E2E", () => {
   test("open base file and see PO list", async ({ page }) => {
     await openBaseFile(page);
-    const items = page.locator(".po-item");
+    const items = page.locator(".po-card");
     await expect(items).toHaveCount(3);
-    await expect(items.first()).toContainText("4500030844");
+    await expect(page.locator(".po-card").filter({ hasText: "4500030844" })).toBeVisible();
+    await expect(page.locator(".po-card").filter({ hasText: "4500099999" })).toBeVisible();
+    await expect(page.locator(".po-card").filter({ hasText: "4500088888" })).toBeVisible();
   });
 
   test("select PO shows data view and preview", async ({ page }) => {
     await openBaseFile(page);
-    await page.getByText("●4500099999").click();
+    await page.locator(".po-card").filter({ hasText: "4500099999" }).click();
     await page.waitForTimeout(2000);
 
+    // Data view tab should show PO data table
     const table = page.locator("table").first();
     await expect(table).toBeVisible();
 
-    const previewTable = page.locator(".html-preview table");
-    await expect(previewTable).toBeVisible({ timeout: 5000 });
+    // Switch to preview tab
+    await page.locator(".tab").filter({ hasText: "单据预览" }).click();
+    await page.waitForTimeout(2000);
 
-    const chainBtns = page.locator(".chain-btn");
-    await expect(chainBtns).toHaveCount(3);
+    // Document card with lines should be visible
+    const docCard = page.locator(".document-card");
+    await expect(docCard).toBeVisible({ timeout: 5000 });
+
+    // Filter pills for seller selection
+    const sellerBtns = page.locator(".filter-pill");
+    await expect(sellerBtns.first()).toBeVisible();
+  });
+
+  test("preview shows document title and content", async ({ page }) => {
+    await openBaseFile(page);
+    await page.locator(".po-card").filter({ hasText: "4500099999" }).click();
+    await page.waitForTimeout(2000);
+
+    // Switch to preview tab
+    await page.locator(".tab").filter({ hasText: "单据预览" }).click();
+    await page.waitForTimeout(3000);
+
+    // Should show a document title
+    const title = page.locator(".top-right h1");
+    await expect(title).toBeVisible({ timeout: 5000 });
+
+    // Should show seller/buyer/PO info
+    const docMeta = page.locator(".top-field-line");
+    await expect(docMeta).toContainText("PO:");
+  });
+
+  test("field source summary toggles", async ({ page }) => {
+    await openBaseFile(page);
+    await page.locator(".po-card").filter({ hasText: "4500099999" }).click();
+    await page.waitForTimeout(2000);
+
+    // Switch to preview tab
+    await page.locator(".tab").filter({ hasText: "单据预览" }).click();
+    await page.waitForTimeout(3000);
+
+    // Click "字段来源" button to show source summary
+    const sourceBtn = page.locator(".ghost-btn").filter({ hasText: "字段来源" });
+    await expect(sourceBtn).toBeVisible({ timeout: 5000 });
+    await sourceBtn.click();
+    await page.waitForTimeout(500);
+
+    // Source summary should appear
+    const sourceSummary = page.locator(".source-summary");
+    await expect(sourceSummary).toBeVisible({ timeout: 3000 });
+
+    // Should have source entries
+    const sourceRows = page.locator(".source-table tbody tr");
+    await expect(sourceRows.first()).toBeVisible({ timeout: 3000 });
   });
 
   test("inline edit persists to data view", async ({ page }) => {
     await openBaseFile(page);
-    await page.getByText("●4500099999").click();
+    await page.locator(".po-card").filter({ hasText: "4500099999" }).click();
     await page.waitForTimeout(2000);
 
-    // Double-click to start editing
+    // Double-click to start editing on a cell containing "100"
     const qtyCell = page.getByRole("cell", { name: "100" }).first();
     await qtyCell.dblclick();
 
-    const input = page.locator(".edit-input");
+    const input = page.locator('[data-testid="cell-edit-input"]');
     await expect(input).toBeVisible({ timeout: 3000 });
     await input.fill("150");
     await page.keyboard.press("Enter");
     await page.waitForTimeout(1500);
 
     // After edit + refresh, the cell should show the new value.
-    // Re-query the locator since the DOM was re-rendered.
     await expect(page.getByRole("cell", { name: "150" }).first()).toBeVisible({ timeout: 5000 });
   });
 
   test("export generates file", async ({ page }) => {
     await openBaseFile(page);
-    await page.getByText("●4500099999").click();
+    await page.locator(".po-card").filter({ hasText: "4500099999" }).click();
     await page.waitForTimeout(2000);
 
-    const exportBtn = page.getByRole("button", { name: /导出/ });
+    // Switch to export tab
+    await page.locator(".tab").filter({ hasText: "导出确认" }).click();
+    await page.waitForTimeout(1000);
+
+    const exportBtn = page.locator("button").filter({ hasText: "确认导出" });
     await expect(exportBtn).toBeEnabled();
     await exportBtn.click();
     await page.waitForTimeout(2000);
@@ -72,8 +126,8 @@ test.describe("RO Workbench E2E", () => {
 
   test("blocked PO shows correct status", async ({ page }) => {
     await openBaseFile(page);
-    const blockedItem = page.locator(".po-item.blocked");
-    await expect(blockedItem).toHaveCount(1);
-    await expect(blockedItem).toContainText("4500088888");
+    const blockedCard = page.locator(".po-card").filter({ hasText: "4500088888" });
+    await expect(blockedCard).toHaveCount(1);
+    await expect(blockedCard).toContainText("阻断");
   });
 });
