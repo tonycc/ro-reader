@@ -1,0 +1,136 @@
+# Base 文件结构描述。
+# 当 RO DATA BASE & PO record template.xlsx 的 sheet 名、表头行、列名发生变化时，
+# 只需修改此文件，无需改 Python 代码。
+
+sheets:
+  DATA BASE:
+    header_row: 4
+    first_data_row: 5
+  PO record:
+    header_row: 4
+    first_data_row: 5
+  客户PO:
+    header_row: 1
+    first_data_row: 2
+
+# 内部 field key → base 表列名（normalized 之后的值）
+field_aliases:
+  DATA BASE:
+    sap: SAP
+    description: Material Description
+    gs_model: GS MODEL
+    category: Category
+    sub_category: SUB-CATEGORY
+    moq: MOQ
+    fob_lt: FOB LT
+    brand: "品牌"
+    rfid: RFID
+    packing_type: "包装"
+    main_part_no: "主件编号"
+    inner_case_value: inner case value
+    carton_qty: round value
+    net_weight: N/W
+    gross_weight: G/W
+    length: L
+    width: W
+    height: H
+    cbm: CBM
+    reel_sap: Reel SAP
+    reel_description: Reel Description
+  PO record:
+    po_no: PO NO.
+    item_line: ITEM LINE#
+    sap: SAP Number
+    description: DESCRIPTION
+    reel_sap: Reel SAP
+    reel_description: Reel Description
+    quantity: FINALQTY
+    category: CATEGORY
+    brand: BRAND
+    ship_to: SHIP TO
+    inv_no: "INV#"
+    ship_qty: SHIP QTY
+    balance_qty: BALANCE QTY
+    sk_ym_invoice_no: SK/YM INVOICE NO.
+    net_weight: N/W
+    gross_weight: G/W
+    length: L
+    width: W
+    height: H
+    carton_count: CTNS
+    total_cbm: TOTAL CBM
+    carton_qty_export: "外箱(最终出口装箱率)"
+    order_date: ORDER DATE (EMAIL)
+    required_ex_factory_date: PO REQUIRED EX-FACTORYDATE(-60days)
+    delivery_date: PO DELIVERY DATE
+    final_ex_factory_date: FINAL EX-FACTORY DATE
+    reel_rod_ex_factory_date: REEL/rod EX -FACTORY DATE
+    combo_ex_factory: combo EX FACTORY
+    etd_on_board: ETD ON BOARD
+    ex_factory_month: EX-FACTORY month
+    order_month: ORDER month
+    e10_po: E10 PO
+    ym_po: YM PO
+    fob_lt: FOB LT
+    meet_lt: "是否满足LT"
+
+  # 客户PO sheet（SAP 客户订单数据）
+  客户PO:
+    purchasing_document: Purchasing Document
+    item: Item
+    doc_type: Purchasing Doc. Type
+    item_category: Item Category
+    doc_category: Purch. Doc. Category
+    purchasing_group: Purchasing Group
+    document_date: Document Date
+    vendor: Vendor/supplying plant
+    material: Material
+    old_material: Old Material #
+    short_text: Short Text
+    plant: Plant
+    deletion_indicator: Deletion Indicator
+    order_quantity: Order Quantity
+    order_unit: Order Unit
+    net_price: Net price
+    currency: Currency
+    price_unit: Price Unit
+    still_to_deliver: Still to be delivered (qty)
+    confirm_category: Confirm. Category
+    delivery_date: Delivery Date
+    ship_date:
+      - ship DATE
+      - Ship Date
+    order_date: order date
+    ship_to: ship to
+    manufacturer: manufacturer
+    final_destination: final destination
+
+# PO record 中各卖方对应的单价列名（normalized）
+# 这些列在 PO record 中按卖方聚合，不区分品类
+price_columns:
+  SK: GS-SK/YM USD FOB
+  YM: GS-SK/YM USD FOB
+  GS PTE: EMAX-GS PTE FOB
+  EMAX PTE: EMAX PTE
+
+# DATA BASE 中按 (卖方, 品类) 的单价列名
+# key 格式: {seller}/{category_name}（category_name = combo/rod/reel）
+data_base_price_columns:
+  SK/combo: GS-SK/YM COMBO FOB 2026
+  YM/combo: GS-SK/YM COMBO FOB 2026
+  SK/rod: GS-SK/YM YM ROD FOB 2026
+  YM/rod: GS-SK/YM YM ROD FOB 2026
+  SK/reel: GS-SK/YM SK REEL FOB 2026
+  YM/reel: GS-SK/YM SK REEL FOB 2026
+  GS PTE/combo: EMAX-GS PTE COMBO FOB 2026
+  GS PTE/rod: EMAX-GS PTE ROD FOB 2026
+  GS PTE/reel: EMAX-GS PTE REEL FOB 2026
+  EMAX PTE/combo: EMAX PTE COMBO FOB 2026
+  EMAX PTE/rod: EMAX PTE ROD FOB 2026
+  EMAX PTE/reel: EMAX PTE REEL FOB 2026
+
+# PO record 中各链段发票金额列
+invoice_amount_columns:
+  GS-SK/YM INV: GS-SK/YM INV
+  EMAX-GS INV: EMAX-GS INV
+  RO-EMAX INV: RO-EMAX INV

@@ -157,10 +157,10 @@
 │  顶部栏  TopBar                                       48 px  │
 ├──────────┬──────────────────────────────┬───────────────────┤
 │          │                              │                   │
-│  PO 列表 │   主区  MainArea             │  文档预览栏        │
-│  240 px  │   弹性                       │  PreviewPane      │
+│  PO 队列 │   主区  MainArea             │  文档预览栏        │
+│  240 px  │   弹性                       │  PreviewScreen    │
 │  可调    │                              │  480 px 起，可调   │
-│ 200-360  │   ├ DataGrid                 │                   │
+│ 200-360  │   ├ DataCheckScreen          │                   │
 │          │   │  弹性                    │                   │
 │          │   ├ 分隔条 4 px               │                   │
 │          │   └ ChainAndMonth 200 px 高   │                   │
@@ -374,7 +374,7 @@ Esc → 放弃修改
 - 每个月一个柱，高度按出货数量归一化。
 - 无出货月份显示空槽位（虚线轮廓），可点击。
 - 选中月份：柱填实心蓝色 + 上方显示数量 tooltip。
-- PI/PO 视角下整体置灰 + 顶部说明"PI/PO 使用完整 PO 数量，不受月份影响"。
+- PI/PO 视角下整体置灰 + 顶部说明"PI/PO 使用客户PO.Order Quantity，不受月份影响"。
 
 ---
 
@@ -399,7 +399,7 @@ Esc → 放弃修改
 预览组件由 Phase 0 spike 选定（产品方案 §16）。无论选哪个，UI 层封装为：
 
 ```
-PreviewPane
+PreviewScreen
   ├─ Header（行级摘要：合计行数 / 数量 / 金额）
   ├─ Frame（预览组件嵌入的 iframe 或 canvas）
   ├─ Overlay（缺字段红色 placeholder、悬停高亮、点击导航）

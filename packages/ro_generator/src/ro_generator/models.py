@@ -63,12 +63,15 @@ class Product:
 
     # 可选字段（缺失时为 None 或空 dict）
     gs_model: str | None = None
+    sub_category: str | None = None  # SUB-CATEGORY
     moq: int | None = None
     fob_lt: int | None = None
     brand: str | None = None
     rfid: str | None = None
     packing_type: str | None = None  # `包装` 列：carton / box / bulk / clam
     main_part_no: str | None = None  # `主件编号`
+    reel_sap: str | None = None  # Reel SAP
+    reel_description: str | None = None  # Reel Description
 
     # 装箱与物流
     inner_case_value: Decimal | None = None
@@ -80,7 +83,7 @@ class Product:
     height: Decimal | None = None
     cbm: Decimal | None = None
 
-    # 价格表（key 由 resolver 定义）
+    # 价格表（key 由 resolver 定义，例 "GS PTE/combo"）
     prices: dict[str, Decimal] = field(default_factory=dict)
 
 
@@ -96,7 +99,7 @@ class OrderLine:
     `subtotals` 是按链段预计算的小计，方便下游不同视图直接取用：
     `{ "SK/YM->GS PTE": Decimal("3280.00"), "GS PTE->EMAX PTE": ..., ... }`。
 
-    `monthly_shipments` 的 key 形如 `"2601"`，值是该月发货数量；空月份不放入。
+    `ship_qty` 是该行 INV# 对应的已出货数量（替代旧版的月度出货分列）。
 
     `source_row` 是该行在 `PO record` sheet 中的 1-based 行号，供双向溯源
     索引（产品方案 §4.4）使用。
@@ -113,15 +116,25 @@ class OrderLine:
     product: Product
 
     # 可选业务字段
+    cp_item: str = ""  # 客户PO "Item" 列，SK/YM PI 模板"PO item Line Number"来源
     ship_to: str | None = None
+    manufacturer_address: str | None = None  # 客户PO "manufacturer" 列
     brand: str | None = None
     invoice_no: str | None = None  # `INV#`
-    factory_doc_no: str | None = None  # `FACTORY DOC NO.`
+    ship_qty: Decimal | None = None  # SHIP QTY
+    balance_qty: Decimal | None = None  # BALANCE QTY
+    po_record_description: str | None = None
+    sk_ym_invoice_no: str | None = None  # SK/YM INVOICE NO.
+    reel_sap: str | None = None
+    reel_description: str | None = None
+    e10_po: str | None = None  # SK 工厂 PO 号 (PO record Q列)
+    ym_po: str | None = None   # YM 工厂 PO 号 (PO record R列)
 
     # 日期
     order_date: date | None = None
     delivery_date: date | None = None
     confirmed_ex_factory_date: date | None = None
+    po_ex_factory_date: date | None = None  # PO record "FINAL EX-FACTORY DATE"，SK/YM PI 使用
     etd_on_board: date | None = None
 
     # 装箱（部分字段在 PO record 中维护，部分回退到 product）
@@ -134,8 +147,8 @@ class OrderLine:
     prices: dict[tuple[str, str], Decimal] = field(default_factory=dict)
     subtotals: dict[tuple[str, str], Decimal] = field(default_factory=dict)
 
-    # 月度出货
-    monthly_shipments: dict[str, Decimal] = field(default_factory=dict)
+    # 各链段发票金额
+    invoice_amounts: dict[str, Decimal] = field(default_factory=dict)
 
     # 双向溯源（产品方案 §4.4）
     source_row: int | None = None
@@ -161,7 +174,6 @@ class DocumentRequest:
     documents: tuple[DocumentType, ...]
     seller: str | None = None
     buyer: str | None = None
-    invoice_month: str | None = None  # 例如 "2601"
     invoice_no: str | None = None
     output_format: Literal["xlsx", "zip"] = "xlsx"
     output_dir: str = "outputs"
@@ -181,7 +193,7 @@ class GenerationResult:
     `status == "needs_input"` 时 `missing_inputs` 与 `options` 有值。
 
     `source_index` 是装配单元格 ↔ base 字段的双向映射（产品方案 §4.4），
-    工作台 UI 在 Phase 3 消费此索引实现双向高亮。
+    工作台 UI 消费此索引实现双向高亮。
     """
 
     status: ResultStatus
@@ -193,5 +205,5 @@ class GenerationResult:
     missing_inputs: tuple[str, ...] = ()
     options: dict[str, tuple[dict[str, str], ...]] = field(default_factory=dict)
     # 注：source_index 是 SourceIndex 类型，但避免 models.py 反向依赖 source_index.py，
-    # 这里用 object 暂存。Phase 3 工作台后端可以用 isinstance 还原类型。
+    # 用 object 暂存，工作台后端可用 isinstance 还原类型。
     source_index: object = None

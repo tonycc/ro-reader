@@ -34,7 +34,7 @@ cd frontend && pnpm run dev
 
 点击顶部栏文件名"点击打开 base 文件…"，在弹出的对话框中输入 `.xlsx` 文件的绝对路径：
 
-```
+```bash
 /Users/max/projects/ro-reader/tests/fixtures/synthetic_base.xlsx
 ```
 
@@ -54,7 +54,7 @@ cd frontend && pnpm run dev
 
 - **双击单元格**进入编辑模式，输入新值后按 **Enter** 提交
 - 修改会**直接写回 base 文件**，预览即时刷新
-- 必填字段（SAP Number、FINALQTY 等）为空时显示**红色边框 + 粉色背景**
+- 必填字段（SAP Number、客户PO 的 Order Quantity 等）为空时显示**红色边框 + 粉色背景**
 
 ### 4. 选择链段和月份
 
@@ -78,7 +78,7 @@ cd frontend && pnpm run dev
 
 ### 装配流水线
 
-```
+```text
 RO DATA BASE.xlsx
      │
      ▼
@@ -93,13 +93,14 @@ RO DATA BASE.xlsx
      │
      ▼
   DocumentModel ─── 构建四类单据的视图模型（DocumentLine 列表 + 合计）
-     │              PI/PO 用完整 PO 数量；Invoice/PL 可按 invoice_month 切片
+     │              PI/PO 使用客户PO.Order Quantity；Invoice/PL 可按 invoice_month 切片
      │
      ▼
   TemplateMapping ─── 加载 YAML 映射，校验所有引用单元格在模板中存在
+     │                支持可选 table_header_row，显式保护 start_row 上方的真实表格表头
      │
      ▼
-  Renderer ─── 写入 Excel 模板，超行时插入新行并复制样式
+  Renderer ─── 先统一预留明细区样式，再写入 Excel 模板；超行时插入新行并复制样式
      │          openpyxl 陷阱：insert_rows() 不平移 row_dimensions，须先手动处理
      │
      ▼
@@ -116,12 +117,13 @@ document: invoice
 template_version: "v1"
 template: templates/gs/invoice.xlsx
 sheet: Sheet1
+table_header_row: 17      # 可选：start_row 上方若存在真实表格表头，则显式声明保留该行
 header:
   invoice_no: H6          # 发票号写到 H6
   ship_to: A12            # 收货地址写到 A12
 lines:
   start_row: 18           # 数据行从 18 行开始
-  style_source_row: 19    # 样式参考行（插入新行时复制此行样式）
+  style_source_row: 19    # 明细样式参考行（预留区归一化 + 插入新行都复制此行样式）
   columns:
     sap: D                # SAP 号写到 D 列
     unit_price: E          # 单价写到 E 列
@@ -134,11 +136,14 @@ totals:
 
 模板版式变化时**只改 YAML，不改代码**。mapping 加载时自动校验所有单元格引用在模板中真实存在，防止模板漂移。
 
+- `style_source_row` 不只用于“超行插入时复制样式”，也用于把模板预留明细区统一成同一套样式，避免模板脏格式把单价/数量显示成日期等错误格式。
+- `table_header_row` 是可选字段；当 `start_row` 上方存在真实表格表头时显式声明，渲染器会保留该行，不再依赖启发式猜测。
+
 ### 贸易链段与定价
 
 RO 业务涉及多段贸易链路。同一个 PO 在不同链段下使用不同的单价列：
 
-```
+```text
 工厂 → SK/YM → GS PTE → EMAX PTE → PF（最终客户）
         ↓ SK/YM USD FOB   ↓ GS PTE FOB   ↓ EMAX PTE
 ```
@@ -146,18 +151,18 @@ RO 业务涉及多段贸易链路。同一个 PO 在不同链段下使用不同�
 合法的 `(seller, buyer)` 组合及选价规则：
 
 | 链段 | 价格列 | Invoice 金额列前缀 |
-|---|---|---|
+| --- | --- | --- |
 | SK/YM → GS PTE | `SK/YM USD FOB` | `GS-SK/YM INV-*` |
 | GS PTE → EMAX PTE | `GS PTE FOB` | `EMAX-GS INV-*` |
 | EMAX PTE → PF | `EMAX PTE` | `PF-EMAX INV-*` |
 
-`SUBTOTAL = FINALQTY × unit_price`，金额用 `Decimal` 避免浮点精度问题。
+`SUBTOTAL = quantity × unit_price`，金额用 `Decimal` 避免浮点精度问题。
 
 ### 数量来源
 
 | 单据 | 数量来源 |
-|---|---|
-| PI / PO | 完整 PO 数量（`FINALQTY`） |
+| --- | --- |
+| PI / PO | `客户PO.Order Quantity` |
 | Invoice / PL | `invoice_month` 对应的月度出货数量（`2601`–`2612` 列） |
 
 ### 校验体系
@@ -165,7 +170,7 @@ RO 业务涉及多段贸易链路。同一个 PO 在不同链段下使用不同�
 三类校验输出在装配流水线的不同阶段累积：
 
 | 类型 | 含义 | 示例 |
-|---|---|---|
+| --- | --- | --- |
 | `blocking_errors` | 阻断装配，必须修复 | SAP 缺失、SAP 不在 DATA BASE、数量无效、INV# 缺失 |
 | `warnings` | 可装配但需复核（带 `severity: high/low`） | 公式回退现算（high）、RFID 为空（low） |
 | `missing_inputs` | 信息不足，需用户选择 | 多月出货需指定月份、多 INV# 需选定 |
@@ -174,7 +179,7 @@ RO 业务涉及多段贸易链路。同一个 PO 在不同链段下使用不同�
 
 `PO record` 中的 `SUBTOTAL`、`CTNS`、`TOTAL CBM` 通常来自 Excel 公式。当保存文件的程序（如 LibreOffice/WPS）未缓存公式结果时，`openpyxl` 的 `data_only=True` 读到的是 `None`，装配引擎按规则现算：
 
-- `CTNS = FINALQTY / 外箱`
+- `CTNS = quantity / 外箱`（当前回退口径取 `客户PO.Order Quantity`）
 - `TOTAL CBM = L × W × H ÷ 1,000,000 × CTNS`
 
 并在数据视图中标记橙色边框，提示用户"由工作台计算，建议在 Excel 中刷新"。
@@ -215,7 +220,7 @@ uv run ro-generate \
 ### CLI 参数
 
 | 参数 | 说明 |
-|---|---|
+| --- | --- |
 | `--base` | base `.xlsx` 文件路径 |
 | `--po` | PO 号 |
 | `--docs` | 单据类型，逗号分隔：`pi,po,invoice,pl` |
@@ -231,7 +236,7 @@ uv run ro-generate \
 ### 退出码
 
 | 码 | 含义 |
-|---:|---|
+| ---: | --- |
 | 0 | 装配成功，文件已生成 |
 | 1 | 阻断错误（缺 SAP、INV# 等），未生成文件 |
 | 2 | CLI 参数错误（缺必填参数、unknown flag 等） |
@@ -271,13 +276,13 @@ uv run pyinstaller packages/ro_workbench_launcher/ro-workbench.spec --noconfirm
 
 ## 架构
 
-```
+```text
 ro_generator (核心包) → CLI | FastAPI 后端 → Vue 3 前端 → PyInstaller 启动器
 ```
 
 **业务规则只在核心包**，CLI、后端、前端都是薄壳。目录结构：
 
-```
+```text
 packages/
   ro_generator/         核心包（Python, 261 tests）
   ro_workbench_api/     工作台后端（FastAPI, 6 endpoints）
@@ -291,7 +296,7 @@ docs/                   产品方案 / UI 设计 / 实施指南
 ## 模板矩阵
 
 | 主体 | PI | PO | Invoice | PL |
-|---|:-:|:-:|:-:|:-:|
+| --- | :-: | :-: | :-: | :-: |
 | GS PTE | ✅ | ✅ | ✅ | ✅ |
 | EMAX PTE | ✅ | ✅ | ✅ | ✅ |
 | SK/YM | ✅ | ❌ | ✅ | ✅ |

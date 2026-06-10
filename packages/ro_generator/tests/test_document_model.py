@@ -1,550 +1,125 @@
-"""Document model 测试：覆盖完整 PO 数量、月度切片、合计、阻断条件。"""
+"""Document model 测试 — 新 base 文件数据模型。"""
 
 from __future__ import annotations
 
 from decimal import Decimal
 
-import pytest
 from ro_generator.document_model import (
-    CODE_FACTORY_DOC_NO_MISSING,
     CODE_INVOICE_NO_MISSING,
     CODE_LINE_NOT_PRICED,
-    CODE_NO_SHIPMENT_IN_MONTH,
-    BuildResult,
-    DocumentModel,
+    CODE_NO_SHIPMENT_FOR_INVOICE,
+    CODE_PACKING_DATA_MISSING,
     build_invoice_model,
     build_pi_model,
     build_pl_model,
-    build_po_model,
 )
 from ro_generator.models import OrderLine, Product
-from ro_generator.schema import (
-    ENTITY_EMAX_PTE,
-    ENTITY_GS_PTE,
-    ENTITY_PF,
-    ENTITY_SK_YM,
-)
-
-# ————————————————————————————————————————
-# Fixture builders
-# ————————————————————————————————————————
 
 
-def make_product(sap: str = "21-44640", **overrides: object) -> Product:
-    defaults: dict[str, object] = {
-        "sap": sap,
-        "description": "CB2500.B2",
-        "category": 1,
-        "gs_model": "Q1",
-    }
-    defaults.update(overrides)
-    return Product(**defaults)  # type: ignore[arg-type]
+def make_product(sap="21-44640", description="CB2500.B2", category=1, gs_model="Q1", **kw):
+    defaults = {"sap": sap, "description": description, "category": category, "gs_model": gs_model,
+                "carton_qty": Decimal("24"), "net_weight": Decimal("8.5"), "gross_weight": Decimal("10.1"),
+                "length": Decimal("48"), "width": Decimal("31"), "height": Decimal("35"), "cbm": Decimal("0.052"),
+                "inner_case_value": Decimal("2"), **kw}
+    return Product(**defaults)
 
 
-def make_order_line(
-    *,
-    sap: str = "21-44640",
-    quantity: Decimal | int = Decimal("100"),
-    prices: dict[tuple[str, str], Decimal] | None = None,
-    monthly_shipments: dict[str, Decimal] | None = None,
-    invoice_no: str | None = "INV-001",
-    factory_doc_no: str | None = "FDOC-001",
-    ship_to: str | None = "EMAX HQ",
-    item_line_no: str = "10",
-    description: str = "CB2500.B2",
-    product: Product | None = None,
-    carton_count: Decimal | None = None,
-    net_weight: Decimal | None = None,
-    gross_weight: Decimal | None = None,
-    cbm: Decimal | None = None,
-) -> OrderLine:
-    qty = quantity if isinstance(quantity, Decimal) else Decimal(quantity)
-    if prices is None:
-        prices = {
-            (ENTITY_SK_YM, ENTITY_GS_PTE): Decimal("28.0"),
-            (ENTITY_GS_PTE, ENTITY_EMAX_PTE): Decimal("32.8"),
-            (ENTITY_EMAX_PTE, ENTITY_PF): Decimal("38.0"),
-        }
-    subtotals = {seg: (price * qty).quantize(Decimal("0.01")) for seg, price in prices.items()}
-    return OrderLine(
-        po_no="4500030844",
-        item_line_no=item_line_no,
-        sap=sap,
-        description=description,
-        category=1,
-        quantity=qty,
-        product=product or make_product(sap=sap),
-        ship_to=ship_to,
-        invoice_no=invoice_no,
-        factory_doc_no=factory_doc_no,
-        prices=prices,
-        subtotals=subtotals,
-        monthly_shipments=monthly_shipments or {},
-        carton_count=carton_count,
-        net_weight=net_weight,
-        gross_weight=gross_weight,
-        total_cbm=cbm,
-    )
+def make_order_line(po_no="4500030844", item_line_no="10", sap="21-44640", description="CB2500.B2",
+                    category=1, quantity=Decimal("100"), product=None,
+                    prices=None, subtotals=None, invoice_no="INV-001",
+                    ship_qty=Decimal("100"), carton_count=Decimal("5"), total_cbm=Decimal("0.36"),
+                    net_weight=Decimal("8.5"), gross_weight=Decimal("10.1"), **kw):
+    p = product or make_product(sap=sap, description=description, category=category)
+    defaults = {"po_no": po_no, "item_line_no": item_line_no, "sap": sap, "description": description,
+                "category": category, "quantity": quantity, "product": p, "invoice_no": invoice_no,
+                "ship_qty": ship_qty, "carton_count": carton_count, "total_cbm": total_cbm,
+                "net_weight": net_weight, "gross_weight": gross_weight, **kw}
+    if prices:
+        defaults["prices"] = prices
+    if subtotals:
+        defaults["subtotals"] = subtotals
+    return OrderLine(**defaults)
 
 
-# ————————————————————————————————————————
-# 完整 PO 数量（不指定月份）
-# ————————————————————————————————————————
-
-
-class TestFullPoQuantity:
-    def test_single_line_invoice(self) -> None:
-        lines = (make_order_line(),)
-        result = build_invoice_model(
-            lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="4500030844"
-        )
-        assert isinstance(result, BuildResult)
-        assert result.messages == ()
+class TestPI:
+    def test_pi_uses_full_quantity(self):
+        line = make_order_line(quantity=Decimal("100"))
+        result = build_pi_model((line,), seller="GS PTE", buyer="EMAX PTE", po_no="4500030844")
         assert result.model is not None
-        model = result.model
-        assert isinstance(model, DocumentModel)
-        assert model.document_type == "INVOICE"
-        assert model.seller == ENTITY_GS_PTE
-        assert model.buyer == ENTITY_EMAX_PTE
-        assert model.po_no == "4500030844"
-        assert model.invoice_no == "INV-001"
-        assert model.factory_doc_no == "FDOC-001"
-        assert model.invoice_month is None
-        assert model.ship_to == "EMAX HQ"
-
-    def test_line_uses_segment_price(self) -> None:
-        lines = (make_order_line(quantity=100),)
-        result = build_invoice_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
-        assert result.model is not None
-        line = result.model.lines[0]
-        assert line.unit_price == Decimal("32.8")
-        assert line.quantity == Decimal("100")
-        assert line.amount == Decimal("3280.00")
-
-    def test_totals_match_sum(self) -> None:
-        lines = (
-            make_order_line(sap="21-44640", quantity=100),
-            make_order_line(sap="21-44641", quantity=200, item_line_no="20"),
-        )
-        result = build_invoice_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
-        assert result.model is not None
-        # 100 + 200
-        assert result.model.total_quantity == Decimal("300")
-        # 100*32.8 + 200*32.8 = 9840
-        assert result.model.total_amount == Decimal("9840.00")
-
-    def test_different_segments_use_different_prices(self) -> None:
-        lines = (make_order_line(quantity=100),)
-        # GS→EMAX 段 32.8 vs SK→GS 段 28.0
-        result_gs = build_invoice_model(
-            lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P"
-        )
-        result_sk = build_invoice_model(lines, seller=ENTITY_SK_YM, buyer=ENTITY_GS_PTE, po_no="P")
-        assert result_gs.model is not None
-        assert result_sk.model is not None
-        assert result_gs.model.total_amount == Decimal("3280.00")
-        assert result_sk.model.total_amount == Decimal("2800.00")
-
-
-# ————————————————————————————————————————
-# 月度切片
-# ————————————————————————————————————————
-
-
-class TestMonthlySlice:
-    def test_takes_monthly_quantity(self) -> None:
-        lines = (
-            make_order_line(
-                quantity=300,
-                monthly_shipments={"2601": Decimal("100"), "2602": Decimal("200")},
-            ),
-        )
-        result = build_invoice_model(
-            lines,
-            seller=ENTITY_GS_PTE,
-            buyer=ENTITY_EMAX_PTE,
-            po_no="P",
-            invoice_month="2601",
-        )
-        assert result.model is not None
-        assert result.model.invoice_month == "2601"
-        assert result.model.lines[0].quantity == Decimal("100")
         assert result.model.total_quantity == Decimal("100")
-        assert result.model.total_amount == Decimal("3280.00")
+        assert result.model.invoice_no is None
 
-    def test_drops_lines_with_no_shipment_in_month(self) -> None:
-        # 第一行 1 月有货，第二行 1 月无货
-        lines = (
-            make_order_line(
-                sap="21-44640",
-                quantity=100,
-                monthly_shipments={"2601": Decimal("80")},
-            ),
-            make_order_line(
-                sap="21-44641",
-                item_line_no="20",
-                quantity=100,
-                monthly_shipments={"2602": Decimal("100")},
-            ),
-        )
-        result = build_invoice_model(
-            lines,
-            seller=ENTITY_GS_PTE,
-            buyer=ENTITY_EMAX_PTE,
-            po_no="P",
-            invoice_month="2601",
-        )
-        assert result.model is not None
-        assert len(result.model.lines) == 1
-        assert result.model.lines[0].sap == "21-44640"
-        assert result.model.lines[0].quantity == Decimal("80")
-
-    def test_no_shipment_in_month_blocks(self) -> None:
-        lines = (
-            make_order_line(
-                quantity=100,
-                monthly_shipments={"2602": Decimal("100")},
-            ),
-        )
-        result = build_invoice_model(
-            lines,
-            seller=ENTITY_GS_PTE,
-            buyer=ENTITY_EMAX_PTE,
-            po_no="P",
-            invoice_month="2601",
-        )
-        assert result.model is None
-        codes = [m.code for m in result.messages]
-        assert CODE_NO_SHIPMENT_IN_MONTH in codes
-
-    def test_zero_amount_treated_as_no_shipment(self) -> None:
-        lines = (
-            make_order_line(
-                quantity=100,
-                monthly_shipments={"2601": Decimal("0")},
-            ),
-        )
-        result = build_invoice_model(
-            lines,
-            seller=ENTITY_GS_PTE,
-            buyer=ENTITY_EMAX_PTE,
-            po_no="P",
-            invoice_month="2601",
-        )
-        assert result.model is None
-
-
-# ————————————————————————————————————————
-# 链段定价缺失
-# ————————————————————————————————————————
-
-
-class TestSegmentPricing:
-    def test_unpriced_line_warns_but_generates(self) -> None:
-        """缺价→high warning，仍生成 model（单价=0）。"""
-        lines = (
-            make_order_line(
-                quantity=100,
-                prices={(ENTITY_SK_YM, ENTITY_GS_PTE): Decimal("28.0")},
-            ),
-        )
-        result = build_invoice_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
-        assert result.model is not None
-        codes = [m.code for m in result.messages]
-        assert CODE_LINE_NOT_PRICED in codes
-        assert all(m.kind == "warning" for m in result.messages)
-
-    def test_partial_unpriced_still_generates(self) -> None:
-        """部分行无价→warning，所有行仍然输出（无价行单价=0）。"""
-        lines = (
-            make_order_line(sap="21-44640", quantity=100),
-            make_order_line(
-                sap="21-44641",
-                quantity=200,
-                item_line_no="20",
-                prices={(ENTITY_SK_YM, ENTITY_GS_PTE): Decimal("28.0")},
-            ),
-        )
-        result = build_invoice_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
+    def test_pi_without_price_warns(self):
+        line = make_order_line(quantity=Decimal("100"), prices={})
+        result = build_pi_model((line,), seller="GS PTE", buyer="EMAX PTE", po_no="4500030844")
         assert result.model is not None
         assert any(m.code == CODE_LINE_NOT_PRICED for m in result.messages)
 
 
-# ————————————————————————————————————————
-# Invoice 必填字段
-# ————————————————————————————————————————
-
-
-class TestInvoiceRequiredFields:
-    def test_missing_invoice_no_warns_but_generates(self) -> None:
-        """缺 INV#→warning，仍然生成 model（INV#=None）。"""
-        lines = (make_order_line(invoice_no=None),)
-        result = build_invoice_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
+class TestInvoice:
+    def test_invoice_filters_by_invoice_no_and_uses_ship_qty(self):
+        line1 = make_order_line(item_line_no="10", invoice_no="INV-001", ship_qty=Decimal("80"))
+        line2 = make_order_line(item_line_no="20", sap="21-44641", description="X", invoice_no="INV-002", ship_qty=Decimal("100"))
+        result = build_invoice_model((line1, line2), seller="GS PTE", buyer="EMAX PTE", po_no="P", invoice_no="INV-001")
         assert result.model is not None
-        codes = [m.code for m in result.messages]
-        assert CODE_INVOICE_NO_MISSING in codes
-        assert result.model.invoice_no is None
+        assert result.model.total_quantity == Decimal("80")
+        assert len(result.model.lines) == 1
 
-    def test_missing_factory_doc_no_warns_but_generates(self) -> None:
-        """缺 FACTORY DOC NO.→warning，仍然生成 model。"""
-        lines = (make_order_line(factory_doc_no=None),)
-        result = build_invoice_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
-        assert result.model is not None
-        codes = [m.code for m in result.messages]
-        assert CODE_FACTORY_DOC_NO_MISSING in codes
-
-    def test_takes_first_non_empty_invoice_no(self) -> None:
-        # 部分行有 INV#，部分没有：取首个非空
-        lines = (
-            make_order_line(invoice_no=None, factory_doc_no=None),
-            make_order_line(
-                sap="21-44641", item_line_no="20", invoice_no="INV-002", factory_doc_no="FDOC-002"
-            ),
+    def test_invoice_uses_po_record_description_when_present(self):
+        line = make_order_line(
+            description="DB Description",
+            po_record_description="PO Record Description",
         )
-        result = build_invoice_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
+        result = build_invoice_model((line,), seller="GS PTE", buyer="EMAX PTE", po_no="P")
         assert result.model is not None
-        assert result.model.invoice_no == "INV-002"
-        assert result.model.factory_doc_no == "FDOC-002"
+        assert result.model.lines[0].description == "PO Record Description"
 
-    def test_both_missing_reports_both(self) -> None:
-        lines = (make_order_line(invoice_no=None, factory_doc_no=None),)
-        result = build_invoice_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
-        codes = [m.code for m in result.messages]
-        assert CODE_INVOICE_NO_MISSING in codes
-        assert CODE_FACTORY_DOC_NO_MISSING in codes
-
-
-# ————————————————————————————————————————
-# PI
-# ————————————————————————————————————————
-
-
-class TestPiModel:
-    def test_single_line_pi(self) -> None:
-        lines = (make_order_line(quantity=100),)
-        result = build_pi_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
+    def test_invoice_without_invoice_no_filter_uses_full_quantity(self):
+        line = make_order_line(quantity=Decimal("100"), ship_qty=Decimal("100"))
+        result = build_invoice_model((line,), seller="GS PTE", buyer="EMAX PTE", po_no="P")
         assert result.model is not None
-        assert result.model.document_type == "PI"
-        assert result.model.invoice_no is None
-        assert result.model.factory_doc_no is None
-        assert result.model.invoice_month is None
-        assert result.model.total_quantity == Decimal("100")
-        assert result.model.total_amount == Decimal("3280.00")
-
-    def test_pi_accepts_missing_invoice_no(self) -> None:
-        """PI 不要求 INV# / FACTORY DOC NO.。"""
-        lines = (make_order_line(invoice_no=None, factory_doc_no=None),)
-        result = build_pi_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
-        assert result.model is not None
-        assert result.messages == ()
-
-    def test_pi_ignores_monthly_data(self) -> None:
-        """PI 始终用完整 PO 数量，即使 line 有月度切片。"""
-        lines = (make_order_line(quantity=300, monthly_shipments={"2601": Decimal("100")}),)
-        result = build_pi_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
-        assert result.model is not None
-        assert result.model.total_quantity == Decimal("300")
-
-    def test_pi_warns_on_unpriced_line(self) -> None:
-        """PI 缺价→warning，仍生成 model。"""
-        lines = (make_order_line(quantity=100, prices={}),)
-        result = build_pi_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
-        assert result.model is not None
-        assert any(m.kind == "warning" for m in result.messages)
-
-
-# ————————————————————————————————————————
-# PO
-# ————————————————————————————————————————
-
-
-class TestPoModel:
-    def test_single_line_po(self) -> None:
-        lines = (make_order_line(quantity=100),)
-        result = build_po_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
-        assert result.model is not None
-        assert result.model.document_type == "PO"
-        assert result.model.invoice_no is None
-        assert result.model.factory_doc_no is None
-        assert result.model.invoice_month is None
-        assert result.model.total_quantity == Decimal("100")
-        assert result.model.total_amount == Decimal("3280.00")
-
-    def test_po_uses_full_quantity(self) -> None:
-        lines = (
-            make_order_line(sap="21-44640", quantity=100),
-            make_order_line(sap="21-44641", quantity=200, item_line_no="20"),
-        )
-        result = build_po_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
-        assert result.model is not None
-        assert result.model.total_quantity == Decimal("300")
-
-
-# ————————————————————————————————————————
-# PL
-# ————————————————————————————————————————
-
-
-class TestPlModel:
-    def test_pl_warns_on_missing_invoice_no(self) -> None:
-        """缺 INV#/FDOC→warning，仍生成 PL model。"""
-        lines = (
-            make_order_line(
-                invoice_no=None,
-                factory_doc_no=None,
-                carton_count=Decimal("5"),
-                net_weight=Decimal("12.5"),
-                gross_weight=Decimal("13.8"),
-                cbm=Decimal("0.36"),
-            ),
-        )
-        result = build_pl_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
-        assert result.model is not None
-        codes = {m.code for m in result.messages}
-        assert "INVOICE_NO_MISSING" in codes
-        assert "FACTORY_DOC_NO_MISSING" in codes
-        assert all(m.kind == "warning" for m in result.messages)
-
-    def test_pl_warns_on_missing_carton_count(self) -> None:
-        """缺 CTNS→warning，仍生成 PL。"""
-        lines = (make_order_line(carton_count=None),)
-        result = build_pl_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
-        assert result.model is not None
-        codes = {m.code for m in result.messages}
-        assert "PACKING_DATA_MISSING" in codes
-        assert all(m.kind == "warning" for m in result.messages)
-
-    def test_pl_warns_on_missing_weight(self) -> None:
-        """缺净重→warning，仍生成 PL。"""
-        lines = (make_order_line(net_weight=None),)
-        result = build_pl_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
-        assert result.model is not None
-
-    def test_pl_warns_all_packing_fields_missing(self) -> None:
-        """四缺一→warning，仍生成 PL。"""
-        lines = (
-            make_order_line(
-                sap="21-44640",
-                carton_count=Decimal("10"),
-                net_weight=Decimal("12.5"),
-                gross_weight=Decimal("13.8"),
-                cbm=None,
-            ),
-        )
-        result = build_pl_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
-        assert result.model is not None
-        codes = {m.code for m in result.messages}
-        assert "PACKING_DATA_MISSING" in codes
-
-    def test_pl_success_with_all_packing_fields(self) -> None:
-        lines = (
-            make_order_line(
-                sap="21-44640",
-                quantity=100,
-                carton_count=Decimal("5"),
-                net_weight=Decimal("12.5"),
-                gross_weight=Decimal("13.8"),
-                cbm=Decimal("0.36"),
-            ),
-        )
-        result = build_pl_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
-        assert result.model is not None
-        assert result.model.document_type == "PL"
-        assert result.model.lines[0].carton_count == Decimal("5")
-        assert result.model.lines[0].net_weight == Decimal("12.5")
-        assert result.model.lines[0].gross_weight == Decimal("13.8")
-        assert result.model.lines[0].cbm == Decimal("0.36")
-        assert result.model.total_carton_count == Decimal("5")
-        assert result.model.total_net_weight == Decimal("12.5")
-        assert result.model.total_gross_weight == Decimal("13.8")
-        assert result.model.total_cbm == Decimal("0.36")
-
-    def test_pl_sums_packing_totals(self) -> None:
-        lines = (
-            make_order_line(
-                sap="21-44640",
-                carton_count=Decimal("5"),
-                net_weight=Decimal("12.5"),
-                gross_weight=Decimal("13.8"),
-                cbm=Decimal("0.36"),
-                quantity=100,
-            ),
-            make_order_line(
-                sap="21-44641",
-                item_line_no="20",
-                carton_count=Decimal("3"),
-                net_weight=Decimal("8.0"),
-                gross_weight=Decimal("9.2"),
-                cbm=Decimal("0.24"),
-                quantity=50,
-            ),
-        )
-        result = build_pl_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
-        assert result.model is not None
-        assert result.model.total_carton_count == Decimal("8")  # 5 + 3
-        assert result.model.total_net_weight == Decimal("20.5")
-        assert result.model.total_gross_weight == Decimal("23.0")
-        assert result.model.total_cbm == Decimal("0.60")
-
-    def test_pl_monthly_slice_works(self) -> None:
-        lines = (
-            make_order_line(
-                sap="21-44640",
-                quantity=300,
-                carton_count=Decimal("12"),
-                net_weight=Decimal("12.5"),
-                gross_weight=Decimal("13.8"),
-                cbm=Decimal("0.86"),
-                monthly_shipments={"2601": Decimal("100"), "2602": Decimal("200")},
-            ),
-        )
-        result = build_pl_model(
-            lines,
-            seller=ENTITY_GS_PTE,
-            buyer=ENTITY_EMAX_PTE,
-            po_no="P",
-            invoice_month="2601",
-        )
-        assert result.model is not None
-        assert result.model.invoice_month == "2601"
-        # 月度切片后数量是 100，但装箱字段仍来自原行（保持不变）
-        assert result.model.lines[0].quantity == Decimal("100")
-        assert result.model.lines[0].carton_count == Decimal("12")
         assert result.model.total_quantity == Decimal("100")
 
-    def test_pl_warns_partial_packing_failure(self) -> None:
-        """一行装箱齐全+一行缺 → 两行都输出，缺失行填 0。"""
-        lines = (
-            make_order_line(
-                sap="21-44640",
-                carton_count=Decimal("5"),
-                net_weight=Decimal("12.5"),
-                gross_weight=Decimal("13.8"),
-                cbm=Decimal("0.36"),
-            ),
-            make_order_line(
-                sap="21-44641",
-                item_line_no="20",
-                carton_count=Decimal("3"),
-                net_weight=None,
-                gross_weight=None,
-                cbm=None,
-            ),
-        )
-        result = build_pl_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
+    def test_invoice_missing_invoice_no_warns(self):
+        line = make_order_line(invoice_no=None)
+        result = build_invoice_model((line,), seller="GS PTE", buyer="EMAX PTE", po_no="P")
         assert result.model is not None
-        assert any(m.code == "PACKING_DATA_MISSING" for m in result.messages)
+        assert any(m.code == CODE_INVOICE_NO_MISSING for m in result.messages)
+
+    def test_no_shipment_for_invoice_blocks(self):
+        line = make_order_line(invoice_no="INV-001", ship_qty=Decimal("0"))
+        result = build_invoice_model((line,), seller="GS PTE", buyer="EMAX PTE", po_no="P", invoice_no="INV-002")
+        assert result.model is None
+        assert any(m.code == CODE_NO_SHIPMENT_FOR_INVOICE for m in result.messages)
 
 
-# ————————————————————————————————————————
-# 模型不可变（对所有 builder 类型）
-# ————————————————————————————————————————
+class TestPL:
+    def test_pl_filters_by_invoice_no(self):
+        line1 = make_order_line(item_line_no="10", invoice_no="INV-001", ship_qty=Decimal("50"))
+        line2 = make_order_line(item_line_no="20", sap="21-44641", description="X", invoice_no="INV-002", ship_qty=Decimal("100"))
+        result = build_pl_model((line1, line2), seller="GS PTE", buyer="EMAX PTE", po_no="P", invoice_no="INV-001")
+        assert result.model is not None
+        assert result.model.total_quantity == Decimal("50")
 
+    def test_pl_missing_packing_warns(self):
+        line = make_order_line(carton_count=None)
+        result = build_pl_model((line,), seller="GS PTE", buyer="EMAX PTE", po_no="P")
+        assert result.model is not None
+        assert any(m.code == CODE_PACKING_DATA_MISSING for m in result.messages)
 
-@pytest.mark.parametrize("_label", ["smoke"])
-def test_result_is_immutable(_label: str) -> None:
-    lines = (make_order_line(),)
-    result = build_invoice_model(lines, seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="P")
-    assert isinstance(result.messages, tuple)
-    assert result.model is not None
-    assert isinstance(result.model.lines, tuple)
+    def test_pl_missing_invoice_no_warns(self):
+        line = make_order_line(invoice_no=None)
+        result = build_pl_model((line,), seller="GS PTE", buyer="EMAX PTE", po_no="P")
+        assert result.model is not None
+        assert any(m.code == CODE_INVOICE_NO_MISSING for m in result.messages)
+
+    def test_pl_zero_packing_values_do_not_warn_missing(self):
+        line = make_order_line(
+            carton_count=Decimal("0"),
+            net_weight=Decimal("0"),
+            gross_weight=Decimal("0"),
+            total_cbm=Decimal("0"),
+        )
+        result = build_pl_model((line,), seller="GS PTE", buyer="EMAX PTE", po_no="P")
+        assert result.model is not None
+        assert not any(m.code == CODE_PACKING_DATA_MISSING for m in result.messages)

@@ -1,21 +1,93 @@
 document: pl
-template_version: "v1"
+template_version: '2026.06'
 template: templates/gs/pl.xlsx
-sheet: PL
+sheet: 'PL '
 header:
-  invoice_no: F5
+  invoice_no: K5
+  invoice_date: L5
+  shipping_mark: C5
+  shipping_mark_2: C6
+header_fixed:
+  shipping_mark: C/T#
+  shipping_mark_2: MADE IN CHINA
+table_header_row: 8
 lines:
-  start_row: 12
+  start_row: 14
   style_source_row: 13
-  unit_label: PCS
+  row_fixed:
+    F: PCS
+    H: KGS
+    J: KGS
+    L: CBM
   columns:
     po_no: B
     description: C
     sap: D
     quantity: E
-    unit_label: F
-    unit_price: B
-    amount: B
+    net_weight: G
+    gross_weight: I
+    cbm: K
+    carton_count: M
 totals:
   quantity: E20
-  unit_label: F20
+  net_weight: G20
+  gross_weight: I20
+  cbm: K20
+  carton_count: M20
+style:
+  bold:
+  - A1
+  - A2
+  - A5
+  - A8
+  - B8
+  - C8
+  - D8
+  - E8
+  - F8
+  - G8
+  - H8
+  - I8
+  - J8
+  - K8
+  - L8
+  - M8
+  - A20
+  - E20
+  - F20
+  - G20
+  - H20
+  - I20
+  - J20
+  - K20
+  - L20
+  - M20
+preview_content:
+  title: PACKING LIST
+  static_terms: {}
+  notes:
+  - MADE IN CHINA
+  column_labels:
+    po_no: SAP PO#
+    description: Description of Goods
+    sap: SAP ITEM#
+    quantity: Quantity
+    F: ''
+    net_weight: Net Weight
+    H: ''
+    gross_weight: Gross Weight
+    J: ''
+    cbm: Measurement
+    L: ''
+    carton_count: CTNS
+  seller_info:
+  - GLOBALSINO PTE.LTD.
+  - '10 KAKI BUKIT ROAD 2, #01-37, FIRST EAST CENTRE, SINGAPORE 417868'
+  layout:
+    top:
+      left: [seller_info]
+      center: []
+      right: [title]
+    info:
+      left: [shipping_mark, shipping_mark_2]
+      right: [invoice_no, invoice_date]

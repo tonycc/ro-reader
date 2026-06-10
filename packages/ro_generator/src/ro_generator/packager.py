@@ -3,10 +3,10 @@
 文件命名（产品方案 §12.1）：
 - PI: <SELLER>-RO-PI-<PO>.xlsx
 - PO: <SELLER>-RO-PO-<PO>.xlsx
-- Invoice: <SELLER>-RO-INVOICE-<PO>-<MONTH>.xlsx
-- PL: <SELLER>-RO-PL-<PO>-<MONTH>.xlsx
+- Invoice: <SELLER>-RO-INVOICE-<PO>-<INVOICE_NO>.xlsx
+- PL: <SELLER>-RO-PL-<PO>-<INVOICE_NO>.xlsx
 
-zip 命名: RO-<PO>-<MONTH>.zip（无月份则省略 -<MONTH>）
+zip 命名: RO-<PO>-<INVOICE_NO>.zip（无发票号则省略 -<INVOICE_NO>）
 
 设计边界：
 - packager 只负责"装配后的文件如何落盘和打包"，不调用 renderer
@@ -34,25 +34,20 @@ def build_document_filename(
     seller: str,
     document_type: DocumentType,
     po_no: str,
-    invoice_month: str | None = None,
+    invoice_no: str | None = None,
 ) -> str:
-    """按 §12.1 规则生成单文件名。
-
-    PI / PO 不带 month 后缀；Invoice / PL 带。Invoice/PL 在 month 缺失时仍能生成
-    一个无月份的合理名字，但调用方应保证业务上 month 已选定。
-    """
     seller_token = _sanitize(seller)
     po_token = _sanitize(po_no)
     base = f"{seller_token}-RO-{document_type}-{po_token}"
-    if document_type in ("INVOICE", "PL") and invoice_month:
-        base = f"{base}-{_sanitize(invoice_month)}"
+    if document_type in ("INVOICE", "PL") and invoice_no:
+        base = f"{base}-{_sanitize(invoice_no)}"
     return f"{base}.xlsx"
 
 
-def build_zip_filename(*, po_no: str, invoice_month: str | None = None) -> str:
+def build_zip_filename(*, po_no: str, invoice_no: str | None = None) -> str:
     base = f"RO-{_sanitize(po_no)}"
-    if invoice_month:
-        base = f"{base}-{_sanitize(invoice_month)}"
+    if invoice_no:
+        base = f"{base}-{_sanitize(invoice_no)}"
     return f"{base}.zip"
 
 

@@ -6,13 +6,31 @@
 
 from __future__ import annotations
 
-import atexit
+import os
 import socket
+import sys
 import threading
 import time
 import webbrowser
-import sys
 from pathlib import Path
+from urllib.error import URLError
+from urllib.request import urlopen
+
+
+def _resource_root() -> Path:
+    """查找开发态或 PyInstaller 打包态资源根目录。"""
+    # PyInstaller 打包后，资源在 sys._MEIPASS 下
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    return Path(__file__).resolve().parents[5]
+
+
+def _find_frontend_dist() -> str:
+    """查找前端构建产物目录。"""
+    dist = _resource_root() / "frontend" / "dist"
+    if dist.exists():
+        return str(dist)
+    return ""
 
 
 def _find_free_port() -> int:
@@ -21,22 +39,25 @@ def _find_free_port() -> int:
         return s.getsockname()[1]
 
 
-def _run_server(port: int, ready_event: threading.Event) -> None:
+def _run_server(port: int) -> None:
     """在后台线程启动 uvicorn。"""
     import uvicorn
-    try:
-        from ro_workbench_api.app import app
-    except ImportError:
-        # 退化：内置占位 app
-        from fastapi import FastAPI
-        app = FastAPI()
+    from ro_workbench_api.app import app
 
-        @app.get("/health")
-        def health() -> dict[str, str]:
-            return {"status": "ok"}
-
-    ready_event.set()
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+
+
+def _wait_until_ready(port: int, timeout: float = 10.0) -> bool:
+    deadline = time.time() + timeout
+    url = f"http://127.0.0.1:{port}/api/health"
+    while time.time() < deadline:
+        try:
+            with urlopen(url, timeout=0.5) as resp:
+                if resp.status == 200:
+                    return True
+        except URLError:
+            time.sleep(0.2)
+    return False
 
 
 def _run_tray(port: int) -> None:
@@ -77,17 +98,43 @@ def _run_tray(port: int) -> None:
     icon.run()
 
 
+def _fatal(msg: str) -> None:
+    """显示致命错误并退出。在 Windows 上弹对话框，其他平台打印 stderr。"""
+    print(f"[RO Workbench] 致命错误: {msg}", file=sys.stderr)
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(0, msg, "RO 工作台启动失败", 0x10)
+        except Exception:
+            pass
+    sys.exit(1)
+
+
 def main() -> None:
     port = _find_free_port()
+
+    # 设置前端静态资源路径（在 import app 之前）
+    frontend_dist = os.environ.get("RO_WORKBENCH_FRONTEND_DIST", "")
+    if not frontend_dist:
+        frontend_dist = _find_frontend_dist()
+    if not frontend_dist:
+        resource_root = _resource_root()
+        _fatal(
+            f"找不到前端文件（frontend/dist）。\n"
+            f"资源根目录：{resource_root}\n"
+            f"期望路径：{resource_root / 'frontend' / 'dist'}\n\n"
+            f"请重新下载安装包。"
+        )
+    os.environ["RO_WORKBENCH_FRONTEND_DIST"] = frontend_dist
+    os.environ.setdefault("RO_WORKBENCH_RESOURCE_ROOT", str(_resource_root()))
+
     print(f"启动工作台于 http://127.0.0.1:{port}", file=sys.stderr)
 
-    ready = threading.Event()
-    server_thread = threading.Thread(target=_run_server, args=(port, ready), daemon=True)
+    server_thread = threading.Thread(target=_run_server, args=(port,), daemon=True)
     server_thread.start()
 
-    # 等待 server 就绪
-    ready.wait(timeout=5)
-    time.sleep(0.5)
+    if not _wait_until_ready(port):
+        raise RuntimeError("工作台服务启动失败：健康检查超时")
 
     webbrowser.open(f"http://127.0.0.1:{port}")
     _run_tray(port)

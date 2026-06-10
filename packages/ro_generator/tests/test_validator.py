@@ -35,7 +35,10 @@ def _blank_rows(n: int) -> list[list[Any]]:
     return [[None] for _ in range(n)]
 
 
-# 完整 fixture：DATA BASE + PO record 都齐备
+CUSTOMER_PO_HEADERS = ["Purchasing Document", "Material", "Order Quantity"]
+
+
+# 完整 fixture：三张必需 sheet 都齐备
 def standard_base(tmp_path: Path) -> Path:
     return make_workbook(
         tmp_path,
@@ -50,6 +53,9 @@ def standard_base(tmp_path: Path) -> Path:
                 ["PO NO.", "ITEM LINE#", "SAP Number", "FINALQTY"],
                 ["4500030844", "10", "21-44640", 100],
             ],
+            "客户PO": [
+                CUSTOMER_PO_HEADERS,
+            ],
         },
     )
 
@@ -57,6 +63,29 @@ def standard_base(tmp_path: Path) -> Path:
 class TestValidWorkbook:
     def test_no_messages_when_structure_complete(self, tmp_path: Path) -> None:
         path = standard_base(tmp_path)
+        with WorkbookReader(path) as reader:
+            messages = validate_workbook_structure(reader)
+        assert messages == ()
+
+    def test_missing_finalqty_header_in_po_record_is_allowed(self, tmp_path: Path) -> None:
+        path = make_workbook(
+            tmp_path,
+            sheets={
+                "DATA BASE": [
+                    *_blank_rows(3),
+                    ["SAP", "Material Description", "Category"],
+                    ["21-44640", "CB2500.B2", 1],
+                ],
+                "PO record": [
+                    *_blank_rows(3),
+                    ["PO NO.", "ITEM LINE#", "SAP Number"],
+                    ["4500030844", "10", "21-44640"],
+                ],
+                "客户PO": [
+                    CUSTOMER_PO_HEADERS,
+                ],
+            },
+        )
         with WorkbookReader(path) as reader:
             messages = validate_workbook_structure(reader)
         assert messages == ()
@@ -71,6 +100,9 @@ class TestMissingSheets:
                     *_blank_rows(3),
                     ["PO NO.", "ITEM LINE#", "SAP Number", "FINALQTY"],
                     ["4500030844", "10", "21-44640", 100],
+                ],
+                "客户PO": [
+                    CUSTOMER_PO_HEADERS,
                 ],
             },
         )
@@ -91,6 +123,9 @@ class TestMissingSheets:
                     ["SAP", "Material Description", "Category"],
                     ["21-44640", "CB2500.B2", 1],
                 ],
+                "客户PO": [
+                    CUSTOMER_PO_HEADERS,
+                ],
             },
         )
         with WorkbookReader(path) as reader:
@@ -101,13 +136,13 @@ class TestMissingSheets:
         assert sheet_msgs[0].sheet == "PO record"
 
     def test_both_sheets_missing(self, tmp_path: Path) -> None:
-        # 完全无关 sheet
+        # 完全无关 sheet — 三张必需 sheet 全缺
         path = make_workbook(tmp_path, sheets={"unrelated": [[None]]})
         with WorkbookReader(path) as reader:
             messages = validate_workbook_structure(reader)
 
         sheet_msgs = [m for m in messages if m.code == CODE_SHEET_MISSING]
-        assert {m.sheet for m in sheet_msgs} == {"DATA BASE", "PO record"}
+        assert {m.sheet for m in sheet_msgs} == {"DATA BASE", "PO record", "客户PO"}
 
     def test_missing_sheet_does_not_trigger_header_check(self, tmp_path: Path) -> None:
         """sheet 缺失时不应再为该 sheet 报表头缺失，避免噪声。"""
@@ -118,6 +153,9 @@ class TestMissingSheets:
                     *_blank_rows(3),
                     ["SAP", "Material Description", "Category"],
                     ["21-44640", "CB2500.B2", 1],
+                ],
+                "客户PO": [
+                    CUSTOMER_PO_HEADERS,
                 ],
             },
         )
@@ -132,6 +170,35 @@ class TestMissingSheets:
 
 
 class TestMissingHeaders:
+    def test_missing_required_header_in_customer_po(self, tmp_path: Path) -> None:
+        path = make_workbook(
+            tmp_path,
+            sheets={
+                "DATA BASE": [
+                    *_blank_rows(3),
+                    ["SAP", "Material Description", "Category"],
+                    ["21-44640", "CB2500.B2", 1],
+                ],
+                "PO record": [
+                    *_blank_rows(3),
+                    ["PO NO.", "ITEM LINE#", "SAP Number", "FINALQTY"],
+                    ["4500030844", "10", "21-44640", 100],
+                ],
+                "客户PO": [
+                    ["Purchasing Document", "Material"],
+                ],
+            },
+        )
+        with WorkbookReader(path) as reader:
+            messages = validate_workbook_structure(reader)
+
+        header_msgs = [m for m in messages if m.code == CODE_HEADER_MISSING]
+        assert len(header_msgs) == 1
+        msg = header_msgs[0]
+        assert msg.sheet == "客户PO"
+        assert msg.field == "Order Quantity"
+        assert msg.kind == "blocking_error"
+
     def test_missing_required_header_in_data_base(self, tmp_path: Path) -> None:
         path = make_workbook(
             tmp_path,
@@ -145,6 +212,9 @@ class TestMissingHeaders:
                     *_blank_rows(3),
                     ["PO NO.", "ITEM LINE#", "SAP Number", "FINALQTY"],
                     ["4500030844", "10", "21-44640", 100],
+                ],
+                "客户PO": [
+                    CUSTOMER_PO_HEADERS,
                 ],
             },
         )
@@ -172,6 +242,9 @@ class TestMissingHeaders:
                     ["PO NO.", "ITEM LINE#", "SAP Number", "FINALQTY"],
                     ["4500030844", "10", "21-44640", 100],
                 ],
+                "客户PO": [
+                    CUSTOMER_PO_HEADERS,
+                ],
             },
         )
         with WorkbookReader(path) as reader:
@@ -192,6 +265,9 @@ class TestMissingHeaders:
                     *_blank_rows(3),
                     ["PO NO.", "ITEM LINE#", "SAP Number", "FINALQTY"],
                     ["4500030844", "10", "21-44640", 100],
+                ],
+                "客户PO": [
+                    CUSTOMER_PO_HEADERS,
                 ],
             },
         )
@@ -222,6 +298,9 @@ class TestMissingHeaders:
                     ["PO NO.", "ITEM LINE#", "SAP Number", "FINALQTY"],
                     ["4500030844", "10", "21-44640", 100],
                 ],
+                "客户PO": [
+                    CUSTOMER_PO_HEADERS,
+                ],
             },
         )
         with WorkbookReader(path) as reader:
@@ -246,6 +325,9 @@ class TestMessageQuality:
                     ["PO NO.", "ITEM LINE#", "SAP Number", "FINALQTY"],
                     ["4500030844", "10", "21-44640", 100],
                 ],
+                "客户PO": [
+                    CUSTOMER_PO_HEADERS,
+                ],
             },
         )
         with WorkbookReader(path) as reader:
@@ -264,7 +346,7 @@ class TestMessageQuality:
         with WorkbookReader(path) as reader:
             messages = validate_workbook_structure(reader)
         sheet_msgs = [m for m in messages if m.code == CODE_SHEET_MISSING]
-        assert {m.sheet for m in sheet_msgs} == {"DATA BASE", "PO record"}
+        assert {m.sheet for m in sheet_msgs} == {"DATA BASE", "PO record", "客户PO"}
         for m in sheet_msgs:
             assert m.kind == "blocking_error"
 

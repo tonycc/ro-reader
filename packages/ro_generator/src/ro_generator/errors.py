@@ -44,7 +44,7 @@ class TemplateError(RoGeneratorError):
 class InvalidRequestError(RoGeneratorError):
     """`DocumentRequest` 参数非法。
 
-    场景：未知的链段组合、未知的单据类型、`invoice_month` 格式错等。
+    场景：未知的链段组合、未知的单据类型、`invoice_no` 格式错等。
     这是调用方使用错误，不是数据问题。
     """
 

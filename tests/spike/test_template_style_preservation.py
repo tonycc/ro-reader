@@ -44,6 +44,11 @@ TEMPLATE_STYLE_ROW = 19  # 复制样式的样板行
 TOTAL_ROW = 27
 
 
+def template_sheet(wb):
+    """Return the invoice template sheet under current template naming."""
+    return wb["INV"] if "INV" in wb.sheetnames else wb.active
+
+
 def copy_row_style(ws: Worksheet, src_row: int, dst_row: int, max_col: int) -> None:
     """把 src_row 的每个单元格样式复制到 dst_row 的同列单元格。
 
@@ -70,7 +75,7 @@ def render_invoice(template: Path, output: Path) -> None:
     样本输入：3 行数据，跨两个 PO，触发"插入行"路径。
     """
     wb = load_workbook(template)
-    ws = wb["Sheet1"]
+    ws = template_sheet(wb)
 
     # —— 写表头 ——
     ws["H6"] = "INV-SPIKE-001"  # INVOICE #
@@ -139,7 +144,7 @@ def write_data_row(ws: Worksheet, row: int, data: tuple[str, str, str, float, in
 def baseline() -> dict:
     """加载原模板，提取需要保留的不变量。"""
     wb = load_workbook(TEMPLATE_PATH)
-    ws = wb["Sheet1"]
+    ws = template_sheet(wb)
     return {
         "merged": {str(r) for r in ws.merged_cells.ranges},
         "col_widths": {col: dim.width for col, dim in ws.column_dimensions.items()},
@@ -160,7 +165,7 @@ def rendered(tmp_path: Path) -> Path:
 def test_file_reopens_cleanly(rendered: Path) -> None:
     """断言：文件能被 openpyxl 重新打开。"""
     wb = load_workbook(rendered)
-    assert "Sheet1" in wb.sheetnames
+    assert template_sheet(wb).title in wb.sheetnames
 
 
 def test_merged_cells_preserved(rendered: Path, baseline: dict) -> None:
@@ -171,7 +176,7 @@ def test_merged_cells_preserved(rendered: Path, baseline: dict) -> None:
     模板原有合并都在 row 1-4，不受插入影响，期望集合相等。
     """
     wb = load_workbook(rendered)
-    ws = wb["Sheet1"]
+    ws = template_sheet(wb)
     rendered_merged = {str(r) for r in ws.merged_cells.ranges}
     assert rendered_merged == baseline["merged"], (
         f"合并单元格区域变化\n  before: {baseline['merged']}\n  after:  {rendered_merged}"
@@ -181,7 +186,7 @@ def test_merged_cells_preserved(rendered: Path, baseline: dict) -> None:
 def test_column_widths_preserved(rendered: Path, baseline: dict) -> None:
     """断言：每列的列宽保持一致。"""
     wb = load_workbook(rendered)
-    ws = wb["Sheet1"]
+    ws = template_sheet(wb)
     for col, expected_width in baseline["col_widths"].items():
         actual_width = ws.column_dimensions[col].width
         assert actual_width == expected_width, (
@@ -192,7 +197,7 @@ def test_column_widths_preserved(rendered: Path, baseline: dict) -> None:
 def test_pre_insert_row_heights_preserved(rendered: Path, baseline: dict) -> None:
     """断言：插入位置之前的行高保持不变。"""
     wb = load_workbook(rendered)
-    ws = wb["Sheet1"]
+    ws = template_sheet(wb)
     insert_at = START_ROW + 2
     for row, expected_height in baseline["row_heights"].items():
         if row >= insert_at:
@@ -206,7 +211,7 @@ def test_pre_insert_row_heights_preserved(rendered: Path, baseline: dict) -> Non
 def test_inserted_row_has_template_style_height(rendered: Path, baseline: dict) -> None:
     """断言：新插入行的行高来自 TEMPLATE_STYLE_ROW。"""
     wb = load_workbook(rendered)
-    ws = wb["Sheet1"]
+    ws = template_sheet(wb)
     insert_at = START_ROW + 2
     actual_height = ws.row_dimensions[insert_at].height
     expected_height = baseline["template_style_row_height"]
@@ -218,7 +223,7 @@ def test_inserted_row_has_template_style_height(rendered: Path, baseline: dict) 
 def test_inserted_row_has_styled_cells(rendered: Path) -> None:
     """断言：新插入行的单元格有 font / border 等样式（不全是默认值）。"""
     wb = load_workbook(rendered)
-    ws = wb["Sheet1"]
+    ws = template_sheet(wb)
     insert_at = START_ROW + 2
     has_styled = False
     for col_idx in range(2, 9):
@@ -232,7 +237,7 @@ def test_inserted_row_has_styled_cells(rendered: Path) -> None:
 def test_data_written_correctly(rendered: Path) -> None:
     """断言：3 行数据正确写入。"""
     wb = load_workbook(rendered)
-    ws = wb["Sheet1"]
+    ws = template_sheet(wb)
     insert_at = START_ROW + 2
     expected = [
         (START_ROW, "4500030844", "CB2500.B2", "21-44640", 32.8, 100),
@@ -257,7 +262,7 @@ def test_total_formula_after_insertion(rendered: Path) -> None:
     （或类似的扩展），合计行本身位置也下移到 28。
     """
     wb = load_workbook(rendered)
-    ws = wb["Sheet1"]
+    ws = template_sheet(wb)
     new_total_row = TOTAL_ROW + 1  # 插入一行后下移
     f_total = ws.cell(row=new_total_row, column=6).value
     h_total = ws.cell(row=new_total_row, column=8).value
@@ -268,7 +273,7 @@ def test_total_formula_after_insertion(rendered: Path) -> None:
 def test_print_area_unchanged(rendered: Path, baseline: dict) -> None:
     """断言：打印区域与原模板一致（原模板未设置打印区域，应保持为空）。"""
     wb = load_workbook(rendered)
-    ws = wb["Sheet1"]
+    ws = template_sheet(wb)
     assert ws.print_area == baseline["print_area"]
 
 
@@ -278,7 +283,7 @@ def test_post_insert_row_heights_shifted(rendered: Path, baseline: dict) -> None
     例如：原 row 27 的高度，应出现在新 row 28 上。
     """
     wb = load_workbook(rendered)
-    ws = wb["Sheet1"]
+    ws = template_sheet(wb)
     insert_at = START_ROW + 2
     failures = []
     for orig_row, expected_height in baseline["row_heights"].items():

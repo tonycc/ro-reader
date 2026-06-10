@@ -8,12 +8,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 四个 Phase 全部完成，项目可运行。
 
-```
+```text
 packages/
   ro_generator/        核心包（Python）：13 模块，261 测试，92% 覆盖
-  ro_workbench_api/    工作台后端（FastAPI）：6 端点
+  ro_workbench_api/    工作台后端（FastAPI）：10 API 端点 + 2 静态资源路由
   ro_workbench_launcher/  启动器（PyInstaller .app 24 MB）
-frontend/              Vue 3 + TypeScript + Pinia + SheetJS
+frontend/              Vue 3 + TypeScript + Pinia（Vite 构建）
 templates/             14 个 .xlsx 模板 + 14 份 YAML mapping
 tests/fixtures/        合成 base 文件生成脚本
 ```
@@ -21,7 +21,7 @@ tests/fixtures/        合成 base 文件生成脚本
 - `docs/product/ro-document-generator-product-plan.md`：**产品方案**（最权威，所有产品决策以此为准）。
 - `docs/development/ro-document-workbench-ui-design.md`：**前端 UI 与交互设计**。
 - `docs/development/implementation-guide.md`：**工程实施指南**（含各 Phase 细粒度任务清单与状态）。
-- `docs/development/field-data-mapping.md`：**四类单据逐字段取数逻辑**（每个字段的数据来源、取数规则、校验条件）。
+- `docs/development/unified-field-mapping-guide.md`：**统一字段映射与配置指南**（同时面向业务与开发/agent：覆盖字段来源链路、四类单据口径、预览配置规范、模板 mapping 以及修改决策表）。
 - `docs/development/phase-0-spike-results.md`：Phase 0 spike 结论。
 
 > 当 docs 文件之间冲突时，优先级为：产品方案 > UI 设计 > 实施指南 > CLAUDE.md。
@@ -38,7 +38,7 @@ MVP 形态为**本地启动器 + 浏览器**：双击 PyInstaller 打包的可�
 
 ## 五件套架构
 
-```
+```text
 ┌────────────────────────────────────────────────────────────┐
 │  ro_generator（核心包，Python）                              │
 │  models / errors / schema / workbook_reader / validator    │
@@ -75,7 +75,7 @@ MVP 形态为**本地启动器 + 浏览器**：双击 PyInstaller 打包的可�
 ## 技术栈
 
 | 层 | 选型 |
-|---|---|
+| --- | --- |
 | 核心包 | Python 3.11+ / uv workspace |
 | Excel 读写 | `openpyxl`（`.xls` 转 `.xlsx` 用 `xlrd<2`，一次性转换后不再依赖） |
 | 配置 | `PyYAML`（模板 mapping） |
@@ -86,8 +86,8 @@ MVP 形态为**本地启动器 + 浏览器**：双击 PyInstaller 打包的可�
 | 前端构建 | Vite |
 | 前端样式 | CSS 变量 token 文件（无 CSS-in-JS，无 Tailwind） |
 | 前端状态 | Pinia |
-| 数据网格 | 自研 `<table>` + inline 编辑（未引入重型 grid 库） |
-| 预览组件 | **SheetJS**（`xlsx` 包，Phase 0 spike 选定，bundle 111 KB gzip） |
+| 数据视图 | 自研 `<table>` + inline 编辑（未引入重型 grid 库） |
+| 预览渲染 | 后端 openpyxl 渲染后通过结构化 JSON payload 传给前端展示（header + table layout），支持悬停溯源 |
 | 测试 | pytest（后端） / Playwright（E2E，5 场景） |
 
 **禁用清单**：
@@ -99,7 +99,7 @@ MVP 形态为**本地启动器 + 浏览器**：双击 PyInstaller 打包的可�
 
 ## 关键设计决策
 
-- **模板单元格位置写在 YAML，不写在代码里**。每个主体 × 单据类型一份 mapping（如 `templates/gs/mappings/invoice.yaml`），描述表头单元格、行起始位置、列字母、合计单元格。模板版式变化只改 YAML。
+- **模板单元格位置写在 YAML，不写在代码里**。每个主体 × 单据类型一份 mapping（如 `templates/gs/mappings/invoice.yaml`），描述表头单元格、行起始位置、样式参考行、可选表头保护行、列字母、合计单元格。模板版式变化只改 YAML。
 - **领域模型与 Excel 解耦**。`Product` / `OrderLine` / `DocumentModel` 是冻结 dataclass，金额用 `Decimal`，日期用 `date`。
 - **校验三类输出**：`blocking_errors`（阻断装配）、`warnings`（带 `severity: high | low`）、`missing_inputs`（信息不足，UI 直接呈现候选）。
 - **公式回退**：当 `data_only` 读到 None 时核心包按公式现算，并在数据视图中以橙色边框标记。
@@ -115,7 +115,7 @@ MVP 形态为**本地启动器 + 浏览器**：双击 PyInstaller 打包的可�
 按 `SAP` 唯一识别。同一产品在不同主体（SK/YM、GS PTE、EMAX PTE）下有不同 FOB 单价列。**单价选择由"贸易链段 + Category"两个维度决定**：
 
 | 链段 `(seller → buyer)` | 价格列前缀 |
-|---|---|
+| --- | --- |
 | SK / YM → GS PTE | `SK/YM ... FOB` |
 | GS PTE → EMAX PTE | `GS PTE ... FOB` |
 | EMAX PTE → PF | `EMAX PTE ... FOB` |
@@ -139,11 +139,11 @@ MVP 形态为**本地启动器 + 浏览器**：双击 PyInstaller 打包的可�
 
 ## 业务规则
 
-- `SUBTOTAL = FINALQTY * unit_price`
-- `CTNS = FINALQTY / 外箱`
+- `SUBTOTAL = quantity * unit_price`
+- `CTNS = quantity / 外箱`（当前实现中 `quantity` 取 `客户PO.Order Quantity`）
 - `TOTAL CBM = L * W * H / 1000000 * CTNS`
 - `BALANCE QTY = FINALQTY - 各月出货数量合计`
-- **PI/PO 用完整 PO 数量；Invoice/PL 按 `invoice_month` 用月度出货数量**。
+- **PI/PO 使用 `客户PO.Order Quantity`；Invoice/PL 按 `invoice_month` 用月度出货数量**。
 - **MVP 仅支持 USD**。
 - 缺失关键字段（INV#、FACTORY DOC NO.、SAP、价格等）必须报阻断错误，**绝不自动编造**。
 - SK / YM 主体没有 PO 模板，请求生成 PO 时返回阻断错误。
@@ -151,7 +151,7 @@ MVP 形态为**本地启动器 + 浏览器**：双击 PyInstaller 打包的可�
 ## 模板矩阵
 
 | 主体 | PI | PO | Invoice | PL |
-|---|:-:|:-:|:-:|:-:|
+| --- | :-: | :-: | :-: | :-: |
 | GS | ✅ | ✅ | ✅ | ✅ |
 | EMAX | ✅ | ✅ | ✅ | ✅ |
 | SK | ✅ | ❌ | ✅ | ✅ |
@@ -162,7 +162,7 @@ MVP 形态为**本地启动器 + 浏览器**：双击 PyInstaller 打包的可�
 ## 文件命名规则
 
 | 单据类型 | 命名模板 |
-|---|---|
+| --- | --- |
 | PI | `<SELLER>-RO-PI-<PO>.xlsx` |
 | PO | `<SELLER>-RO-PO-<PO>.xlsx` |
 | Invoice | `<SELLER>-RO-INVOICE-<PO>-<MONTH>.xlsx` |
@@ -179,7 +179,7 @@ zip：`RO-<PO>-<MONTH>.zip`。`<MONTH>` 已含年份信息（`2601` = 2026-01）
 退出码（**稳定，不要随意变**）：
 
 | 状态 | 退出码 |
-|---|---:|
+| --- | ---: |
 | `success` | `0` |
 | `error`（阻断错误） | `1` |
 | 参数错误 | `2` |
@@ -219,6 +219,53 @@ uv run pyinstaller packages/ro_workbench_launcher/ro-workbench.spec --noconfirm
 uv run ruff check . && uv run ruff format --check . && uv run mypy packages
 ```
 
+## 工作台前端架构
+
+工作台采用**三 tab 顺序工作流**（取代早期三栏 IDE 布局）：
+
+```text
+┌──────────────────────────────────────────────────────┐
+│  TopBar：base 文件路径 │ 撤销/重做 │ 导出             │
+├──────────┬───────────────────────────────────────────┤
+│          │  数据检查 │ 单据预览 │ 导出确认             │
+│  PO 队列 │  ───────────────────────────────────       │
+│  （左侧） │  选中 tab 对应内容区                       │
+│          │                                           │
+│  多选    │  - 数据检查：PO 行表格 + inline 编辑       │
+│  搜索    │  - 单据预览：链段选择 + header/tables      │
+│  状态筛选 │  - 导出确认：选单据类型 → 下载            │
+├──────────┴───────────────────────────────────────────┤
+│  StatusBar：PO 状态 │ 阻断/警告数                      │
+└──────────────────────────────────────────────────────┘
+```
+
+组件对应关系：
+
+- `QueueSidebar.vue` — PO 队列（搜索、筛选、多选）
+- `DataCheckScreen.vue` — "数据检查" tab（类 Excel 表格 + inline 编辑）
+- `PreviewScreen.vue` — "单据预览" tab（链段胶囊、doc type 切换、header/table 分区域渲染、悬停溯源）
+- `ExportScreen.vue` — "导出确认" tab（勾选单据类型、触发下载）
+- `TopBar.vue` / `StatusBar.vue` — 顶部栏/底部状态栏
+
+预览数据由后端 `POST /api/po/{po_no}/preview` 返回结构化 `PreviewPayload` JSON（含 `layout.top` / `layout.info` 区、`column_labels`、`lines`、`totals`、`notes`、`source_entries`），前端按区域渲染，不再直接加载 xlsx 二进制。
+
+## 工作台 API 端点
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/api/health` | 健康检查 |
+| `POST` | `/api/check-path` | 校验文件路径是否存在 |
+| `POST` | `/api/session/open` | 打开 base 文件，返回 session_id + PO 列表 |
+| `GET` | `/api/po/{po_no}` | 获取 PO 数据行（headers + rows） |
+| `POST` | `/api/po/{po_no}/dry-run` | 干跑装配（不写入磁盘） |
+| `POST` | `/api/po/{po_no}/preview` | 获取结构化预览 payload |
+| `POST` | `/api/po/{po_no}/edit` | 编辑单元格并写回 base 文件 |
+| `POST` | `/api/export` | 导出单据到磁盘 |
+| `GET` | `/api/download` | 下载导出文件 |
+| `POST` | `/api/session/close` | 关闭 session |
+
+Session 通过 `X-Session-Id` header 传递（前端 Pinia store 自动管理）。
+
 ## 测试 fixture
 
 - 黄金回归 PO：**`4500030844`**。
@@ -229,6 +276,10 @@ uv run ruff check . && uv run ruff format --check . && uv run mypy packages
 ## 模板处理注意
 
 - `.xls` 老格式已通过 `xlrd` 一次性转换为 `.xlsx`（EMAX Invoice、EMAX PL），原始 `.xls` 保留在 `templates/_legacy_xls/` 留底。业务方今后只在 `.xlsx` 模板上修改。
+- 更新其他 mapping 时，应参考当前成熟 `PI` mapping 沉淀出的规范格式；权威说明见 `docs/development/unified-field-mapping-guide.md`，示例起点见 `templates/_examples/`。但**不能**把某一份真实业务 `pi.yaml` 逐字复制成其它单据或主体的 mapping；必须按单据类型、主体信息和模板结构保留边界。
+- 对 mapping 做规范化收敛时，应主动清理无效空配置和旧结构残留，例如空 `to_label`、旧 `terms: {}`、已不参与布局或渲染的占位字段；不要保留“虽然不报错但没有实际作用”的配置噪音。
+- 如果 `start_row` 上方存在真实表格表头，mapping 中应显式声明 `table_header_row`；不要再依赖渲染器启发式猜测哪一行是表头。
+- `style_source_row` 必须指向真实明细样式行。renderer 会先用它统一预留明细区样式，再写值、插入新行，避免模板脏格式把单价/数量显示成日期等错误格式。
 - 当 PO 行数超过模板默认区域时，renderer 必须**插入新行并复制上一行样式**（先倒序平移 `row_dimensions` 再 `insert_rows`——这是 openpyxl 的已知陷阱，Phase 0 Spike A 已验证），返回 `severity: high` warning。
 - 优先写入最终计算值，公式只保留必要的本表内引用（如 `=E18*F18`），避免不同 Excel 环境重算行为不一致。
 - mapping 文件必须含 `template_version` 字段，加载时校验所有引用单元格在模板中存在。
@@ -237,7 +288,7 @@ uv run ruff check . && uv run ruff format --check . && uv run mypy packages
 ## 实施顺序（产品方案 §16）
 
 | Phase | 内容 | 状态 |
-|---|---|---|
+| --- | --- | --- |
 | 0 | 三个 spike：模板样式保留、预览渲染组件选型、启动器打包链路 | ✅ 完成（Spike A/B Phase 0 通过；Spike C Phase 3 完成） |
 | 1 | 核心包 + CLI（先做 Invoice 一种单据） | ✅ 完成（261 测试，覆盖率 92%） |
 | 2 | 四类单据 + GS/EMAX/SK/YM 多主体模板 + 模板预览 CLI | ✅ 完成（14 份 mapping，四类单据 × 三链段） |

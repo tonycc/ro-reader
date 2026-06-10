@@ -11,15 +11,20 @@ from __future__ import annotations
 
 from typing import Final
 
+from ro_generator.base_schema import base_schema
 from ro_generator.models import ValidationMessage
 from ro_generator.schema import (
+    CUSTOMER_PO_REQUIRED_HEADERS,
     DATA_BASE_REQUIRED_HEADERS,
     PO_RECORD_REQUIRED_HEADERS,
     REQUIRED_SHEETS,
+    SHEET_CUSTOMER_PO,
     SHEET_DATA_BASE,
     SHEET_PO_RECORD,
 )
 from ro_generator.workbook_reader import WorkbookReader
+
+_schema = base_schema()
 
 # 校验消息 code 是机器接口，禁止轻易改名。
 CODE_SHEET_MISSING: Final = "SHEET_MISSING"
@@ -28,20 +33,16 @@ CODE_HEADER_MISSING: Final = "HEADER_MISSING"
 
 def validate_workbook_structure(
     reader: WorkbookReader,
+    *,
+    skip_sheets: tuple[str, ...] = (),
 ) -> tuple[ValidationMessage, ...]:
     """校验 workbook 是否包含装配所需的 sheet 和表头。
 
-    返回阻断错误消息的元组；空元组表示结构合法。
-    任何一项缺失都阻断装配——产品方案 §11.1 的"blocking_errors"语义。
-
-    实现注意：
-    - sheet 缺失时**不再尝试读其表头**，避免 reader 抛 WorkbookOpenError。
-    - sheet 存在但完全空（行数 < HEADER_ROW）时，reader 会返回 headers=()，
-      对每个必需表头都报缺失，校验消息会很多——这是有意为之，让用户立刻看到"整列都没了"。
+    可通过 `skip_sheets` 跳过特定 sheet 的表头校验（如大表 DATA BASE 很慢）。
     """
     messages: list[ValidationMessage] = []
 
-    # 1. 必需 sheet
+    # 1. 必需 sheet（sheet 存在性检查不走 skip，必须验）
     missing_sheets = tuple(s for s in REQUIRED_SHEETS if not reader.has_sheet(s))
     for sheet in missing_sheets:
         messages.append(
@@ -54,10 +55,16 @@ def validate_workbook_structure(
         )
 
     # 2. 已存在的 sheet 上校验必需表头
-    if reader.has_sheet(SHEET_DATA_BASE):
+    if reader.has_sheet(SHEET_DATA_BASE) and SHEET_DATA_BASE not in skip_sheets:
         messages.extend(_check_headers(reader, SHEET_DATA_BASE, DATA_BASE_REQUIRED_HEADERS))
-    if reader.has_sheet(SHEET_PO_RECORD):
+    if reader.has_sheet(SHEET_PO_RECORD) and SHEET_PO_RECORD not in skip_sheets:
         messages.extend(_check_headers(reader, SHEET_PO_RECORD, PO_RECORD_REQUIRED_HEADERS))
+    if reader.has_sheet(SHEET_CUSTOMER_PO) and SHEET_CUSTOMER_PO not in skip_sheets:
+        cp_cfg = _schema.sheet("客户PO")
+        messages.extend(_check_headers(
+            reader, SHEET_CUSTOMER_PO, CUSTOMER_PO_REQUIRED_HEADERS,
+            header_row=cp_cfg.header_row, first_data_row=cp_cfg.first_data_row,
+        ))
 
     return tuple(messages)
 
@@ -66,8 +73,15 @@ def _check_headers(
     reader: WorkbookReader,
     sheet_name: str,
     required_headers: tuple[str, ...],
+    header_row: int | None = None,
+    first_data_row: int | None = None,
 ) -> list[ValidationMessage]:
-    sheet_data = reader.read_sheet(sheet_name)
+    kwargs: dict[str, int] = {}
+    if header_row is not None:
+        kwargs["header_row"] = header_row
+    if first_data_row is not None:
+        kwargs["first_data_row"] = first_data_row
+    sheet_data = reader.read_sheet(sheet_name, **kwargs)
     present = set(sheet_data.header_columns)
     missing = [h for h in required_headers if h not in present]
     return [

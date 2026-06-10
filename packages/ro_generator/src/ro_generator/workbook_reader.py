@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,10 +25,13 @@ from openpyxl import load_workbook
 from openpyxl.workbook.workbook import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
+from ro_generator.base_schema import base_schema
 from ro_generator.errors import WorkbookOpenError
 from ro_generator.schema import FIRST_DATA_ROW, HEADER_ROW, normalize_header
 
 ROW_NUMBER_KEY: Final = "__row_number__"
+CELL_NUMBER_FORMATS_KEY: Final = "__cell_number_formats__"
+_BASE_SCHEMA = base_schema()
 
 
 @dataclass(frozen=True)
@@ -123,8 +127,8 @@ class WorkbookReader:
             raise WorkbookOpenError(f"workbook 中找不到 sheet：{sheet_name!r}")
 
         ws: Worksheet = self._wb[sheet_name]
-        headers, header_columns = self._read_headers(ws, header_row)
-        rows = tuple(self._read_data_rows(ws, header_columns, first_data_row))
+        headers, header_columns, max_data_col = self._read_headers(ws, sheet_name, header_row)
+        rows = tuple(self._read_data_rows(ws, header_columns, first_data_row, max_data_col))
 
         return SheetData(
             sheet_name=sheet_name,
@@ -140,32 +144,40 @@ class WorkbookReader:
     @staticmethod
     def _read_headers(
         ws: Worksheet,
+        sheet_name: str,
         header_row: int,
-    ) -> tuple[tuple[str, ...], dict[str, int]]:
-        """从指定行读出表头并规范化。
+    ) -> tuple[tuple[str, ...], dict[str, int], int]:
+        """从指定行读出表头并规范化。返回 (headers, header_columns, max_data_col)。
 
-        重复表头时首次出现的列号胜出。空字符串表头（即原 cell 为空）跳过——
-        它们不能用来索引数据。
+        max_data_col 是 header 行中最右侧有效列的 1-based 索引。当 Excel 维度被污染
+        （如声明了 16379 列但只有 30 列有数据），用它限制后续行的读取范围，避免
+        openpyxl 在每行创建上万个空值。
         """
         # ws.iter_rows in read_only mode is forward-only; advance to header_row
         header_cells: tuple[object, ...] = ()
-        for cur_row, row in enumerate(ws.iter_rows(values_only=True), start=1):
+        for cur_row, row in enumerate(ws.iter_rows(), start=1):
             if cur_row == header_row:
                 header_cells = tuple(row)
                 break
-        # 注意：如果 sheet 总行数 < header_row，header_cells 仍为 ()，下游会得到空 headers，
-        # validator 会据此报"表头缺失"。
+
+        # 找到 header 行中最右侧非 None 列 —— 超过此列的数据全部是维度污染
+        max_data_col = 0
+        for i in range(len(header_cells) - 1, -1, -1):
+            if _cell_value(header_cells[i]) is not None:
+                max_data_col = i + 1  # 1-based
+                break
 
         ordered_headers: list[str] = []
         seen: dict[str, int] = {}
         for col_idx, raw in enumerate(header_cells, start=1):
-            normalized = normalize_header(raw)
+            normalized = normalize_header(_cell_value(raw))
+            normalized = _BASE_SCHEMA.canonical_header(sheet_name, normalized)
             if not normalized:
                 continue
             if normalized not in seen:
                 seen[normalized] = col_idx
                 ordered_headers.append(normalized)
-        return tuple(ordered_headers), seen
+        return tuple(ordered_headers), seen, max_data_col
 
     @classmethod
     def _read_data_rows(
@@ -173,24 +185,31 @@ class WorkbookReader:
         ws: Worksheet,
         header_columns: dict[str, int],
         first_data_row: int,
+        max_data_col: int = 0,
     ) -> Iterator[dict[str, object]]:
         """从 first_data_row 开始迭代非空行。
 
-        read_only 模式下 ws.iter_rows 是前向流，不能随机访问，
-        因此重新打开一次（_read_headers 已经消耗了迭代器）。
+        max_data_col 限制列范围，避免 Excel 维度污染导致每行创建大量空值。
         """
         # 重新建立一次迭代器：read_only 工作表里读两次需要重新 iter_rows
-        for cur_row, row_values in enumerate(ws.iter_rows(values_only=True), start=1):
+        iter_kwargs: dict[str, object] = {}
+        if max_data_col > 0:
+            iter_kwargs["max_col"] = max_data_col
+        for cur_row, row_cells in enumerate(ws.iter_rows(**iter_kwargs), start=1):
             if cur_row < first_data_row:
                 continue
-            if _is_blank_row(row_values):
+            if _is_blank_row(row_cells):
                 continue
             row_dict: dict[str, object] = {ROW_NUMBER_KEY: cur_row}
+            number_formats: dict[str, str] = {}
             for header, col_idx in header_columns.items():
-                # row_values 是 0-based tuple；col_idx 是 1-based。
-                # 行长度可能短于 max column（read_only + 稀疏行常见），越界则填 None。
-                value = row_values[col_idx - 1] if col_idx - 1 < len(row_values) else None
+                cell = row_cells[col_idx - 1] if col_idx - 1 < len(row_cells) else None
+                value = _cell_value(cell)
                 row_dict[header] = value
+                number_format = _cell_number_format(cell)
+                if number_format:
+                    number_formats[header] = number_format
+            row_dict[CELL_NUMBER_FORMATS_KEY] = number_formats
             yield row_dict
 
 
@@ -200,7 +219,60 @@ def _is_blank_row(row_values: tuple[object, ...]) -> bool:
     不去除空格再判断：比如 `" "` 是用户故意留的占位，按非空对待，让 validator
     在数值字段上去捕捉这种异常。
     """
-    return all(v is None or v == "" for v in row_values)
+    return all(_cell_value(v) is None or _cell_value(v) == "" for v in row_values)
 
 
-__all__ = ["ROW_NUMBER_KEY", "SheetData", "WorkbookReader"]
+def row_cell_number_format(row: dict[str, object], header: str) -> str | None:
+    raw = row.get(CELL_NUMBER_FORMATS_KEY)
+    if not isinstance(raw, dict):
+        return None
+    value = raw.get(header)
+    return value if isinstance(value, str) and value else None
+
+
+def row_decimal_places(row: dict[str, object], header: str) -> int | None:
+    return number_format_decimal_places(row_cell_number_format(row, header))
+
+
+def number_format_decimal_places(number_format: str | None) -> int | None:
+    if not number_format:
+        return None
+    primary = _primary_number_format_section(number_format)
+    if not primary or _looks_like_date_format(primary):
+        return None
+    normalized = primary.replace("\\", "")
+    match = re.search(r"[0#]+\.([0#]+)", normalized)
+    if match is None:
+        return 0 if re.search(r"[0#]", normalized) else None
+    return len(match.group(1))
+
+
+def _primary_number_format_section(number_format: str) -> str:
+    return number_format.split(";", maxsplit=1)[0].strip()
+
+
+def _looks_like_date_format(number_format: str) -> bool:
+    lowered = number_format.lower()
+    if any(token in lowered for token in ("yy", "dd", "mm", "hh", "ss")):
+        return True
+    return False
+
+
+def _cell_value(cell: object) -> object:
+    return getattr(cell, "value", cell)
+
+
+def _cell_number_format(cell: object) -> str | None:
+    value = getattr(cell, "number_format", None)
+    return value if isinstance(value, str) and value else None
+
+
+__all__ = [
+    "CELL_NUMBER_FORMATS_KEY",
+    "ROW_NUMBER_KEY",
+    "SheetData",
+    "WorkbookReader",
+    "number_format_decimal_places",
+    "row_cell_number_format",
+    "row_decimal_places",
+]

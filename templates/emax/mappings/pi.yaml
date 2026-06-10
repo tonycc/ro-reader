@@ -1,39 +1,34 @@
 document: pi
-template_version: "v1"
+template_version: '2026.06'
 template: templates/emax/pi.xlsx
-sheet: "PF Standard Invoice format"
-style:
-  bold:
-    - A1
-    - A2
-    - A4
-    - A6
-    - A7
-    - A9
-    - A13
-    - A14
-    - F6
-    - F7
-    - F9
-    - F13
-    - F14
-  underline:
-    - B6
-    - B7
-    - B9
-    - B13
-    - B14
-    - G6
-    - G7
-    - G9
-    - G13
-    - G14
+sheet: PF Standard Invoice format
 header:
   pi_no: B6
-  document_date: F6
-  ex_factory_date: F7
+  document_date: G6
+  payment_terms: B7
+  ex_factory_date: G7
   bill_to: B9
-  ship_to: F9
+  bill_to_line2: B10
+  bill_to_line3: B11
+  ship_to: G9
+  ship_to_line2: G10
+  ship_to_line3: G11
+  manufacturer_name: G13
+  manufacturer_address: G14
+  manufacturer_address_2: G15
+  port_of_loading: B13
+  final_destination: B14
+header_fixed:
+  bill_to: 209 Stoneridge Drive
+  bill_to_line2: Columbia, South Carolina 29210
+  bill_to_line3: United States
+  payment_terms: Net 90 days
+  port_of_loading: China
+  final_destination: USA
+  manufacturer_name: E MAX SPORT PTE. LTD.
+  manufacturer_address: '8 KAKI BUKIT AVENUE 4'
+  manufacturer_address_2: '#08-32,PREMIER @ KAKI BUKIT, SINGAPORE 415875'
+table_header_row: 17
 lines:
   start_row: 18
   style_source_row: 18
@@ -42,10 +37,71 @@ lines:
   columns:
     po_no: B
     item_line_no: C
-    sap: C
     description: D
     unit_price: E
     quantity: F
     amount: G
+    confirmed_ex_factory_date: H
 totals:
-  quantity: F24
+  amount: G24
+  signature:
+    cell: G26
+    value_mode: fixed
+    value: Joyce
+  Date:
+    cell: G27
+    value_mode: current_date
+style:
+  bold:
+  - A1
+  - A2
+  - A4
+  - A6
+  - A7
+  - A9
+  - A13
+  - A14
+  - A17
+  - F6
+  - F7
+  - F9
+  - F13
+  - F14
+  - F24
+  - F26
+  - F27
+  - G24
+preview_content:
+  title: PROFORMA INVOICE
+  terms_fields:
+  static_terms:
+  notes: []
+  source_overrides:
+    po_no:
+      sheet: 客户PO
+      field: Purchasing Document
+      rule: '客户 PO A列"Purchasing Document"'
+    pi_no:
+      sheet: 客户PO
+      field: Purchasing Document
+      rule: '客户 PO A列"Purchasing Document"'
+  column_labels:
+    A: Country of The Origin
+    po_no: PO Number
+    item_line_no: Item No.
+    description: Description
+    unit_price: USD Unit Price
+    quantity: Quantity
+    amount: USD Amount
+    confirmed_ex_factory_date: EX-FACTORY DATE
+  seller_info:
+  - E MAX SPORT PTE. LTD.
+  - '8 KAKI BUKIT AVENUE 4, #08-32,PREMIER @ KAKI BUKIT, SINGAPORE 415875'
+  layout:
+    top:
+      left: [seller_info]
+      center: [title]
+      right: []
+    info:
+      left: [pi_no, payment_terms, bill_to, bill_to_line2, bill_to_line3, port_of_loading, final_destination]
+      right: [document_date, ex_factory_date, ship_to, ship_to_line2, ship_to_line3, manufacturer_name, manufacturer_address, manufacturer_address_2]

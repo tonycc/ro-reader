@@ -10,9 +10,11 @@ import pytest
 from openpyxl import Workbook
 from ro_generator.errors import WorkbookOpenError
 from ro_generator.workbook_reader import (
+    CELL_NUMBER_FORMATS_KEY,
     ROW_NUMBER_KEY,
     SheetData,
     WorkbookReader,
+    row_decimal_places,
 )
 
 # ————————————————————————————————————————
@@ -163,6 +165,18 @@ class TestReadSheet:
             "INV#": 4,
         }
 
+    def test_customer_po_legacy_ship_date_header_is_canonicalized(self, tmp_path: Path) -> None:
+        rows: list[list[Any]] = [
+            ["Purchasing Document", "Material", "Order Quantity", "Ship Date"],
+            ["4500030844", "21-44640", 100, "2026-03-15"],
+        ]
+        path = make_workbook(tmp_path, sheets={"客户PO": rows})
+        with WorkbookReader(path) as reader:
+            data = reader.read_sheet("客户PO", header_row=1, first_data_row=2)
+        assert data.headers == ("Purchasing Document", "Material", "Order Quantity", "ship DATE")
+        assert data.header_columns["ship DATE"] == 4
+        assert data.rows[0]["ship DATE"] == "2026-03-15"
+
     def test_rows_keyed_by_header(self, tmp_path: Path) -> None:
         path = standard_po_record_fixture(tmp_path)
         with WorkbookReader(path) as reader:
@@ -184,6 +198,35 @@ class TestReadSheet:
             data = reader.read_sheet("PO record")
         assert data.rows[0][ROW_NUMBER_KEY] == 5
         assert data.rows[1][ROW_NUMBER_KEY] == 6
+
+    def test_rows_include_number_formats(self, tmp_path: Path) -> None:
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "PO record"
+        for r_idx, row in enumerate(
+            [
+                ["", "", "", ""],
+                ["", "", "", ""],
+                ["", "", "", ""],
+                ["PO NO.", "SAP Number", "FINALQTY", "INV#"],
+                ["4500030844", "21-44640", 1.2, "INV-001"],
+            ],
+            start=1,
+        ):
+            for c_idx, val in enumerate(row, start=1):
+                ws.cell(row=r_idx, column=c_idx, value=val)
+        ws["C5"].number_format = "0.0000"
+        path = tmp_path / "formatted.xlsx"
+        wb.save(path)
+
+        with WorkbookReader(path) as reader:
+            data = reader.read_sheet("PO record")
+
+        first = data.rows[0]
+        formats = first[CELL_NUMBER_FORMATS_KEY]
+        assert isinstance(formats, dict)
+        assert formats["FINALQTY"] == "0.0000"
+        assert row_decimal_places(first, "FINALQTY") == 4
 
 
 # ————————————————————————————————————————

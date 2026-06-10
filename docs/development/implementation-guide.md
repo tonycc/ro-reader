@@ -14,6 +14,9 @@
 |---|---|---|
 | 产品决策 | `docs/product/ro-document-generator-product-plan.md` | PM |
 | UI 与交互 | `docs/development/ro-document-workbench-ui-design.md` | 前端 + PM |
+| 字段映射主文档 | `docs/development/unified-field-mapping-guide.md` | 核心包维护者 |
+| Agent 修复手册 | `docs/development/agent-field-fix-playbook.md` | 核心包维护者 |
+| 字段修复案例库 | `docs/development/field-fix-case-library.md` | 核心包维护者 |
 | 工程实施 | 本文档 | Tech Lead |
 | 仓库使用规则 | `CLAUDE.md` | Tech Lead |
 
@@ -374,19 +377,19 @@ GitHub Actions，三个独立 job 并行：
 ### 6.5 Document Model（Invoice）
 
 - [x] 实现 `document_model.py` 中 Invoice 的视图模型构建
-- [x] 数量来源切换：完整 PO 数量 vs 月度出货数量
+- [x] 数量来源切换：`客户PO.Order Quantity` vs 月度出货数量
 - [x] 合计计算：总数量、总金额（PL 合计字段在 Phase 2 加）
 - [x] 单元测试覆盖月份切片、空行剔除（产品方案 §10.3）、链段定价缺失、Invoice 必填字段
 
 ### 6.6 Template Mapping
 
-- [x] 实现 `template_mapping.py`：从 YAML 加载 mapping、校验 `template_version`、校验所有引用单元格在模板中存在
+- [x] 实现 `template_mapping.py`：从 YAML 加载 mapping、校验 `template_version`、校验所有引用单元格在模板中存在，并支持可选 `table_header_row` 显式保护 `start_row` 上方的真实表格表头
 - [x] 创建 `templates/gs/mappings/invoice.yaml`（用 spike A 验证过的模板）
 - [x] 单元测试覆盖：mapping 引用了不存在的单元格、mapping 缺 `template_version`、mapping 字段缺失
 
 ### 6.7 Renderer + Packager
 
-- [x] 实现 `renderer.py`：用 spike A 验证过的方案写入模板、超行时插入并复制样式
+- [x] 实现 `renderer.py`：用 spike A 验证过的方案写入模板、写值前统一预留明细区样式、超行时插入并复制样式
 - [x] 实现 `packager.py`：按命名规则（产品方案 §12.1）输出文件，支持 zip 打包、冲突策略、版本目录
 - [x] 集成测试：用 spike A 的断言验证装配输出的样式完整性
 
@@ -447,7 +450,7 @@ GitHub Actions，三个独立 job 并行：
 ### 7.2 PI / PO / PL document model
 
 - [x] `document_model.py` 增加 `build_pi_model()` / `build_po_model()` / `build_pl_model()`
-- [x] PI / PO 使用完整 PO 数量（不依赖 invoice_month），不要求 INV# / FACTORY DOC NO.
+- [x] PI / PO 使用 `客户PO.Order Quantity`（不依赖 invoice_month），不要求 INV# / FACTORY DOC NO.
 - [x] PL 在 Invoice 字段基础上必须填充：`carton_count` / `net_weight` / `gross_weight` / `cbm`，以及合计字段 `total_*`
 - [x] PL 缺装箱字段时返回阻断错误（产品方案 §11）
 - [x] 单元测试覆盖每类单据的字段集与必填校验
@@ -535,7 +538,7 @@ GitHub Actions，三个独立 job 并行：
 - [x] 链段选择器（胶囊按钮组）+ 月份选择器（mono 字体按钮）
 - [x] 文档预览栏：SheetJS `sheet_to_html` 渲染 + 悬停溯源 tooltip
 - [x] 导出流程（TopBar 导出按钮 + StatusBar 已导出路径）
-- [x] 缺字段高亮（DataGrid 必填字段为空时红色边框 + 粉色背景）
+- [x] 缺字段高亮（DataCheckScreen 必填字段为空时红色边框 + 粉色背景）
 - [x] 预览 tab 切换按单据类型独立生成（PI/PO/Invoice/PL 各调 dry-run）
 - [x] 预览栏布局增宽（flex:1.6）+ 缩放控件（50%-150%）
 - [ ] 公式回退橙色边框标记、模态导出选项、版本历史抽屉（UI 细节延后）

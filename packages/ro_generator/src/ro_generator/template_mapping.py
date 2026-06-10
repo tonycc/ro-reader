@@ -30,12 +30,13 @@ from ro_generator.models import DocumentType
 class LineColumns:
     """订单行各业务字段对应的模板列字母。"""
 
-    sap: str
     quantity: str
-    unit_price: str
-    amount: str
+    unit_price: str | None = None
+    amount: str | None = None
     po_no: str | None = None
+    item_number: str | None = None
     item_line_no: str | None = None
+    sap: str | None = None
     description: str | None = None
     gs_model: str | None = None
     unit_label: str | None = None
@@ -43,6 +44,8 @@ class LineColumns:
     gross_weight: str | None = None  # PL 专用
     carton_count: str | None = None  # PL 专用
     cbm: str | None = None  # PL 专用
+    confirmed_ex_factory_date: str | None = None  # EMAX PI 专用
+    extras: dict[str, str] = field(default_factory=dict)  # 未来扩展列，免改代码
 
 
 @dataclass(frozen=True)
@@ -62,6 +65,20 @@ class CellStyles:
 
 
 @dataclass(frozen=True)
+class TotalCell:
+    """totals 节中的单元格声明。
+
+    - `model_total`: 取 DocumentModel 的标准合计字段（兼容旧写法 `amount: H27`）
+    - `fixed`: 写固定文案
+    - `current_date`: 写当天日期字符串
+    """
+
+    cell: str
+    value_mode: str = "model_total"
+    value: str | None = None
+
+
+@dataclass(frozen=True)
 class TemplateMapping:
     """单份 mapping 加载后的不可变结构。"""
 
@@ -71,8 +88,10 @@ class TemplateMapping:
     sheet: str
     header: dict[str, str]
     lines: LinesSection
-    totals: dict[str, str]
+    totals: dict[str, TotalCell]
     notes: dict[str, str]
+    table_header_row: list[int] = field(default_factory=list)
+    header_fixed: dict[str, str] = field(default_factory=dict)
     style: CellStyles = field(default_factory=CellStyles)
 
 
@@ -82,6 +101,8 @@ class TemplateMapping:
 
 
 VALID_DOCUMENT_TYPES: Final[set[str]] = {"PI", "PO", "INVOICE", "PL"}
+VALID_TOTAL_VALUE_MODES: Final[set[str]] = {"model_total", "fixed", "current_date"}
+TEMPLATE_FOOTER_ROW_SLACK: Final[int] = 32
 
 
 def load_template_mapping(yaml_path: str | Path) -> TemplateMapping:
@@ -121,7 +142,10 @@ def _parse_mapping(raw: dict[str, object], yaml_path: Path) -> TemplateMapping:
     document = _normalize_document_type(document_raw, yaml_path)
     template_version = _require_str(raw, "template_version", yaml_path)
     template_rel = _require_str(raw, "template", yaml_path)
-    sheet = _require_str(raw, "sheet", yaml_path)
+    sheet_raw = raw.get("sheet")
+    if not isinstance(sheet_raw, str) or not sheet_raw.strip():
+        raise MappingError(f"mapping 缺少必填字段 'sheet' 或值非字符串：{yaml_path}")
+    sheet = sheet_raw
 
     # 模板路径：相对 mapping 文件的目录解析；最终落到仓库相对路径上
     # 真实业务里 mapping 与模板同目录，YAML 中常写 templates/gs/invoice.xlsx 这种仓库相对路径
@@ -133,9 +157,16 @@ def _parse_mapping(raw: dict[str, object], yaml_path: Path) -> TemplateMapping:
         )
 
     header = _require_dict_of_str(raw, "header", yaml_path)
+    header_fixed = _optional_dict_of_str(raw, "header_fixed")
     lines = _parse_lines_section(raw, yaml_path)
-    totals = _require_dict_of_str(raw, "totals", yaml_path)
+    totals = _parse_totals_section(raw, yaml_path)
     notes = _optional_dict_of_str(raw, "notes")
+    table_header_row = _parse_table_header_rows(raw, "table_header_row", yaml_path)
+    for r in table_header_row:
+        if r >= lines.start_row:
+            raise MappingError(
+                f"table_header_row 每一项都必须小于 lines.start_row={lines.start_row}，但 {r} >= {lines.start_row}（{yaml_path}）"
+            )
     style = _parse_style(raw.get("style"), yaml_path)
 
     return TemplateMapping(
@@ -147,6 +178,8 @@ def _parse_mapping(raw: dict[str, object], yaml_path: Path) -> TemplateMapping:
         lines=lines,
         totals=totals,
         notes=notes,
+        table_header_row=table_header_row,
+        header_fixed=header_fixed,
         style=style,
     )
 
@@ -187,10 +220,10 @@ def _parse_lines_section(raw: dict[str, object], yaml_path: Path) -> LinesSectio
                 col_letter = col_letter.strip().upper()
                 try:
                     column_index_from_string(col_letter)
-                except (ValueError, KeyError):
+                except (ValueError, KeyError) as exc:
                     raise MappingError(
                         f"lines.row_fixed 列字母 {col_letter!r} 不合法：{yaml_path}"
-                    )
+                    ) from exc
                 row_fixed[col_letter] = val
 
     return LinesSection(
@@ -203,33 +236,77 @@ def _parse_lines_section(raw: dict[str, object], yaml_path: Path) -> LinesSectio
 
 
 def _parse_columns(raw: dict[object, object], yaml_path: Path) -> LineColumns:
-    required = ["sap", "quantity", "unit_price", "amount"]
-    optional = ["po_no", "item_line_no", "description", "gs_model", "unit_label",
-                "net_weight", "gross_weight", "carton_count", "cbm"]
+    required = {"quantity"}
+    known = {"po_no", "item_number", "item_line_no", "description", "gs_model", "unit_label",
+             "sap", "unit_price", "amount",
+             "net_weight", "gross_weight", "carton_count", "cbm",
+             "confirmed_ex_factory_date"}
 
     parsed: dict[str, str] = {}
-    for key in required + optional:
-        v = raw.get(key)
-        if v is None:
+    extras: dict[str, str] = {}
+
+    for key, value in raw.items():
+        if not isinstance(key, str) or not isinstance(value, str):
             continue
-        if not isinstance(v, str):
-            raise MappingError(f"lines.columns.{key} 必须是列字母字符串：{yaml_path}")
-        parsed[key] = v.strip().upper()
+        letter = value.strip().upper()
+        try:
+            column_index_from_string(letter)
+        except (ValueError, KeyError):
+            raise MappingError(
+                f"lines.columns.{key} {letter!r} 不是合法列字母：{yaml_path}"
+            )
+        if key in known or key in required:
+            parsed[key] = letter
+        else:
+            extras[key] = letter
 
     for key in required:
         if key not in parsed:
             raise MappingError(f"lines.columns 缺少必填项 {key!r}：{yaml_path}")
 
-    # 校验列字母合法（让 column_index_from_string 帮我们验）
-    for key, letter in parsed.items():
-        try:
-            column_index_from_string(letter)
-        except (ValueError, KeyError) as exc:
-            raise MappingError(
-                f"lines.columns.{key} {letter!r} 不是合法列字母：{yaml_path}"
-            ) from exc
+    return LineColumns(extras=extras, **parsed)
 
-    return LineColumns(**parsed)
+
+def _parse_totals_section(raw: dict[str, object], yaml_path: Path) -> dict[str, TotalCell]:
+    totals_raw = raw.get("totals")
+    if not isinstance(totals_raw, dict):
+        raise MappingError(f"mapping 缺少必填节 'totals'（必须是 dict）：{yaml_path}")
+
+    parsed: dict[str, TotalCell] = {}
+    for key, value in totals_raw.items():
+        if not isinstance(key, str):
+            raise MappingError(f"totals 的键必须是字符串：{yaml_path}")
+        if isinstance(value, str):
+            parsed[key] = TotalCell(cell=value.strip())
+            continue
+        if not isinstance(value, dict):
+            raise MappingError(
+                f"totals.{key} 必须是字符串单元格地址，或包含 cell/value_mode 的 dict：{yaml_path}"
+            )
+
+        cell_raw = value.get("cell")
+        if not isinstance(cell_raw, str) or not cell_raw.strip():
+            raise MappingError(f"totals.{key}.cell 必须是非空字符串：{yaml_path}")
+
+        mode_raw = value.get("value_mode", "model_total")
+        if not isinstance(mode_raw, str) or mode_raw not in VALID_TOTAL_VALUE_MODES:
+            raise MappingError(
+                f"totals.{key}.value_mode 必须是 {sorted(VALID_TOTAL_VALUE_MODES)} 之一：{yaml_path}"
+            )
+
+        fixed_value: str | None = None
+        if mode_raw == "fixed":
+            value_raw = value.get("value")
+            if not isinstance(value_raw, str):
+                raise MappingError(f"totals.{key}.value_mode=fixed 时必须提供字符串 value：{yaml_path}")
+            fixed_value = value_raw
+
+        parsed[key] = TotalCell(
+            cell=cell_raw.strip(),
+            value_mode=mode_raw,
+            value=fixed_value,
+        )
+    return parsed
 
 
 # —————————————————————————————————————
@@ -266,7 +343,7 @@ def _validate_against_template(mapping: TemplateMapping) -> None:
         # 但 start_row 列上的样式参考还是要在模板里存在 → 通过 style_source_row 间接保证。
 
         # 3. 行列字母在模板列范围内
-        for col_name, col_letter in _iter_line_columns(mapping.lines.columns):
+        for col_name, col_letter in iter_line_columns(mapping.lines.columns):
             col_idx = column_index_from_string(col_letter)
             if col_idx > max_col:
                 raise MappingError(
@@ -275,32 +352,55 @@ def _validate_against_template(mapping: TemplateMapping) -> None:
                 )
 
         # 4. totals 单元格
-        for field_name, addr in mapping.totals.items():
-            _check_cell_reference(addr, max_row, max_col, f"totals.{field_name}")
+        for field_name, spec in mapping.totals.items():
+            _check_cell_reference(
+                spec.cell,
+                max_row,
+                max_col,
+                f"totals.{field_name}",
+                row_slack=TEMPLATE_FOOTER_ROW_SLACK,
+            )
 
         # 5. notes 单元格
         for field_name, addr in mapping.notes.items():
             _check_cell_reference(addr, max_row, max_col, f"notes.{field_name}")
+
+        # 6. 可选表格表头行
+        for r in mapping.table_header_row:
+            if r > max_row:
+                raise MappingError(
+                    f"table_header_row 每一项都不能超过模板行数 {max_row}，但 {r} > {max_row}"
+                )
     finally:
         wb.close()
 
 
-def _check_cell_reference(addr: str, max_row: int, max_col: int, ctx: str) -> None:
+def _check_cell_reference(
+    addr: str,
+    max_row: int,
+    max_col: int,
+    ctx: str,
+    *,
+    row_slack: int = 0,
+) -> None:
     try:
         col_letter, row = coordinate_from_string(addr.strip())
     except ValueError as exc:
         raise MappingError(f"{ctx} 单元格地址不合法：{addr!r}") from exc
     col_idx = column_index_from_string(col_letter)
-    if row > max_row or col_idx > max_col:
+    allowed_max_row = max_row + row_slack
+    if row > allowed_max_row or col_idx > max_col:
         raise MappingError(
-            f"{ctx} 单元格 {addr} 超出模板范围（max_row={max_row}, max_col={max_col}）"
+            f"{ctx} 单元格 {addr} 超出模板范围（max_row={allowed_max_row}, max_col={max_col}）"
         )
 
 
-def _iter_line_columns(cols: LineColumns) -> list[tuple[str, str]]:
+def iter_line_columns(cols: LineColumns) -> list[tuple[str, str]]:
+    """按固定顺序迭代所有列（已知键 + extras），返回 [(key, column_letter), ...]."""
     pairs: list[tuple[str, str]] = []
     for key in (
         "po_no",
+        "item_number",
         "item_line_no",
         "description",
         "gs_model",
@@ -309,10 +409,18 @@ def _iter_line_columns(cols: LineColumns) -> list[tuple[str, str]]:
         "unit_price",
         "amount",
         "unit_label",
+        "net_weight",
+        "gross_weight",
+        "carton_count",
+        "cbm",
+        "confirmed_ex_factory_date",
     ):
         v = getattr(cols, key)
         if isinstance(v, str):
             pairs.append((key, v))
+    # 追加 YAML 中声明的扩展列（这些列在 LineColumns 中没有独立字段）
+    for key, col_letter in cols.extras.items():
+        pairs.append((key, col_letter))
     return pairs
 
 
@@ -333,6 +441,40 @@ def _require_int(raw: dict[object, object], key: str, yaml_path: Path, ctx: str)
     if not isinstance(v, int) or isinstance(v, bool):
         raise MappingError(f"{ctx}.{key} 必须为整数：{yaml_path}")
     return v
+
+
+def _optional_positive_int(raw: dict[str, object], key: str, yaml_path: Path) -> int | None:
+    value = raw.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise MappingError(f"{key} 必须为正整数（如有）：{yaml_path}")
+    return value
+
+
+def _parse_table_header_rows(
+    raw: dict[str, object], key: str, yaml_path: Path
+) -> list[int]:
+    """解析 table_header_row，支持单行 int、多行 list[int] 或省略（返回空列表）。"""
+    value = raw.get(key)
+    if value is None:
+        return []
+    if isinstance(value, int) and not isinstance(value, bool):
+        if value <= 0:
+            raise MappingError(f"{key} 必须为正整数：{yaml_path}")
+        return [value]
+    if isinstance(value, list):
+        result: list[int] = []
+        for i, item in enumerate(value):
+            if not isinstance(item, int) or isinstance(item, bool) or item <= 0:
+                raise MappingError(
+                    f"{key}[{i}] 必须为正整数：{yaml_path}"
+                )
+            result.append(item)
+        if not result:
+            raise MappingError(f"{key} 不能为空列表（如有）：{yaml_path}")
+        return result
+    raise MappingError(f"{key} 必须为正整数或正整数列表（如有）：{yaml_path}")
 
 
 def _require_dict_of_str(raw: dict[str, object], key: str, yaml_path: Path) -> dict[str, str]:
@@ -391,6 +533,7 @@ __all__ = [
     "VALID_DOCUMENT_TYPES",
     "LineColumns",
     "LinesSection",
+    "TotalCell",
     "TemplateMapping",
     "load_template_mapping",
 ]

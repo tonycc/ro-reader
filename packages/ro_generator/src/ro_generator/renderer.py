@@ -18,21 +18,35 @@ from __future__ import annotations
 
 from copy import copy
 from dataclasses import dataclass
+from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from typing import Final
 
 from openpyxl import load_workbook
 from openpyxl.cell.cell import Cell
-from openpyxl.utils import column_index_from_string
+from openpyxl.styles import Font
 from openpyxl.utils.cell import coordinate_from_string
-from openpyxl.workbook.workbook import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
 from ro_generator.document_model import DocumentLine, DocumentModel
 from ro_generator.errors import InternalError, TemplateError
+from ro_generator.header_rules import (
+    HEADER_DATE_KEYS,
+    HEADER_FIELD_SPECS,
+    build_header_resolved_values,
+    header_source_field,
+    header_source_sheet,
+)
+from ro_generator.line_rules import (
+    line_excel_number_format,
+    resolve_line_field_spec,
+    uses_po_record_row,
+)
 from ro_generator.schema import SHEET_PO_RECORD
 from ro_generator.source_index import SourceIndex, SourceIndexBuilder, SourceLocation
-from ro_generator.template_mapping import LineColumns, TemplateMapping
+from ro_generator.template_mapping import LineColumns, TemplateMapping, iter_line_columns
+from ro_generator.totals_rules import total_spec_for_mapping_key, total_value_for_mapping_key
 
 # —————————————————————————————————————
 # 公开 API
@@ -76,8 +90,15 @@ def render_document(
             )
         ws: Worksheet = wb[mapping.sheet]
 
+        _write_styles(ws, mapping)
         _write_header(ws, model, mapping, builder)
         _write_lines_and_totals(ws, model, mapping, builder)
+
+        # 移除模板中未被使用的 sheet（如 GS PL 模板附带 INV sheet）。
+        # 前端 SheetJS 默认读第一张 sheet，保留多余 sheet 会导致预览显示错误内容。
+        for sn in list(wb.sheetnames):
+            if sn != mapping.sheet:
+                del wb[sn]
 
         wb.save(output_path)
     finally:
@@ -93,28 +114,49 @@ def render_document(
 # Header
 # —————————————————————————————————————
 
-# DocumentModel 字段名 → mapping.header 中的 key（一对一映射）
-_HEADER_FIELD_FROM_MODEL: Final[dict[str, str]] = {
-    "invoice_no": "invoice_no",
-    "factory_doc_no": "factory_doc_no",
-    "ship_to": "ship_to",
-    "po_no": "po_no",
-    "invoice_month": "invoice_month",
-    "seller": "seller",
-    "buyer": "buyer",
+# 模板表头中属于固定文案的 key 集合。这类字段保留模板原值，不清除。
+_PRESERVE_HEADER_KEYS: Final[set[str]] = {
+    "payment_terms", "port_of_loading", "final_destination",
+    "manufacturer", "manufacturer_name", "manufacturer_address", "manufacturer_address_2",
+    "supplier",
+    "bill_to",
+    "bill_to_line2", "bill_to_line3", "ship_to_line2", "ship_to_line3",
+    "signature",
 }
-
 
 # 缺值占位符的中文标签（key = mapping key）
 _PLACEHOLDER_LABELS: dict[str, str] = {
     "invoice_no": "需填: INV#",
-    "factory_doc_no": "需填: FACTORY DOC NO.",
     "ship_to": "需填: Ship To",
+    "bill_to": "需填: Ship To",
     "po_no": "需填: PO#",
-    "invoice_month": "需填: 月份",
     "unit_price": "需填: 单价",
     "quantity": "需填: 数量",
+    "ex_factory_date": "需填: 出厂日期",
 }
+
+def _write_styles(ws: Worksheet, mapping: TemplateMapping) -> None:
+    """按 mapping.style 声明应用单元格样式。"""
+    for addr in mapping.style.bold:
+        cell = ws[addr]
+        cell.font = Font(
+            name=cell.font.name,
+            size=cell.font.size,
+            bold=True,
+            italic=cell.font.italic,
+            underline=cell.font.underline,
+            color=cell.font.color,
+        )
+    for addr in mapping.style.underline:
+        cell = ws[addr]
+        cell.font = Font(
+            name=cell.font.name,
+            size=cell.font.size,
+            bold=cell.font.bold,
+            italic=cell.font.italic,
+            underline="single",
+            color=cell.font.color,
+        )
 
 
 def _write_header(
@@ -123,20 +165,47 @@ def _write_header(
     mapping: TemplateMapping,
     builder: SourceIndexBuilder,
 ) -> None:
-    """按 mapping.header 写表头字段。值为 None 时写 [需填: ...] 占位符。"""
-    for model_attr, mapping_key in _HEADER_FIELD_FROM_MODEL.items():
-        cell_addr = mapping.header.get(mapping_key)
-        if not cell_addr:
-            continue
-        value = getattr(model, model_attr, None)
-        label = _PLACEHOLDER_LABELS.get(mapping_key, f"[需填: {mapping_key}]")
-        ws[cell_addr] = value if value is not None else label
-        # 表头字段大多在 sheet 元信息层面（INV# 等），用 row=None 标识"非具体行"
-        builder.add(
-            cell_addr,
-            SourceLocation(sheet=SHEET_PO_RECORD, row=None, field=mapping_key),
-        )
+    """按 mapping.header 写表头字段。值为 None 时写 [需填: ...] 占位符。
+    日期类字段写入当天日期；固定文案字段保留模板原值；其余未映射字段清除模板样本值。
+    """
+    written_addrs: set[str] = set()
+    resolved_values = build_header_resolved_values(
+        model,
+        header_keys=mapping.header.keys(),
+        header_fixed=mapping.header_fixed,
+    )
 
+    for mkey, cell_addr in mapping.header.items():
+        value = resolved_values.get(mkey)
+        if value is not None:
+            _safe_set_cell(ws, cell_addr, value)
+            written_addrs.add(cell_addr)
+            if _should_trace_header_source(mkey):
+                sheet = header_source_sheet(mkey)
+                field = header_source_field(mkey)
+                # SK/YM/GS 的 ex_factory_date 实际从 PO record 取值
+                if mkey == "ex_factory_date" and model.seller in {"SK", "YM", "GS PTE"}:
+                    sheet = "PO record"
+                    field = "FINAL EX-FACTORY DATE"
+                # GS 的 pi_no 从客户 PO 的 Purchasing Document 取值
+                if mkey == "pi_no" and model.seller == "GS PTE":
+                    sheet = "客户PO"
+                    field = "Purchasing Document"
+                builder.add(
+                    cell_addr,
+                    SourceLocation(sheet=sheet, row=None, field=field),
+                )
+            continue
+        if mkey in HEADER_DATE_KEYS:
+            # 写入日期字符串。openpyxl 写 date 对象会把值序列化为 Excel 数字，
+            # 而 SheetJS 预览读到的 raw value 仍是数字而非格式化日期。
+            # 直接用字符串确保浏览器端显示为人类可读日期。
+            _safe_set_cell(ws, cell_addr, date.today().strftime("%Y-%m-%d"))
+        elif mkey in _PRESERVE_HEADER_KEYS:
+            pass  # 保留模板原值
+        else:
+            # 清除模板样本值（如样本日期、注释占位符）
+            _safe_set_cell(ws, cell_addr, None)
 
 # —————————————————————————————————————
 # Lines + Totals
@@ -161,7 +230,10 @@ def _write_lines_and_totals(
     style_source_row = mapping.lines.style_source_row
     reserved_rows = _reserved_row_count(mapping)
 
-    # 1. 清掉模板里的样板数据（保留样式）
+    # 1. 统一预留数据区样式，再清掉模板里的样板数据。
+    # 某些模板的预留行携带了脏 number_format（例如把单价列误设成日期）。
+    # 统一继承 style_source_row，可保证导出结果与新增插入行的样式口径一致。
+    _normalize_reserved_row_styles(ws, start_row, reserved_rows, style_source_row)
     _clear_sample_rows(ws, mapping)
 
     # 2. 如果实际行数 > 预留行数，插入额外的新行
@@ -177,7 +249,17 @@ def _write_lines_and_totals(
     line_unit_label = mapping.lines.unit_label
     for offset, doc_line in enumerate(model.lines):
         row = start_row + offset
-        _write_data_row(ws, row, doc_line, columns, line_unit_label, builder, po_no=model.po_no)
+        _write_data_row(
+            ws,
+            row,
+            doc_line,
+            columns,
+            line_unit_label,
+            builder,
+            document_type=model.document_type,
+            seller=model.seller,
+            po_no=model.po_no,
+        )
         # Write row_fixed values (e.g., Country of The Origin = "China")
         for col_letter, fixed_val in mapping.lines.row_fixed.items():
             ws[f"{col_letter}{row}"] = fixed_val
@@ -195,11 +277,13 @@ def _reserved_row_count(mapping: TemplateMapping) -> int:
     if not mapping.totals:
         return 1
     totals_rows: list[int] = []
-    for addr in mapping.totals.values():
+    for total_cell in mapping.totals.values():
         try:
-            _, row = coordinate_from_string(addr.strip())
+            _, row = coordinate_from_string(total_cell.cell.strip())
         except ValueError as exc:
-            raise InternalError(f"mapping totals 的单元格地址 {addr!r} 无法解析") from exc
+            raise InternalError(
+                f"mapping totals 的单元格地址 {total_cell.cell!r} 无法解析"
+            ) from exc
         totals_rows.append(row)
     min_totals_row = min(totals_rows)
     reserved = min_totals_row - mapping.lines.start_row
@@ -207,20 +291,55 @@ def _reserved_row_count(mapping: TemplateMapping) -> int:
 
 
 def _clear_sample_rows(ws: Worksheet, mapping: TemplateMapping) -> None:
-    """清掉模板预留区间里的样板数据（保留样式、公式列除外）。
+    """清掉模板预留区间里的样板数据。
 
-    只清 mapping.lines.columns 引用到的单元格，避免误删模板里的标注/合并单元格。
+    清除 start_row 到 start_row + reserved - 1 之间所有映射列引用到的单元格，
+    以及 row_fixed 列和 PL 装箱列。同时清除 start_row 上方和 totals 下方的注释/样板行。
     """
     reserved = _reserved_row_count(mapping)
     columns = mapping.lines.columns
-    addrs = list(_iter_column_letters(columns))
+    addrs = [v for _, v in iter_line_columns(columns)]
+    # 追加 row_fixed 列
+    for letter in mapping.lines.row_fixed:
+        if letter not in addrs:
+            addrs.append(letter)
+
+    # 确定 header 区域的最末行（用于清除 header 与 data 之间的样板行）
+    header_max_row = 0
+    for addr in mapping.header.values():
+        try:
+            _, row = coordinate_from_string(addr.strip())
+            if row > header_max_row:
+                header_max_row = row
+        except ValueError:
+            pass
+
+    # 清除 data 上方的样板行（从 header 结束到 start_row 之间的所有行）
+    # 如模板显式声明了表格表头行，则保留该行，不再依赖启发式猜测。
+    clear_above_start = max(header_max_row + 1, 1)
+    for r in range(clear_above_start, mapping.lines.start_row):
+        if r in mapping.table_header_row:
+            continue
+        for col_idx in range(1, ws.max_column + 1):
+            cell = ws.cell(row=r, column=col_idx)
+            if cell.value is not None:
+                cell.value = None
+
+    # 清除 data 行中的样板数据
     for offset in range(reserved):
         row = mapping.lines.start_row + offset
         for letter in addrs:
             cell = ws[f"{letter}{row}"]
             cell.value = None
 
-
+    # 清除 totals 值单元格，保留模板中的 label 文案（如 Total / Signature / Date）
+    if mapping.totals:
+        for total_cell in mapping.totals.values():
+            try:
+                col_letter, row = coordinate_from_string(total_cell.cell.strip())
+            except ValueError:
+                continue
+            ws[f"{col_letter}{row}"].value = None
 def _write_data_row(
     ws: Worksheet,
     row: int,
@@ -229,57 +348,73 @@ def _write_data_row(
     fixed_unit_label: str | None,
     builder: SourceIndexBuilder,
     *,
+    document_type: str,
+    seller: str,
     po_no: str = "",
 ) -> None:
-    """写单行数据。amount 列写公式，让 Excel 在打开时自动重算。"""
+    """数据驱动的行写入：遍历 YAML columns 中声明的所有列，按共享 line spec 写入。"""
     src_row = doc_line.source_row  # 可能为 None（合成数据 / 测试场景）
 
-    if columns.po_no:
-        ws[f"{columns.po_no}{row}"] = po_no
-    if columns.item_line_no:
-        addr = f"{columns.item_line_no}{row}"
-        ws[addr] = doc_line.item_line_no
-        builder.add(addr, SourceLocation(SHEET_PO_RECORD, src_row, "ITEM LINE#"))
-    if columns.description:
-        addr = f"{columns.description}{row}"
-        ws[addr] = doc_line.description
-        builder.add(addr, SourceLocation(SHEET_PO_RECORD, src_row, "DESCRIPTION"))
-    if columns.gs_model:
-        addr = f"{columns.gs_model}{row}"
-        ws[addr] = doc_line.gs_model
-        # gs_model 来自 DATA BASE，不是 PO record；这里仍标 PO record 行+字段名
-        # 因为 UI 双向溯源 PO record 行号定位更直接，DATA BASE 详情通过 SAP 二次跳转
-        builder.add(addr, SourceLocation(SHEET_PO_RECORD, src_row, "GS MODEL"))
+    for key, col_letter in iter_line_columns(columns):
+        spec = resolve_line_field_spec(
+            key,
+            document_type=document_type,
+            seller=seller,
+            category=doc_line.category,
+        )
+        addr = f"{col_letter}{row}"
 
-    sap_addr = f"{columns.sap}{row}"
-    ws[sap_addr] = doc_line.sap
-    builder.add(sap_addr, SourceLocation(SHEET_PO_RECORD, src_row, "SAP Number"))
+        # — fixed_value：固定文案（unit_label 等）
+        if spec.fixed_value:
+            if fixed_unit_label:
+                ws[addr] = fixed_unit_label
+            continue
 
-    price_addr = f"{columns.unit_price}{row}"
-    ws[price_addr] = doc_line.unit_price if doc_line.unit_price != 0 else "[需填: 单价]"
-    builder.add(price_addr, SourceLocation(SHEET_PO_RECORD, src_row, "unit_price"))
+        # — po_no 特殊处理：用调用方传入的 po_no 而非 doc_line.po_no
+        if key == "po_no":
+            ws[addr] = po_no
+            builder.add(
+                addr,
+                SourceLocation(
+                    spec.source_sheet or SHEET_PO_RECORD,
+                    src_row if uses_po_record_row(spec) else None,
+                    spec.source_field or "PO NO.",
+                ),
+            )
+            continue
 
-    qty_addr = f"{columns.quantity}{row}"
-    ws[qty_addr] = doc_line.quantity if doc_line.quantity != 0 else "[需填: 数量]"
-    builder.add(qty_addr, SourceLocation(SHEET_PO_RECORD, src_row, "FINALQTY"))
+        val = getattr(doc_line, key, None)
 
-    # amount 列写公式：=E{row}*F{row}（保持模板风格，便于 Excel 用户审计）
-    amount_addr = f"{columns.amount}{row}"
-    ws[amount_addr] = doc_line.amount
-    builder.add_computed(amount_addr, "amount")
+        # — computed：公式计算值（amount），只记 source 索引
+        if spec.computed:
+            if val is not None:
+                _write_line_cell(ws[addr], val, spec)
+            builder.add_computed(addr, key)
+            continue
 
-    if columns.unit_label and fixed_unit_label:
-        ws[f"{columns.unit_label}{row}"] = fixed_unit_label
+        source_field = spec.source_field or key
+        source_sheet = spec.source_sheet or SHEET_PO_RECORD
 
-    # PL 专属：装箱字段按行写入
-    if columns.net_weight and doc_line.net_weight is not None:
-        ws[f"{columns.net_weight}{row}"] = doc_line.net_weight
-    if columns.gross_weight and doc_line.gross_weight is not None:
-        ws[f"{columns.gross_weight}{row}"] = doc_line.gross_weight
-    if columns.carton_count and doc_line.carton_count is not None:
-        ws[f"{columns.carton_count}{row}"] = doc_line.carton_count
-    if columns.cbm and doc_line.cbm is not None:
-        ws[f"{columns.cbm}{row}"] = doc_line.cbm
+        # — skip_if_none：空值跳过（PL 专属装箱字段）
+        if spec.skip_if_none and val is None:
+            continue
+
+        # — 占位符（零值 / 空值）
+        if isinstance(val, Decimal) and val == 0 and spec.zero_placeholder:
+            ws[addr] = spec.zero_placeholder
+        elif val is None and spec.none_placeholder:
+            ws[addr] = spec.none_placeholder
+        elif val is not None:
+            _write_line_cell(ws[addr], val, spec)
+
+        builder.add(
+            addr,
+            SourceLocation(
+                source_sheet,
+                src_row if uses_po_record_row(spec) else None,
+                source_field,
+            ),
+        )
 
 
 def _write_totals(
@@ -290,31 +425,29 @@ def _write_totals(
     builder: SourceIndexBuilder,
 ) -> None:
     """写合计单元格。位置随 insertion_count 平移。"""
-    for field_name, addr in mapping.totals.items():
+    for field_name, total_cell in mapping.totals.items():
         try:
-            col_letter, row = coordinate_from_string(addr.strip())
+            col_letter, row = coordinate_from_string(total_cell.cell.strip())
         except ValueError as exc:
-            raise InternalError(f"mapping totals 单元格地址 {addr!r} 无法解析") from exc
+            raise InternalError(f"mapping totals 单元格地址 {total_cell.cell!r} 无法解析") from exc
         new_row = row + totals_row_offset
         cell_addr = f"{col_letter}{new_row}"
-        wrote = True
-        if field_name == "quantity":
-            ws[cell_addr] = model.total_quantity
-        elif field_name == "amount":
-            ws[cell_addr] = model.total_amount
-        elif field_name == "carton_count" and model.total_carton_count is not None:
-            ws[cell_addr] = model.total_carton_count
-        elif field_name == "net_weight" and model.total_net_weight is not None:
-            ws[cell_addr] = model.total_net_weight
-        elif field_name == "gross_weight" and model.total_gross_weight is not None:
-            ws[cell_addr] = model.total_gross_weight
-        elif field_name == "cbm" and model.total_cbm is not None:
-            ws[cell_addr] = model.total_cbm
-        else:
-            wrote = False
-        if wrote:
+        if total_cell.value_mode == "fixed":
+            ws[cell_addr] = total_cell.value
+            builder.add_computed(cell_addr, f"totals.{field_name}")
+            continue
+        if total_cell.value_mode == "current_date":
+            ws[cell_addr] = date.today().strftime("%Y-%m-%d")
+            builder.add_computed(cell_addr, f"totals.{field_name}")
+            continue
+        total_spec = total_spec_for_mapping_key(field_name)
+        if total_spec is None:
+            continue
+        total_value = total_value_for_mapping_key(model, field_name)
+        if total_value is not None:
+            ws[cell_addr] = total_value
             # 合计是工作台计算得出，不指向某一行
-            builder.add_computed(cell_addr, f"total_{field_name}")
+            builder.add_computed(cell_addr, total_spec.preview_key)
 
 
 # —————————————————————————————————————
@@ -352,6 +485,20 @@ def _insert_styled_row(ws: Worksheet, insert_at: int, style_src: int) -> None:
     _copy_row_style(ws, src_row=style_src, dst_row=insert_at, max_col=ws.max_column)
 
 
+def _normalize_reserved_row_styles(
+    ws: Worksheet,
+    start_row: int,
+    reserved_rows: int,
+    style_source_row: int,
+) -> None:
+    """把模板预留数据区统一成 style_source_row 的样式。"""
+    for offset in range(reserved_rows):
+        row = start_row + offset
+        if row == style_source_row:
+            continue
+        _copy_row_style(ws, src_row=style_source_row, dst_row=row, max_col=ws.max_column)
+
+
 def _copy_row_style(ws: Worksheet, src_row: int, dst_row: int, max_col: int) -> None:
     """把 src_row 的每个单元格样式复制到 dst_row 的同列单元格。"""
     src_height = ws.row_dimensions[src_row].height
@@ -378,28 +525,24 @@ def _copy_row_style(ws: Worksheet, src_row: int, dst_row: int, max_col: int) -> 
 # Helpers
 # —————————————————————————————————————
 
-
-def _iter_column_letters(columns: LineColumns) -> list[str]:
-    out: list[str] = []
-    for key in (
-        "po_no",
-        "item_line_no",
-        "description",
-        "gs_model",
-        "sap",
-        "unit_price",
-        "quantity",
-        "unit_label",
-        "amount",
-    ):
-        v = getattr(columns, key)
-        if isinstance(v, str):
-            out.append(v)
-    return out
+def _safe_set_cell(ws: Worksheet, addr: str, value: object) -> None:
+    """安全写单元格，跳过 MergedCell（合并区域非左上角单元格不可写）。"""
+    cell = ws[addr]
+    if not isinstance(cell, Cell):
+        return  # MergedCell 不可写，跳过
+    cell.value = value
 
 
-# 给类型校验器看，避免 unused warning
-_ = (Workbook, column_index_from_string)
+def _write_line_cell(cell: Cell, value: object, spec: object) -> None:
+    cell.value = value
+    number_format = line_excel_number_format(value, spec)
+    if number_format is not None:
+        cell.number_format = number_format
+
+
+def _should_trace_header_source(field_name: str) -> bool:
+    spec = HEADER_FIELD_SPECS.get(field_name)
+    return spec is not None and spec.source_type == "base_field"
 
 
 __all__ = ["render_document"]

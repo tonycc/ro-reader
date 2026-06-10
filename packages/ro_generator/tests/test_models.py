@@ -76,7 +76,7 @@ class TestOrderLineDefaults:
         line = _make_order_line()
         assert line.po_no == "4500030844"
         assert line.invoice_no is None
-        assert line.monthly_shipments == {}
+        assert line.ship_qty is None
         assert line.prices == {}
 
     def test_holds_product_reference(self) -> None:
@@ -104,7 +104,7 @@ class TestDocumentRequestDefaults:
             documents=("PI", "INVOICE"),
         )
         assert req.seller is None
-        assert req.invoice_month is None
+        assert req.invoice_no is None
         assert req.output_format == "xlsx"
         assert req.output_dir == "outputs"
         assert req.on_conflict == "overwrite"
@@ -130,16 +130,16 @@ class TestGenerationResultDefaults:
     def test_needs_input_with_options(self) -> None:
         result = GenerationResult(
             status="needs_input",
-            missing_inputs=("invoice_month",),
+            missing_inputs=("invoice_no",),
             options={
-                "invoice_month": (
+                "invoice_no": (
                     {"value": "2601", "label": "2026 年 1 月"},
                     {"value": "2602", "label": "2026 年 2 月"},
                 )
             },
         )
-        assert "invoice_month" in result.options
-        assert len(result.options["invoice_month"]) == 2
+        assert "invoice_no" in result.options
+        assert len(result.options["invoice_no"]) == 2
 
 
 # ————————————————————————————————————————

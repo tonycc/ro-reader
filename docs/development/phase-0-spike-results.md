@@ -24,6 +24,7 @@
 **Phase 1 影响**：
 
 - `ro_generator/renderer.py` 的"插入行"逻辑直接复用 spike 的 `insert_styled_row` 和 `copy_row_style` 思路。
+- `style_source_row` 不只用于新增插入行，也用于统一模板预留明细区样式，避免模板脏 `number_format` 污染导出结果。
 - 写一条警告：当输入数据行数 > 模板预留行数时，必须**先平移 row_dimensions 再 insert_rows**，否则行高错乱。
 
 ---
@@ -65,15 +66,12 @@
 
 ---
 
-## Spike C：启动器打包 ⏳ 待跑
+## Spike C：启动器打包 ✅ 完成（Phase 3）
 
-> Spike C（PyInstaller + FastAPI + 自动开浏览器 + 托盘）尚未开始。
+PyInstaller + FastAPI + 自动开浏览器 + 托盘方案已通过验证。产物 `RO Workbench.app`（~24 MB）可在 macOS 上双击启动，自动拉起 FastAPI 后台线程并用默认浏览器打开工作台。
 
-预期工作量 3–5 个工作日，本机为 macOS arm64。Windows + Apple Silicon Intel 的覆盖建议在 CI 矩阵中补做。
+CI 构建矩阵（macOS + Windows）已配置于 `.github/workflows/build-launcher.yml`。
 
-预期阻塞项：
-
-- macOS 公证（Apple Developer ID）：本地无证书，预计只能验证 ad-hoc 签名 + 本机运行，公证流程作为文档产出。
-- Windows 测试：本机不可达，需要在 GitHub Actions Windows runner 上跑构建后下载手工验证。
-
-详细任务进入 implementation-guide §5.4。
+遗留项（非阻塞）：
+- macOS 公证（Apple Developer ID）
+- Windows 签名

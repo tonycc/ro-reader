@@ -9,6 +9,7 @@ from openpyxl import Workbook
 from ro_generator.errors import MappingError, TemplateError
 from ro_generator.template_mapping import (
     LineColumns,
+    TotalCell,
     TemplateMapping,
     load_template_mapping,
 )
@@ -20,6 +21,16 @@ from ro_generator.template_mapping import (
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 GS_INVOICE_MAPPING = REPO_ROOT / "templates" / "gs" / "mappings" / "invoice.yaml"
+GS_PI_MAPPING = REPO_ROOT / "templates" / "gs" / "mappings" / "pi.yaml"
+GS_PO_MAPPING = REPO_ROOT / "templates" / "gs" / "mappings" / "po.yaml"
+EMAX_PI_MAPPING = REPO_ROOT / "templates" / "emax" / "mappings" / "pi.yaml"
+EMAX_PO_MAPPING = REPO_ROOT / "templates" / "emax" / "mappings" / "po.yaml"
+EMAX_INVOICE_MAPPING = REPO_ROOT / "templates" / "emax" / "mappings" / "invoice.yaml"
+EMAX_PL_MAPPING = REPO_ROOT / "templates" / "emax" / "mappings" / "pl.yaml"
+SK_PI_MAPPING = REPO_ROOT / "templates" / "sk" / "mappings" / "pi.yaml"
+SK_PL_MAPPING = REPO_ROOT / "templates" / "sk" / "mappings" / "pl.yaml"
+YM_PI_MAPPING = REPO_ROOT / "templates" / "ym" / "mappings" / "pi.yaml"
+YM_PL_MAPPING = REPO_ROOT / "templates" / "ym" / "mappings" / "pl.yaml"
 
 
 class TestRealGsInvoiceMapping:
@@ -32,8 +43,8 @@ class TestRealGsInvoiceMapping:
     def test_top_level_fields(self) -> None:
         mapping = load_template_mapping(GS_INVOICE_MAPPING)
         assert mapping.document == "INVOICE"
-        assert mapping.template_version == "v1"
-        assert mapping.sheet == "Sheet1"
+        assert mapping.template_version == "2026.06"
+        assert mapping.sheet == "INV"
         assert mapping.template_path.name == "invoice.xlsx"
         assert mapping.template_path.exists()
 
@@ -45,23 +56,42 @@ class TestRealGsInvoiceMapping:
     def test_lines_section(self) -> None:
         mapping = load_template_mapping(GS_INVOICE_MAPPING)
         assert mapping.lines.start_row == 18
-        assert mapping.lines.style_source_row == 19
-        assert mapping.lines.unit_label == "PCS"
+        assert mapping.lines.style_source_row == 17
         cols = mapping.lines.columns
         assert isinstance(cols, LineColumns)
-        # Phase 0 spike A 已确认 GS Invoice 的列布局
+        # 新版 GS Invoice 列布局 (2026.06 模板)
         assert cols.po_no == "B"
-        assert cols.gs_model == "C"
+        assert cols.description == "C"
         assert cols.sap == "D"
         assert cols.unit_price == "E"
         assert cols.quantity == "F"
-        assert cols.unit_label == "G"
         assert cols.amount == "H"
 
     def test_totals_section(self) -> None:
         mapping = load_template_mapping(GS_INVOICE_MAPPING)
-        assert mapping.totals["quantity"] == "F27"
-        assert mapping.totals["amount"] == "H27"
+        assert mapping.totals["quantity"] == TotalCell(cell="F27")
+        assert mapping.totals["amount"] == TotalCell(cell="H27")
+
+
+class TestRealMappingsTableHeaderRows:
+    @pytest.mark.parametrize(
+        ("mapping_path", "expected_rows"),
+        [
+            (GS_PI_MAPPING, [19]),
+            (GS_PO_MAPPING, [19]),
+            (EMAX_INVOICE_MAPPING, [12, 13, 14]),
+            (EMAX_PI_MAPPING, [17]),
+            (EMAX_PO_MAPPING, [19]),
+            (EMAX_PL_MAPPING, [9]),
+            (SK_PI_MAPPING, [19]),
+            (SK_PL_MAPPING, [8, 9, 10]),
+            (YM_PI_MAPPING, [19]),
+            (YM_PL_MAPPING, [8, 9, 10]),
+        ],
+    )
+    def test_declares_table_header_row(self, mapping_path: Path, expected_rows: list[int]) -> None:
+        mapping = load_template_mapping(mapping_path)
+        assert mapping.table_header_row == expected_rows
 
 
 # ————————————————————————————————————————
@@ -129,6 +159,70 @@ class TestLoadBasic:
         mapping = load_template_mapping(good_yaml)
         assert mapping.document == "INVOICE"
         assert mapping.template_version == "v1"
+        assert mapping.totals["amount"] == TotalCell(cell="H27")
+
+    def test_loads_declared_total_value_mode(self, tmp_path: Path, template_file: Path) -> None:
+        yaml_path = write_yaml(
+            tmp_path / "mapping.yaml",
+            f"""\
+document: invoice
+template_version: "v1"
+template: {template_file}
+sheet: Sheet1
+header:
+  invoice_no: H6
+lines:
+  start_row: 18
+  style_source_row: 19
+  columns:
+    sap: D
+    quantity: F
+    unit_price: E
+    amount: H
+totals:
+  amount: H27
+  signature:
+    cell: H28
+    value_mode: fixed
+    value: Joyce
+  Date:
+    cell: H29
+    value_mode: current_date
+""",
+        )
+        mapping = load_template_mapping(yaml_path)
+        assert mapping.totals["signature"] == TotalCell(
+            cell="H28",
+            value_mode="fixed",
+            value="Joyce",
+        )
+        assert mapping.totals["Date"] == TotalCell(cell="H29", value_mode="current_date")
+
+    def test_loads_optional_table_header_row(self, tmp_path: Path, template_file: Path) -> None:
+        yaml_path = write_yaml(
+            tmp_path / "mapping.yaml",
+            f"""\
+document: invoice
+template_version: "v1"
+template: {template_file}
+sheet: Sheet1
+header:
+  invoice_no: H6
+table_header_row: 17
+lines:
+  start_row: 18
+  style_source_row: 19
+  columns:
+    sap: D
+    quantity: F
+    unit_price: E
+    amount: H
+totals:
+  amount: H27
+""",
+        )
+        mapping = load_template_mapping(yaml_path)
+        assert mapping.table_header_row == [17]
 
     def test_yaml_path_must_exist(self, tmp_path: Path) -> None:
         with pytest.raises(MappingError, match="mapping 文件不存在"):
@@ -181,6 +275,44 @@ class TestRequiredFields:
         with pytest.raises(MappingError, match="document 字段必须是"):
             load_template_mapping(path)
 
+    def test_fixed_total_requires_value(self, tmp_path: Path, template_file: Path) -> None:
+        path = write_yaml(
+            tmp_path / "mapping.yaml",
+            f"""\
+document: invoice
+template_version: "v1"
+template: {template_file}
+sheet: Sheet1
+header:
+  invoice_no: H6
+lines:
+  start_row: 18
+  style_source_row: 19
+  columns:
+    sap: D
+    quantity: F
+    unit_price: E
+    amount: H
+totals:
+  signature:
+    cell: H28
+    value_mode: fixed
+""",
+        )
+        with pytest.raises(MappingError, match="value_mode=fixed"):
+            load_template_mapping(path)
+
+    def test_table_header_row_must_be_positive_int(self, tmp_path: Path, template_file: Path) -> None:
+        path = write_yaml(
+            tmp_path / "mapping.yaml",
+            good_yaml_content(str(template_file)).replace(
+                'sheet: Sheet1\n',
+                'sheet: Sheet1\ntable_header_row: 0\n',
+            ),
+        )
+        with pytest.raises(MappingError, match=r"table_header_row 必须为正整数|table_header_row\[0\] 必须为正整数"):
+            load_template_mapping(path)
+
 
 class TestLinesSection:
     def test_missing_lines_section(self, tmp_path: Path, template_file: Path) -> None:
@@ -214,6 +346,44 @@ totals:
         content = good_yaml_content(str(template_file)).replace("    sap: D", "    sap: '@@'")
         path = write_yaml(tmp_path / "mapping.yaml", content)
         with pytest.raises(MappingError, match="不是合法列字母"):
+            load_template_mapping(path)
+
+    def test_table_header_row_must_be_before_start_row(
+        self, tmp_path: Path, template_file: Path
+    ) -> None:
+        content = good_yaml_content(str(template_file)).replace(
+            'sheet: Sheet1\n',
+            'sheet: Sheet1\ntable_header_row: 18\n',
+        )
+        path = write_yaml(tmp_path / "mapping.yaml", content)
+        with pytest.raises(MappingError, match="都必须小于 lines.start_row"):
+            load_template_mapping(path)
+
+    def test_table_header_row_list_form(self, tmp_path: Path, template_file: Path) -> None:
+        content = good_yaml_content(str(template_file)).replace(
+            'sheet: Sheet1\n',
+            'sheet: Sheet1\ntable_header_row:\n  - 16\n  - 17\n',
+        )
+        path = write_yaml(tmp_path / "mapping.yaml", content)
+        mapping = load_template_mapping(path)
+        assert mapping.table_header_row == [16, 17]
+
+    def test_table_header_row_empty_list_rejected(self, tmp_path: Path, template_file: Path) -> None:
+        content = good_yaml_content(str(template_file)).replace(
+            'sheet: Sheet1\n',
+            'sheet: Sheet1\ntable_header_row: []\n',
+        )
+        path = write_yaml(tmp_path / "mapping.yaml", content)
+        with pytest.raises(MappingError, match="不能为空列表"):
+            load_template_mapping(path)
+
+    def test_table_header_row_list_bad_item_rejected(self, tmp_path: Path, template_file: Path) -> None:
+        content = good_yaml_content(str(template_file)).replace(
+            'sheet: Sheet1\n',
+            'sheet: Sheet1\ntable_header_row:\n  - 17\n  - 0\n',
+        )
+        path = write_yaml(tmp_path / "mapping.yaml", content)
+        with pytest.raises(MappingError, match=r"table_header_row\[1\] 必须为正整数"):
             load_template_mapping(path)
 
 

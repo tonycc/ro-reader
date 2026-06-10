@@ -36,7 +36,7 @@ class TestFilenameRules:
             seller="GS PTE",
             document_type="INVOICE",
             po_no="4500030844",
-            invoice_month="2601",
+            invoice_no="2601",
         )
         assert name == "GS_PTE-RO-INVOICE-4500030844-2601.xlsx"
 
@@ -45,7 +45,7 @@ class TestFilenameRules:
             seller="EMAX PTE",
             document_type="PL",
             po_no="4500030844",
-            invoice_month="2602",
+            invoice_no="2602",
         )
         assert name == "EMAX_PTE-RO-PL-4500030844-2602.xlsx"
 
@@ -63,14 +63,14 @@ class TestFilenameRules:
             seller="GS PTE",
             document_type="PI",
             po_no="P",
-            invoice_month="2601",
+            invoice_no="2601",
         )
         assert name == "GS_PTE-RO-PI-P.xlsx"
 
     def test_seller_with_slash_sanitized(self) -> None:
         # SK/YM 主体常出现，斜杠是文件系统不友好字符
         name = build_document_filename(
-            seller="SK/YM", document_type="INVOICE", po_no="P", invoice_month="2601"
+            seller="SK/YM", document_type="INVOICE", po_no="P", invoice_no="2601"
         )
         # SK/YM → SK_YM
         assert "/" not in name
@@ -79,7 +79,7 @@ class TestFilenameRules:
 
 class TestZipFilename:
     def test_zip_with_month(self) -> None:
-        assert build_zip_filename(po_no="4500030844", invoice_month="2601") == (
+        assert build_zip_filename(po_no="4500030844", invoice_no="2601") == (
             "RO-4500030844-2601.zip"
         )
 
@@ -88,7 +88,7 @@ class TestZipFilename:
 
     def test_zip_seller_independent(self) -> None:
         # zip 名只含 PO + 月份，不含 seller（产品方案 §12.1）
-        name = build_zip_filename(po_no="4500030844", invoice_month="2602")
+        name = build_zip_filename(po_no="4500030844", invoice_no="2602")
         assert "GS" not in name and "EMAX" not in name
 
 

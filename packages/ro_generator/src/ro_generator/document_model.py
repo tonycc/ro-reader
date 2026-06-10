@@ -4,17 +4,19 @@
 - document_model 关心"这一类单据的视图长什么样"，不关心模板单元格位置
   （那是 template_mapping 的职责）
 - 由 (seller, buyer) 决定从 OrderLine.subtotals 中取哪一段
-- 数量来源：完整 PO 数量 vs 月度出货数量（产品方案 §10.3）
+- 数量来源：完整 PO 数量 vs 出货数量 (ship_qty)（产品方案 §10.3）
 - 校验只产出本层能产生的信息
 - 不重复 resolver 已经报过的错误
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 from typing import Final
 
+from ro_generator.line_rules import resolve_line_field_spec
 from ro_generator.models import DocumentType, OrderLine, ValidationMessage
 from ro_generator.schema import SHEET_PO_RECORD
 
@@ -24,15 +26,13 @@ from ro_generator.schema import SHEET_PO_RECORD
 
 CODE_LINE_NOT_PRICED: Final = "LINE_NOT_PRICED_FOR_SEGMENT"
 CODE_INVOICE_NO_MISSING: Final = "INVOICE_NO_MISSING"
-CODE_FACTORY_DOC_NO_MISSING: Final = "FACTORY_DOC_NO_MISSING"
-CODE_NO_SHIPMENT_IN_MONTH: Final = "NO_SHIPMENT_IN_MONTH"
+CODE_NO_SHIPMENT_FOR_INVOICE: Final = "NO_SHIPMENT_FOR_INVOICE"
 CODE_PACKING_DATA_MISSING: Final = "PACKING_DATA_MISSING"
 
 
 # —————————————————————————————————————
 # 视图模型
 # —————————————————————————————————————
-
 
 @dataclass(frozen=True)
 class DocumentLine:
@@ -42,9 +42,11 @@ class DocumentLine:
     装箱字段仅 PL 使用。
     """
 
+    po_no: str
     item_line_no: str
     sap: str
     description: str
+    category: int
     gs_model: str | None
     quantity: Decimal
     unit_price: Decimal
@@ -54,6 +56,10 @@ class DocumentLine:
     net_weight: Decimal | None = None
     gross_weight: Decimal | None = None
     cbm: Decimal | None = None
+    confirmed_ex_factory_date: date | None = None
+    po_ex_factory_date: date | None = None  # PO record "FINAL EX-FACTORY DATE"
+    item_number: str = ""  # PO 模板 Item Number，SK/YM 取客户PO Material，其余同 item_line_no
+    cp_item: str = ""  # 客户PO "Item" 列值，SK/YM PI 模板 PO item Line Number 来源
 
 
 @dataclass(frozen=True)
@@ -67,21 +73,19 @@ class DocumentModel:
     lines: tuple[DocumentLine, ...]
     total_quantity: Decimal
     total_amount: Decimal
+    pi_no: str | None = None  # PI 编号，SK 用 E10 PO，YM 用 YM PO
     invoice_no: str | None = None
-    factory_doc_no: str | None = None
-    invoice_month: str | None = None
     total_carton_count: Decimal | None = None
     total_net_weight: Decimal | None = None
     total_gross_weight: Decimal | None = None
     total_cbm: Decimal | None = None
     ship_to: str | None = None
-    metadata: dict[str, str] = field(default_factory=dict)
+    manufacturer_address: str | None = None  # 客户PO "manufacturer" 列
+    ex_factory_date: date | None = None
 
 
 @dataclass(frozen=True)
 class BuildResult:
-    """build_*_model 的返回值。`model` 为 None 时 messages 包含阻断原因。"""
-
     model: DocumentModel | None
     messages: tuple[ValidationMessage, ...]
 
@@ -96,25 +100,28 @@ _Segment = tuple[str, str]
 def _assemble_lines(
     lines: tuple[OrderLine, ...],
     segment: _Segment,
-    invoice_month: str | None,
+    invoice_no: str | None,
     po_no: str,
     *,
     packing: bool = False,
+    use_po_record_description: bool = False,
+    seller: str = "",
 ) -> tuple[list[DocumentLine] | None, list[ValidationMessage]]:
-    """价格段校验 + 月度切片 + DocumentLine 装配（四类单据共用）。
+    """价格段校验 + INV# 过滤 + DocumentLine 装配（四类单据共用）。
 
     返回 (doc_lines, messages)。doc_lines 在阻断时为 None。
     `packing=True` 时，每行要求装箱数据完整，缺一项即阻断。
+    `use_po_record_description=True` 时，优先使用 PO record 的 DESCRIPTION。
     """
     messages: list[ValidationMessage] = []
 
-    sliced = _slice_by_month(lines, invoice_month)
-    if invoice_month is not None and not sliced:
+    sliced = _slice_by_invoice(lines, invoice_no)
+    if invoice_no is not None and not sliced:
         messages.append(
             ValidationMessage(
                 kind="blocking_error",
-                code=CODE_NO_SHIPMENT_IN_MONTH,
-                message=f"PO {po_no} 在月份 {invoice_month} 没有出货数据",
+                code=CODE_NO_SHIPMENT_FOR_INVOICE,
+                message=f"PO {po_no} 在 INV# {invoice_no} 下没有出货数据",
                 sheet=SHEET_PO_RECORD,
             )
         )
@@ -130,13 +137,12 @@ def _assemble_lines(
                     code=CODE_LINE_NOT_PRICED,
                     severity="high",
                     message=(
-                        f"行（SAP {original_line.sap}）在链段 {segment[0]}→{segment[1]} 下无单价，将显示占位符"
+                        f"行（SAP {original_line.sap}）在链段 {segment[0]}→{segment[1]} 下无单价"
                     ),
                     sheet=SHEET_PO_RECORD,
                     field="SAP Number",
                 )
             )
-            # Still create the line — renderer will write [缺:单价] placeholder
             unit_price = Decimal("0")
         amount = (unit_price * line_quantity).quantize(Decimal("0.01"))
 
@@ -148,20 +154,36 @@ def _assemble_lines(
                         kind="warning",
                         code=CODE_PACKING_DATA_MISSING,
                         severity="high",
-                        message=(
-                            f"行（SAP {original_line.sap}）缺少装箱数据：{', '.join(missing)}，将填 0"
-                        ),
+                        message=f"行（SAP {original_line.sap}）缺少装箱数据：{', '.join(missing)}，将填 0",
                         sheet=SHEET_PO_RECORD,
                         field=next(iter(missing)),
                     )
                 )
-                # Fall through — line is still created with zeros for missing packing fields
+
+        item_line_spec = resolve_line_field_spec("item_line_no", document_type="PI", seller=seller)
+        item_line_value = original_line.cp_item if item_line_spec.source_field == "item" else original_line.item_line_no
+        item_num_spec = resolve_line_field_spec("item_number", document_type="PI", seller=seller)
+        item_num_value = original_line.cp_item if item_num_spec.source_field == "item" else original_line.item_line_no
+
+        ex_factory_spec = resolve_line_field_spec("confirmed_ex_factory_date", document_type="PI", seller=seller)
+        if ex_factory_spec.source_sheet == SHEET_PO_RECORD:
+            ex_factory_date = original_line.po_ex_factory_date
+        else:
+            ex_factory_date = original_line.confirmed_ex_factory_date
 
         doc_lines.append(
             DocumentLine(
-                item_line_no=original_line.item_line_no,
+                po_no=original_line.po_no,
+                item_line_no=item_line_value,
+                item_number=item_num_value,
+                cp_item=original_line.cp_item,
                 sap=original_line.sap,
-                description=original_line.description,
+                description=(
+                    original_line.po_record_description
+                    if use_po_record_description and original_line.po_record_description
+                    else original_line.description
+                ),
+                category=original_line.category,
                 gs_model=original_line.product.gs_model,
                 quantity=line_quantity,
                 unit_price=unit_price,
@@ -171,6 +193,8 @@ def _assemble_lines(
                 net_weight=original_line.net_weight if packing else None,
                 gross_weight=original_line.gross_weight if packing else None,
                 cbm=original_line.total_cbm if packing else None,
+                confirmed_ex_factory_date=ex_factory_date,
+                po_ex_factory_date=original_line.po_ex_factory_date,
             )
         )
 
@@ -190,271 +214,222 @@ def _collect_missing_packing_fields(line: OrderLine) -> list[str]:
     return missing
 
 
+def _resolve_model_ex_factory_date(
+    lines: tuple[OrderLine, ...], document_type: str, seller: str,
+) -> date | None:
+    """根据 line_rules 的 seller 覆盖选择正确的出厂日期来源。"""
+    spec = resolve_line_field_spec("confirmed_ex_factory_date", document_type=document_type, seller=seller)
+    if spec.source_sheet == SHEET_PO_RECORD:
+        for line in lines:
+            if line.po_ex_factory_date is not None:
+                return line.po_ex_factory_date
+    for line in lines:
+        if line.confirmed_ex_factory_date is not None:
+            return line.confirmed_ex_factory_date
+    return None
+
+
 # —————————————————————————————————————
 # PI — Proforma Invoice
 # —————————————————————————————————————
 
-
 def build_pi_model(
     lines: tuple[OrderLine, ...],
-    *,
-    seller: str,
-    buyer: str,
-    po_no: str,
+    *, seller: str, buyer: str, po_no: str, pi_no: str | None = None,
 ) -> BuildResult:
-    """PI ：使用完整 PO 数量（产品方案 §10.3）。不查 INV# / FACTORY DOC NO.。"""
-    doc_lines, messages = _assemble_lines(
-        lines,
-        (seller, buyer),
-        invoice_month=None,
-        po_no=po_no,
-    )
+    """PI：使用完整 PO 数量。pi_no 默认为 po_no，SK 用 E10 PO，YM 用 YM PO。"""
+    doc_lines, messages = _assemble_lines(lines, (seller, buyer), invoice_no=None, po_no=po_no, seller=seller)
     if doc_lines is None:
         return BuildResult(model=None, messages=tuple(messages))
 
     total_qty = sum((dl.quantity for dl in doc_lines), Decimal(0))
     total_amt = sum((dl.amount for dl in doc_lines), Decimal(0))
     ship_to = _first_non_empty(line.ship_to for line in lines)
+    manufacturer_address = _first_non_empty(line.manufacturer_address for line in lines)
+    ex_factory_date = _resolve_model_ex_factory_date(lines, "PI", seller)
 
-    model = DocumentModel(
-        document_type="PI",
-        seller=seller,
-        buyer=buyer,
-        po_no=po_no,
-        lines=tuple(doc_lines),
-        total_quantity=total_qty,
-        total_amount=total_amt,
-        ship_to=ship_to,
+    return BuildResult(
+        model=DocumentModel(
+            document_type="PI", seller=seller, buyer=buyer, po_no=po_no,
+            pi_no=pi_no or po_no,
+            lines=tuple(doc_lines), total_quantity=total_qty, total_amount=total_amt,
+            ship_to=ship_to, manufacturer_address=manufacturer_address,
+            ex_factory_date=ex_factory_date,
+        ),
+        messages=tuple(messages),
     )
-    return BuildResult(model=model, messages=tuple(messages))
 
 
 # —————————————————————————————————————
 # PO — Purchase Order
 # —————————————————————————————————————
 
-
 def build_po_model(
     lines: tuple[OrderLine, ...],
-    *,
-    seller: str,
-    buyer: str,
-    po_no: str,
+    *, seller: str, buyer: str, po_no: str,
 ) -> BuildResult:
-    """PO ：与 PI 结构相同，使用完整 PO 数量。"""
-    doc_lines, messages = _assemble_lines(
-        lines,
-        (seller, buyer),
-        invoice_month=None,
-        po_no=po_no,
-    )
+    """PO：与 PI 结构相同，使用完整 PO 数量。"""
+    doc_lines, messages = _assemble_lines(lines, (seller, buyer), invoice_no=None, po_no=po_no, seller=seller)
     if doc_lines is None:
         return BuildResult(model=None, messages=tuple(messages))
 
     total_qty = sum((dl.quantity for dl in doc_lines), Decimal(0))
     total_amt = sum((dl.amount for dl in doc_lines), Decimal(0))
     ship_to = _first_non_empty(line.ship_to for line in lines)
+    manufacturer_address = _first_non_empty(line.manufacturer_address for line in lines)
+    ex_factory_date = _resolve_model_ex_factory_date(lines, "PO", seller)
 
-    model = DocumentModel(
-        document_type="PO",
-        seller=seller,
-        buyer=buyer,
-        po_no=po_no,
-        lines=tuple(doc_lines),
-        total_quantity=total_qty,
-        total_amount=total_amt,
-        ship_to=ship_to,
+    return BuildResult(
+        model=DocumentModel(
+            document_type="PO", seller=seller, buyer=buyer, po_no=po_no,
+            lines=tuple(doc_lines), total_quantity=total_qty, total_amount=total_amt,
+            ship_to=ship_to, manufacturer_address=manufacturer_address,
+            ex_factory_date=ex_factory_date,
+        ),
+        messages=tuple(messages),
     )
-    return BuildResult(model=model, messages=tuple(messages))
 
 
 # —————————————————————————————————————
 # Invoice
 # —————————————————————————————————————
 
-
 def build_invoice_model(
     lines: tuple[OrderLine, ...],
-    *,
-    seller: str,
-    buyer: str,
-    po_no: str,
-    invoice_month: str | None = None,
+    *, seller: str, buyer: str, po_no: str,
+    invoice_no: str | None = None,
 ) -> BuildResult:
-    """Invoice ：支持月度切片，要求 INV# + FACTORY DOC NO. 都存在。"""
+    """Invoice：按 INV# 过滤行，使用 SHIP QTY。"""
     segment = (seller, buyer)
     messages: list[ValidationMessage] = []
 
     doc_lines, assemble_msgs = _assemble_lines(
         lines,
         segment,
-        invoice_month=invoice_month,
+        invoice_no=invoice_no,
         po_no=po_no,
+        use_po_record_description=True,
+        seller=seller,
     )
     if assemble_msgs:
         messages.extend(assemble_msgs)
     if doc_lines is None:
         return BuildResult(model=None, messages=tuple(messages))
 
-    invoice_no = _first_non_empty(line.invoice_no for line in lines)
-    factory_doc_no = _first_non_empty(line.factory_doc_no for line in lines)
-    if not invoice_no:
+    inv_no = invoice_no or _first_non_empty(line.invoice_no for line in lines)
+    if not inv_no:
         messages.append(
             ValidationMessage(
-                kind="warning",
-                code=CODE_INVOICE_NO_MISSING,
-                severity="high",
+                kind="warning", code=CODE_INVOICE_NO_MISSING, severity="high",
                 message="Invoice 单据要求 INV#，但 PO record 中未填写",
-                sheet=SHEET_PO_RECORD,
-                field="INV#",
-            )
-        )
-    if not factory_doc_no:
-        messages.append(
-            ValidationMessage(
-                kind="warning",
-                code=CODE_FACTORY_DOC_NO_MISSING,
-                severity="high",
-                message="Invoice 单据要求 FACTORY DOC NO.，但 PO record 中未填写",
-                sheet=SHEET_PO_RECORD,
-                field="FACTORY DOC NO.",
+                sheet=SHEET_PO_RECORD, field="INV#",
             )
         )
 
     total_qty = sum((dl.quantity for dl in doc_lines), Decimal(0))
     total_amt = sum((dl.amount for dl in doc_lines), Decimal(0))
     ship_to = _first_non_empty(line.ship_to for line in lines)
+    manufacturer_address = _first_non_empty(line.manufacturer_address for line in lines)
+    ex_factory_date = _resolve_model_ex_factory_date(lines, "INVOICE", seller)
 
-    model = DocumentModel(
-        document_type="INVOICE",
-        seller=seller,
-        buyer=buyer,
-        po_no=po_no,
-        lines=tuple(doc_lines),
-        total_quantity=total_qty,
-        total_amount=total_amt,
-        invoice_no=invoice_no,
-        factory_doc_no=factory_doc_no,
-        invoice_month=invoice_month,
-        ship_to=ship_to,
+    return BuildResult(
+        model=DocumentModel(
+            document_type="INVOICE", seller=seller, buyer=buyer, po_no=po_no,
+            lines=tuple(doc_lines), total_quantity=total_qty, total_amount=total_amt,
+            invoice_no=inv_no, ship_to=ship_to, manufacturer_address=manufacturer_address,
+            ex_factory_date=ex_factory_date,
+        ),
+        messages=tuple(messages),
     )
-    return BuildResult(model=model, messages=tuple(messages))
 
 
 # —————————————————————————————————————
 # PL — Packing List
 # —————————————————————————————————————
 
-
 def build_pl_model(
     lines: tuple[OrderLine, ...],
-    *,
-    seller: str,
-    buyer: str,
-    po_no: str,
-    invoice_month: str | None = None,
+    *, seller: str, buyer: str, po_no: str,
+    invoice_no: str | None = None,
 ) -> BuildResult:
-    """PL ：与 Invoice 共享月度切片 + INV# 要求，额外要求装箱字段完整。
-
-    每行必须齐备 CTNS、N/W、G/W、TOTAL CBM（产品方案 §11 阻断）。
-    """
+    """PL：按 INV# 过滤，使用 SHIP QTY，额外要求装箱字段完整。"""
     segment = (seller, buyer)
     messages: list[ValidationMessage] = []
 
     doc_lines, assemble_msgs = _assemble_lines(
         lines,
         segment,
-        invoice_month=invoice_month,
+        invoice_no=invoice_no,
         po_no=po_no,
         packing=True,
+        use_po_record_description=True,
+        seller=seller,
     )
     if assemble_msgs:
         messages.extend(assemble_msgs)
     if doc_lines is None:
         return BuildResult(model=None, messages=tuple(messages))
 
-    invoice_no = _first_non_empty(line.invoice_no for line in lines)
-    factory_doc_no = _first_non_empty(line.factory_doc_no for line in lines)
-    if not invoice_no:
+    inv_no = invoice_no or _first_non_empty(line.invoice_no for line in lines)
+    if not inv_no:
         messages.append(
             ValidationMessage(
-                kind="warning",
-                code=CODE_INVOICE_NO_MISSING,
-                severity="high",
+                kind="warning", code=CODE_INVOICE_NO_MISSING, severity="high",
                 message="Packing List 要求 INV#，但 PO record 中未填写",
-                sheet=SHEET_PO_RECORD,
-                field="INV#",
-            )
-        )
-    if not factory_doc_no:
-        messages.append(
-            ValidationMessage(
-                kind="warning",
-                code=CODE_FACTORY_DOC_NO_MISSING,
-                severity="high",
-                message="Packing List 要求 FACTORY DOC NO.，但 PO record 中未填写",
-                sheet=SHEET_PO_RECORD,
-                field="FACTORY DOC NO.",
+                sheet=SHEET_PO_RECORD, field="INV#",
             )
         )
 
     total_qty = sum((dl.quantity for dl in doc_lines), Decimal(0))
     total_amt = sum((dl.amount for dl in doc_lines), Decimal(0))
-    total_carton = sum(
-        (dl.carton_count for dl in doc_lines if dl.carton_count is not None), Decimal(0)
-    )
+    total_carton = sum((dl.carton_count for dl in doc_lines if dl.carton_count is not None), Decimal(0))
     total_nw = sum((dl.net_weight for dl in doc_lines if dl.net_weight is not None), Decimal(0))
     total_gw = sum((dl.gross_weight for dl in doc_lines if dl.gross_weight is not None), Decimal(0))
     total_cbm = sum((dl.cbm for dl in doc_lines if dl.cbm is not None), Decimal(0))
     ship_to = _first_non_empty(line.ship_to for line in lines)
+    manufacturer_address = _first_non_empty(line.manufacturer_address for line in lines)
+    ex_factory_date = _resolve_model_ex_factory_date(lines, "PL", seller)
 
-    model = DocumentModel(
-        document_type="PL",
-        seller=seller,
-        buyer=buyer,
-        po_no=po_no,
-        lines=tuple(doc_lines),
-        total_quantity=total_qty,
-        total_amount=total_amt,
-        invoice_no=invoice_no,
-        factory_doc_no=factory_doc_no,
-        invoice_month=invoice_month,
-        ship_to=ship_to,
-        total_carton_count=total_carton,
-        total_net_weight=total_nw,
-        total_gross_weight=total_gw,
-        total_cbm=total_cbm,
+    return BuildResult(
+        model=DocumentModel(
+            document_type="PL", seller=seller, buyer=buyer, po_no=po_no,
+            lines=tuple(doc_lines), total_quantity=total_qty, total_amount=total_amt,
+            invoice_no=inv_no, ship_to=ship_to, manufacturer_address=manufacturer_address,
+            ex_factory_date=ex_factory_date,
+            total_carton_count=total_carton, total_net_weight=total_nw,
+            total_gross_weight=total_gw, total_cbm=total_cbm,
+        ),
+        messages=tuple(messages),
     )
-    return BuildResult(model=model, messages=tuple(messages))
 
 
 # —————————————————————————————————————
 # helpers
 # —————————————————————————————————————
 
-
-def _slice_by_month(
+def _slice_by_invoice(
     lines: tuple[OrderLine, ...],
-    invoice_month: str | None,
+    invoice_no: str | None,
 ) -> list[tuple[OrderLine, Decimal]]:
-    """按月份切片，返回 (原行, 该月数量) 列表。
+    """按 INV# 过滤，返回 (原行, 数量) 列表。
 
-    invoice_month 为 None 时返回每行的完整 quantity。
-    某行该月无出货时被剔除。
+    invoice_no 为 None 时返回每行的完整 quantity（PI/PO 用）。
+    invoice_no 指定时，返回匹配行的 ship_qty（Invoice/PL 用）。
     """
-    if invoice_month is None:
+    if invoice_no is None:
         return [(line, line.quantity) for line in lines]
     out: list[tuple[OrderLine, Decimal]] = []
     for line in lines:
-        amount = line.monthly_shipments.get(invoice_month)
-        if amount is None or amount == 0:
+        if line.invoice_no != invoice_no:
             continue
-        out.append((line, amount))
+        qty = line.ship_qty or Decimal("0")
+        if qty == 0:
+            continue
+        out.append((line, qty))
     return out
 
 
 def _first_non_empty(values: object) -> str | None:
-    """从迭代器中取首个非空字符串；都没有则返回 None。"""
     for v in values:  # type: ignore[attr-defined]
         if v:
             return str(v)
@@ -462,10 +437,9 @@ def _first_non_empty(values: object) -> str | None:
 
 
 __all__ = [
-    "CODE_FACTORY_DOC_NO_MISSING",
     "CODE_INVOICE_NO_MISSING",
     "CODE_LINE_NOT_PRICED",
-    "CODE_NO_SHIPMENT_IN_MONTH",
+    "CODE_NO_SHIPMENT_FOR_INVOICE",
     "CODE_PACKING_DATA_MISSING",
     "BuildResult",
     "DocumentLine",

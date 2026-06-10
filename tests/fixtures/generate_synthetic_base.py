@@ -225,6 +225,85 @@ PO_RECORD_ROWS: list[dict[str, Any]] = [
     },
 ]
 
+# ————————————————————————————————————————
+# 客户PO数据
+# ————————————————————————————————————————
+
+CUSTOMER_PO_HEADER = [
+    "Purchasing Document",
+    "Item",
+    "Purchasing Doc. Type",
+    "Item Category",
+    "Purch. Doc. Category",
+    "Purchasing Group",
+    "Document Date",
+    "Vendor/supplying plant",
+    "Material",
+    "Old Material #",
+    "Short Text",
+    "Plant",
+    "Deletion Indicator",
+    "Order Quantity",
+    "Order Unit",
+    "Net price",
+    "Currency",
+    "Price Unit",
+    "Still to be delivered (qty)",
+    "Confirm. Category",
+    "Delivery Date",
+    "Ship Date",
+    "order date",
+    "ship to",
+    "manufacturer",
+    "final destination",
+]
+
+CUSTOMER_PO_ROWS: list[dict[str, Any]] = [
+    # 与 PO 4500030844 / 4500099999 关联的客户PO行
+    {
+        "Purchasing Document": "4500030844",
+        "Item": "00010",
+        "Material": "21-44640",
+        "Short Text": "CB2500.B2 Combo",
+        "Order Quantity": 240,
+        "Order Unit": "PCS",
+        "Net price": 38.0,
+        "Currency": "USD",
+        "Delivery Date": "2026-05-20",
+        "ship to": "Rather Outdoors Corporation",
+        "manufacturer": "E MAX SPORT PTE. LTD.",
+        "final destination": "USA",
+    },
+    {
+        "Purchasing Document": "4500030844",
+        "Item": "00020",
+        "Material": "21-44641",
+        "Short Text": "CR3000.B2 Rod",
+        "Order Quantity": 120,
+        "Order Unit": "PCS",
+        "Net price": 26.0,
+        "Currency": "USD",
+        "Delivery Date": "2026-05-20",
+        "ship to": "Rather Outdoors Corporation",
+        "manufacturer": "E MAX SPORT PTE. LTD.",
+        "final destination": "USA",
+    },
+    {
+        "Purchasing Document": "4500099999",
+        "Item": "00010",
+        "Material": "21-44640",
+        "Short Text": "CB2500.B2 Combo",
+        "Order Quantity": 100,
+        "Order Unit": "PCS",
+        "Net price": 38.0,
+        "Currency": "USD",
+        "Delivery Date": "2026-03-20",
+        "ship to": "EMAX HQ",
+        "manufacturer": "E MAX SPORT PTE. LTD.",
+        "final destination": "USA",
+    },
+]
+
 
 # ————————————————————————————————————————
 # 写盘
@@ -244,6 +323,9 @@ def build_workbook() -> Workbook:
     ws_po = wb.create_sheet("PO record")
     _write_sheet(ws_po, PO_RECORD_HEADER, PO_RECORD_ROWS)
 
+    ws_cp = wb.create_sheet("客户PO")
+    _write_sheet(ws_cp, CUSTOMER_PO_HEADER, CUSTOMER_PO_ROWS, header_row=1, first_data_row=2)
+
     return wb
 
 
@@ -260,15 +342,17 @@ def _write_sheet(
     ws: Worksheet,
     headers: list[str],
     rows: list[dict[str, Any]],
+    header_row: int = 4,
+    first_data_row: int = 5,
 ) -> None:
-    """3 行空 + 表头第 4 行 + 数据从第 5 行开始（与产品方案 §9 一致）。"""
+    """写入 sheet 表头和数据。默认表头第 4 行 + 数据第 5 行（与产品方案 §9 一致）。"""
     for c_idx, header in enumerate(headers, start=1):
-        ws.cell(row=4, column=c_idx, value=header)
+        ws.cell(row=header_row, column=c_idx, value=header)
     for r_offset, row in enumerate(rows):
         for c_idx, header in enumerate(headers, start=1):
             value = row.get(header)
             if value is not None:
-                ws.cell(row=5 + r_offset, column=c_idx, value=value)
+                ws.cell(row=first_data_row + r_offset, column=c_idx, value=value)
 
 
 # ————————————————————————————————————————

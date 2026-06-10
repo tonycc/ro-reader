@@ -87,11 +87,6 @@ def cli_entry() -> None:
     sys.exit(main())
 
 
-# pyproject.toml 已声明 entry: ro_generator.cli:main，提供别名兼容
-def _legacy_main_alias() -> None:  # pragma: no cover
-    cli_entry()
-
-
 # —————————————————————————————————————
 # 参数解析
 # —————————————————————————————————————
@@ -115,7 +110,6 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--seller", default=None)
     parser.add_argument("--buyer", default=None)
-    parser.add_argument("--invoice-month", dest="invoice_month", default=None)
     parser.add_argument("--invoice-no", dest="invoice_no", default=None)
     parser.add_argument(
         "--output-format",
@@ -169,8 +163,6 @@ def _build_request(args: argparse.Namespace) -> DocumentRequest:
         raw["seller"] = args.seller
     if args.buyer is not None:
         raw["buyer"] = args.buyer
-    if args.invoice_month is not None:
-        raw["invoice_month"] = args.invoice_month
     if args.invoice_no is not None:
         raw["invoice_no"] = args.invoice_no
     if args.output_format is not None:
@@ -208,7 +200,6 @@ def _build_request(args: argparse.Namespace) -> DocumentRequest:
         documents=tuple(documents_upper),  # type: ignore[arg-type]
         seller=_optional_str(raw.get("seller")),
         buyer=_optional_str(raw.get("buyer")),
-        invoice_month=_optional_str(raw.get("invoice_month")),
         invoice_no=_optional_str(raw.get("invoice_no")),
         output_format=output_format,
         output_dir=str(raw.get("output_dir") or "outputs"),

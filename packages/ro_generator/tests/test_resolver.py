@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from ro_generator.models import OrderLine
 from ro_generator.resolver import (
     CODE_FORMULA_FALLBACK,
@@ -25,7 +25,7 @@ from ro_generator.schema import (
     ENTITY_EMAX_PTE,
     ENTITY_GS_PTE,
     ENTITY_PF,
-    ENTITY_SK_YM,
+    ENTITY_YM,
 )
 from ro_generator.workbook_reader import WorkbookReader
 
@@ -33,7 +33,7 @@ from ro_generator.workbook_reader import WorkbookReader
 # Fixture builders
 # ————————————————————————————————————————
 
-# DATA BASE 默认表头：覆盖必需字段 + Phase 1 实际读到的物流字段
+# DATA BASE 默认表头：覆盖必需字段及物流字段
 DATA_BASE_HEADER: list[Any] = [
     "SAP",
     "Material Description",
@@ -41,6 +41,9 @@ DATA_BASE_HEADER: list[Any] = [
     "MOQ",
     "FOB LT",
     "GS MODEL",
+    "GS-SK/YM COMBO FOB 2026",
+    "EMAX-GS PTE COMBO FOB 2026",
+    "EMAX PTE COMBO FOB 2026",
     "品牌",
     "RFID",
     "包装",
@@ -55,7 +58,7 @@ DATA_BASE_HEADER: list[Any] = [
     "主件编号",
 ]
 
-# PO record 默认表头：覆盖必需字段 + Phase 1 用到的所有列
+# PO record 默认表头：覆盖所需的所有列
 PO_RECORD_HEADER: list[Any] = [
     "SHIP TO",
     "PO NO.",
@@ -64,18 +67,19 @@ PO_RECORD_HEADER: list[Any] = [
     "DESCRIPTION",
     "BRAND",
     "FINALQTY",
-    "SK/YM USD FOB",
-    "GS PTE FOB",
+    "GS-SK/YM USD FOB",
+    "EMAX-GS PTE FOB",
     "EMAX PTE",
     "INV#",
-    "FACTORY DOC NO.",
+    "SHIP QTY",
     "CTNS",
     "N/W",
     "G/W",
     "TOTAL CBM",
-    "外箱",
-    *[f"26{m:02d}" for m in range(1, 13)],
+    "外箱(最终出口装箱率)",
 ]
+
+CUSTOMER_PO_HEADER: list[Any] = ["Purchasing Document", "Material", "ship to", "Order Quantity"]
 
 
 def make_base_file(
@@ -83,6 +87,7 @@ def make_base_file(
     *,
     data_base_rows: list[dict[str, Any]] | None = None,
     po_record_rows: list[dict[str, Any]] | None = None,
+    customer_po_rows: list[dict[str, Any]] | None = None,
 ) -> Path:
     """构造合成 base 文件。每行用 dict 给定，未填字段补 None。"""
     wb = Workbook()
@@ -96,20 +101,46 @@ def make_base_file(
     ws_po = wb.create_sheet("PO record")
     _write_sheet(ws_po, PO_RECORD_HEADER, po_record_rows or [])
 
+    ws_cp = wb.create_sheet("客户PO")
+    _write_sheet(
+        ws_cp,
+        CUSTOMER_PO_HEADER,
+        customer_po_rows if customer_po_rows is not None else _default_customer_po_rows(po_record_rows or []),
+        header_row=1,
+        first_data_row=2,
+    )
+
     path = tmp_path / "base.xlsx"
     wb.save(path)
     return path
 
 
-def _write_sheet(ws: Any, headers: list[Any], rows: list[dict[str, Any]]) -> None:
-    """3 行空 + 表头第 4 行 + 数据从第 5 行开始。"""
+def _write_sheet(ws: Any, headers: list[Any], rows: list[dict[str, Any]],
+                 header_row: int = 4, first_data_row: int = 5) -> None:
+    """写入 sheet 表头和数据。"""
     for c_idx, header in enumerate(headers, start=1):
-        ws.cell(row=4, column=c_idx, value=header)
+        ws.cell(row=header_row, column=c_idx, value=header)
     for r_offset, row in enumerate(rows):
         for c_idx, header in enumerate(headers, start=1):
             value = row.get(header)
             if value is not None:
-                ws.cell(row=5 + r_offset, column=c_idx, value=value)
+                ws.cell(row=first_data_row + r_offset, column=c_idx, value=value)
+
+
+def _default_customer_po_rows(po_record_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for row in po_record_rows:
+        po_no = row.get("PO NO.")
+        material = row.get("SAP Number")
+        if po_no is None or material is None:
+            continue
+        rows.append({
+            "Purchasing Document": po_no,
+            "Material": material,
+            "ship to": "Customer PO Ship To",
+            "Order Quantity": row.get("FINALQTY", 100),
+        })
+    return rows
 
 
 # 一个常见 DATA BASE 产品定义：combo 类，包装齐全
@@ -118,6 +149,9 @@ COMBO_PRODUCT = {
     "Material Description": "CB2500.B2",
     "Category": 1,
     "GS MODEL": "Q1",
+    "GS-SK/YM COMBO FOB 2026": Decimal("28.0"),
+    "EMAX-GS PTE COMBO FOB 2026": Decimal("32.8"),
+    "EMAX PTE COMBO FOB 2026": Decimal("38.0"),
     "品牌": "Quantum",
     "round value": 24,
     "N/W": Decimal("12.5"),
@@ -137,12 +171,12 @@ def basic_po_row(**overrides: Any) -> dict[str, Any]:
         "DESCRIPTION": "CB2500.B2",
         "BRAND": "Quantum",
         "FINALQTY": 100,
-        "SK/YM USD FOB": Decimal("28.0"),
-        "GS PTE FOB": Decimal("32.8"),
+        "GS-SK/YM USD FOB": Decimal("28.0"),
+        "EMAX-GS PTE FOB": Decimal("32.8"),
         "EMAX PTE": Decimal("38.0"),
         "INV#": "INV-001",
-        "FACTORY DOC NO.": "FDOC-001",
-        "外箱": 24,
+        "SHIP QTY": 100,
+        "外箱(最终出口装箱率)": 24,
     }
     base.update(overrides)
     return base
@@ -185,7 +219,7 @@ class TestPoLookup:
         assert line.quantity == Decimal("100")
         assert line.category == 1
         assert line.invoice_no == "INV-001"
-        assert line.factory_doc_no == "FDOC-001"
+        assert line.invoice_no == "INV-001"
 
     def test_multiple_po_rows_resolved_in_order(self, tmp_path: Path) -> None:
         path = make_base_file(
@@ -205,6 +239,107 @@ class TestPoLookup:
         assert result.lines[0].sap == "21-44640"
         assert result.lines[1].sap == "21-44641"
         assert result.lines[1].quantity == Decimal("200")
+
+    def test_ship_to_reads_from_customer_po_material_match(self, tmp_path: Path) -> None:
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[basic_po_row(**{"SHIP TO": "PO Record Ship To"})],
+            customer_po_rows=[{
+                "Purchasing Document": "4500030844",
+                "Material": "21-44640",
+                "ship to": "Customer PO Ship To",
+                "Order Quantity": 100,
+            }],
+        )
+        with WorkbookReader(path) as reader:
+            result = resolve_po_lines(reader, "4500030844")
+        assert result.lines[0].ship_to == "Customer PO Ship To"
+
+    def test_item_line_no_reads_from_customer_po_material(self, tmp_path: Path) -> None:
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[basic_po_row(**{"ITEM LINE#": "10"})],
+            customer_po_rows=[{
+                "Purchasing Document": "4500030844",
+                "Material": "CP-MATERIAL-001",
+                "ship to": "Customer PO Ship To",
+                "Order Quantity": 100,
+            }],
+        )
+        with WorkbookReader(path) as reader:
+            result = resolve_po_lines(reader, "4500030844")
+        assert result.lines[0].item_line_no == "CP-MATERIAL-001"
+
+    def test_description_reads_from_data_base_material_description(self, tmp_path: Path) -> None:
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[basic_po_row(**{"DESCRIPTION": "PO Record Description"})],
+        )
+        with WorkbookReader(path) as reader:
+            result = resolve_po_lines(reader, "4500030844")
+        assert result.lines[0].description == "CB2500.B2"
+
+    def test_quantity_reads_from_customer_po_order_quantity(self, tmp_path: Path) -> None:
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[basic_po_row(FINALQTY=100)],
+            customer_po_rows=[{
+                "Purchasing Document": "4500030844",
+                "Material": "21-44640",
+                "ship to": "Customer PO Ship To",
+                "Order Quantity": 240,
+            }],
+        )
+        with WorkbookReader(path) as reader:
+            result = resolve_po_lines(reader, "4500030844")
+        assert result.lines[0].quantity == Decimal("240")
+
+    def test_prices_read_from_data_base_price_matrix(self, tmp_path: Path) -> None:
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[{
+                **COMBO_PRODUCT,
+                "EMAX-GS PTE COMBO FOB 2026": Decimal("66.6"),
+                "EMAX PTE COMBO FOB 2026": Decimal("88.8"),
+            }],
+            po_record_rows=[basic_po_row(**{
+                "EMAX-GS PTE FOB": Decimal("32.8"),
+                "EMAX PTE": Decimal("38.0"),
+            })],
+        )
+        with WorkbookReader(path) as reader:
+            result = resolve_po_lines(reader, "4500030844")
+        line = result.lines[0]
+        assert line.prices[(ENTITY_GS_PTE, ENTITY_EMAX_PTE)] == Decimal("66.6")
+        assert line.prices[(ENTITY_EMAX_PTE, ENTITY_PF)] == Decimal("88.8")
+
+    def test_ship_to_falls_back_to_same_po_first_non_empty_customer_po_value(self, tmp_path: Path) -> None:
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[basic_po_row(**{"SHIP TO": "PO Record Ship To"})],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Material": "OTHER-MATERIAL",
+                    "ship to": None,
+                    "Order Quantity": None,
+                },
+                {
+                    "Purchasing Document": "4500030844",
+                    "Material": "DIFFERENT-MATERIAL",
+                    "ship to": "Fallback Customer Ship To",
+                    "Order Quantity": 100,
+                },
+            ],
+        )
+        with WorkbookReader(path) as reader:
+            result = resolve_po_lines(reader, "4500030844")
+        assert result.lines[0].ship_to == "Fallback Customer Ship To"
 
 
 # ————————————————————————————————————————
@@ -270,7 +405,13 @@ class TestQty:
         path = make_base_file(
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
-            po_record_rows=[basic_po_row(FINALQTY=None)],
+            po_record_rows=[basic_po_row(FINALQTY=100)],
+            customer_po_rows=[{
+                "Purchasing Document": "4500030844",
+                "Material": "21-44640",
+                "ship to": "Customer PO Ship To",
+                "Order Quantity": None,
+            }],
         )
         with WorkbookReader(path) as reader:
             result = resolve_po_lines(reader, "4500030844")
@@ -282,7 +423,13 @@ class TestQty:
         path = make_base_file(
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
-            po_record_rows=[basic_po_row(FINALQTY="abc")],
+            po_record_rows=[basic_po_row(FINALQTY=100)],
+            customer_po_rows=[{
+                "Purchasing Document": "4500030844",
+                "Material": "21-44640",
+                "ship to": "Customer PO Ship To",
+                "Order Quantity": "abc",
+            }],
         )
         with WorkbookReader(path) as reader:
             result = resolve_po_lines(reader, "4500030844")
@@ -305,7 +452,7 @@ class TestPrices:
         with WorkbookReader(path) as reader:
             result = resolve_po_lines(reader, "4500030844")
         line = result.lines[0]
-        assert line.prices[(ENTITY_SK_YM, ENTITY_GS_PTE)] == Decimal("28.0")
+        assert line.prices[(ENTITY_YM, ENTITY_GS_PTE)] == Decimal("28.0")
         assert line.prices[(ENTITY_GS_PTE, ENTITY_EMAX_PTE)] == Decimal("32.8")
         assert line.prices[(ENTITY_EMAX_PTE, ENTITY_PF)] == Decimal("38.0")
 
@@ -318,45 +465,39 @@ class TestPrices:
         with WorkbookReader(path) as reader:
             result = resolve_po_lines(reader, "4500030844")
         line = result.lines[0]
-        assert line.subtotals[(ENTITY_SK_YM, ENTITY_GS_PTE)] == Decimal("2800.00")
+        assert line.subtotals[(ENTITY_YM, ENTITY_GS_PTE)] == Decimal("2800.00")
         assert line.subtotals[(ENTITY_GS_PTE, ENTITY_EMAX_PTE)] == Decimal("3280.00")
         assert line.subtotals[(ENTITY_EMAX_PTE, ENTITY_PF)] == Decimal("3800.00")
 
     def test_only_one_segment_priced(self, tmp_path: Path) -> None:
         path = make_base_file(
             tmp_path,
-            data_base_rows=[COMBO_PRODUCT],
-            po_record_rows=[
-                basic_po_row(
-                    **{
-                        "SK/YM USD FOB": None,
-                        "GS PTE FOB": Decimal("32.8"),
-                        "EMAX PTE": None,
-                    }
-                )
-            ],
+            data_base_rows=[{
+                **COMBO_PRODUCT,
+                "GS-SK/YM COMBO FOB 2026": None,
+                "EMAX-GS PTE COMBO FOB 2026": Decimal("32.8"),
+                "EMAX PTE COMBO FOB 2026": None,
+            }],
+            po_record_rows=[basic_po_row()],
         )
         with WorkbookReader(path) as reader:
             result = resolve_po_lines(reader, "4500030844")
         line = result.lines[0]
         assert (ENTITY_GS_PTE, ENTITY_EMAX_PTE) in line.prices
-        assert (ENTITY_SK_YM, ENTITY_GS_PTE) not in line.prices
+        assert (ENTITY_YM, ENTITY_GS_PTE) not in line.prices
         assert (ENTITY_EMAX_PTE, ENTITY_PF) not in line.prices
 
     def test_no_prices_warns_but_still_resolves(self, tmp_path: Path) -> None:
         """缺价格→high warning，仍创建 OrderLine（prices={}）。"""
         path = make_base_file(
             tmp_path,
-            data_base_rows=[COMBO_PRODUCT],
-            po_record_rows=[
-                basic_po_row(
-                    **{
-                        "SK/YM USD FOB": None,
-                        "GS PTE FOB": None,
-                        "EMAX PTE": None,
-                    }
-                )
-            ],
+            data_base_rows=[{
+                **COMBO_PRODUCT,
+                "GS-SK/YM COMBO FOB 2026": None,
+                "EMAX-GS PTE COMBO FOB 2026": None,
+                "EMAX PTE COMBO FOB 2026": None,
+            }],
+            po_record_rows=[basic_po_row()],
         )
         with WorkbookReader(path) as reader:
             result = resolve_po_lines(reader, "4500030844")
@@ -378,34 +519,22 @@ class TestPrices:
 # ————————————————————————————————————————
 
 
-class TestMonthlyShipments:
-    def test_only_nonzero_months_kept(self, tmp_path: Path) -> None:
-        row = basic_po_row(
-            FINALQTY=300,
-            **{"2601": 100, "2602": 200, "2603": 0, "2604": None},
-        )
-        path = make_base_file(
-            tmp_path,
-            data_base_rows=[COMBO_PRODUCT],
-            po_record_rows=[row],
-        )
+class TestShipQty:
+    def test_ship_qty_read(self, tmp_path: Path) -> None:
+        row = basic_po_row(**{"SHIP QTY": 200})
+        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[row])
         with WorkbookReader(path) as reader:
             result = resolve_po_lines(reader, "4500030844")
         line = result.lines[0]
-        assert set(line.monthly_shipments.keys()) == {"2601", "2602"}
-        assert line.monthly_shipments["2601"] == Decimal("100")
-        assert line.monthly_shipments["2602"] == Decimal("200")
+        assert line.ship_qty == Decimal("200")
 
-    def test_no_monthly_shipments_results_in_empty_dict(self, tmp_path: Path) -> None:
-        path = make_base_file(
-            tmp_path,
-            data_base_rows=[COMBO_PRODUCT],
-            po_record_rows=[basic_po_row()],
-        )
+    def test_ship_qty_none_when_not_provided(self, tmp_path: Path) -> None:
+        row = basic_po_row(**{"SHIP QTY": None})
+        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[row])
         with WorkbookReader(path) as reader:
             result = resolve_po_lines(reader, "4500030844")
         line = result.lines[0]
-        assert line.monthly_shipments == {}
+        assert line.ship_qty is None
 
 
 # ————————————————————————————————————————
@@ -463,6 +592,36 @@ class TestFormulaFallback:
             m for m in result.messages if m.code == CODE_FORMULA_FALLBACK and m.field == "TOTAL CBM"
         ]
         assert len(fallback_msgs) == 1
+
+    def test_zero_net_weight_and_gross_weight_are_preserved(self, tmp_path: Path) -> None:
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[basic_po_row(**{"N/W": Decimal("0"), "G/W": Decimal("0")})],
+        )
+        with WorkbookReader(path) as reader:
+            result = resolve_po_lines(reader, "4500030844")
+        line = result.lines[0]
+        assert line.net_weight == Decimal("0")
+        assert line.gross_weight == Decimal("0")
+
+    def test_total_cbm_preserves_source_decimal_places(self, tmp_path: Path) -> None:
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[basic_po_row(**{"TOTAL CBM": 1.2})],
+        )
+        wb = load_workbook(path)
+        ws = wb["PO record"]
+        total_cbm_col = PO_RECORD_HEADER.index("TOTAL CBM") + 1
+        ws.cell(row=5, column=total_cbm_col).number_format = "0.0000"
+        wb.save(path)
+        wb.close()
+
+        with WorkbookReader(path) as reader:
+            result = resolve_po_lines(reader, "4500030844")
+        line = result.lines[0]
+        assert line.total_cbm == Decimal("1.2000")
 
 
 # ————————————————————————————————————————

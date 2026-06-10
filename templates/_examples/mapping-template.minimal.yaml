@@ -1,0 +1,58 @@
+# Example only. Do not use this file as a production mapping directly.
+# Start from this skeleton when creating a new mapping.
+
+document: invoice
+template_version: "2026.06"
+template: templates/<entity>/<document>.xlsx
+sheet: <worksheet name>
+
+header:
+  invoice_no: H6
+  invoice_date: H7
+  ship_to: A12
+
+header_fixed:
+  payment_terms: <fixed header value>
+
+# Optional. Use only when there is a real table header row above start_row.
+table_header_row: 17
+
+lines:
+  start_row: 18
+  # Must point to a real data-style row, not a header row.
+  style_source_row: 18
+  row_fixed:
+    G: PCS
+  columns:
+    description: C
+    unit_price: E
+    quantity: F
+    amount: H
+
+totals:
+  amount: H27
+
+style:
+  bold:
+    - A1
+
+preview_content:
+  title: <preview title>
+  static_terms:
+    incoterm: <preview-only term>
+  notes: []
+  column_labels:
+    description: DESCRIPTION
+    unit_price: UNIT PRICE
+    quantity: QTY
+    amount: AMOUNT
+  seller_info:
+    - <seller line 1>
+  layout:
+    top:
+      left: [seller_info]
+      center: [title]
+      right: []
+    info:
+      left: [ship_to]
+      right: [invoice_no, terms]

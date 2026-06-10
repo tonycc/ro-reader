@@ -16,19 +16,12 @@ uv sync --group build-launcher 2>/dev/null || uv pip install pyinstaller
 
 echo "==> Building launcher for $PLATFORM..."
 
-# The launcher imports ro_workbench_launcher which depends on ro_workbench_api,
-# so we need to ensure all workspace packages are importable.
-PYTHONPATH="$ROOT/packages/ro_generator/src:$ROOT/packages/ro_workbench_api/src:$ROOT/packages/ro_workbench_launcher/src"
-export PYTHONPATH
+if [[ ! -d "$ROOT/frontend/dist" ]]; then
+    echo "frontend/dist 不存在，请先在 frontend/ 下执行 pnpm run build" >&2
+    exit 1
+fi
 
-pyinstaller \
-    --onefile \
-    --name "RO Workbench" \
-    --add-data "$ROOT/packages/ro_workbench_launcher/src/ro_workbench_launcher/_placeholder_server.py:ro_workbench_launcher" \
-    --hidden-import ro_workbench_launcher \
-    --hidden-import ro_generator \
-    $([[ "$PLATFORM" == "Darwin" ]] && echo "--windowed") \
-    "$ROOT/packages/ro_workbench_launcher/src/ro_workbench_launcher/launcher.py"
+uv run pyinstaller "$ROOT/packages/ro_workbench_launcher/ro-workbench.spec" --noconfirm
 
 # PyInstaller outputs to dist/ in cwd; move to package dir
 mv "$ROOT/dist/RO Workbench" "$DIST/" 2>/dev/null || true

@@ -47,26 +47,45 @@ PO_RECORD_HEADER = [
     "SAP Number",
     "DESCRIPTION",
     "FINALQTY",
-    "SK/YM USD FOB",
-    "GS PTE FOB",
+    "GS-SK/YM USD FOB",
+    "EMAX-GS PTE FOB",
     "EMAX PTE",
     "INV#",
-    "FACTORY DOC NO.",
+    "SHIP QTY",
     "CTNS",
     "TOTAL CBM",
-    "外箱",
-    *[f"26{m:02d}" for m in range(1, 13)],
+    "外箱(最终出口装箱率)",
+    "N/W",
+    "G/W",
 ]
 
+CUSTOMER_PO_HEADER = ["Purchasing Document", "Material", "Order Quantity"]
 
-def _write_sheet(ws: Any, headers: list[str], rows: list[dict[str, Any]]) -> None:
+
+def _write_sheet(ws: Any, headers: list[str], rows: list[dict[str, Any]],
+                 header_row: int = 4, first_data_row: int = 5) -> None:
     for c_idx, header in enumerate(headers, start=1):
-        ws.cell(row=4, column=c_idx, value=header)
+        ws.cell(row=header_row, column=c_idx, value=header)
     for r_offset, row in enumerate(rows):
         for c_idx, header in enumerate(headers, start=1):
             value = row.get(header)
             if value is not None:
-                ws.cell(row=5 + r_offset, column=c_idx, value=value)
+                ws.cell(row=first_data_row + r_offset, column=c_idx, value=value)
+
+
+def _default_customer_po_rows(po_record_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for row in po_record_rows:
+        po_no = row.get("PO NO.")
+        material = row.get("SAP Number")
+        if po_no is None or material is None:
+            continue
+        rows.append({
+            "Purchasing Document": po_no,
+            "Material": material,
+            "Order Quantity": row.get("FINALQTY", 100),
+        })
+    return rows
 
 
 def make_base_file(tmp_path: Path) -> Path:
@@ -102,17 +121,34 @@ def make_base_file(tmp_path: Path) -> Path:
                 "SAP Number": "21-44640",
                 "DESCRIPTION": "CB2500.B2",
                 "FINALQTY": 100,
-                "SK/YM USD FOB": Decimal("28.0"),
-                "GS PTE FOB": Decimal("32.8"),
+                "GS-SK/YM USD FOB": Decimal("28.0"),
+                "EMAX-GS PTE FOB": Decimal("32.8"),
                 "EMAX PTE": Decimal("38.0"),
                 "INV#": "INV-001",
-                "FACTORY DOC NO.": "FDOC-001",
-                "外箱": 24,
+                "SHIP QTY": 100,
+                "外箱(最终出口装箱率)": 24,
                 "CTNS": 5,
                 "TOTAL CBM": Decimal("0.36"),
-                "2601": 100,
+                "N/W": Decimal("8.5"),
+                "G/W": Decimal("10.1"),
             }
         ],
+    )
+    ws_cp = wb.create_sheet("客户PO")
+    _write_sheet(
+        ws_cp,
+        CUSTOMER_PO_HEADER,
+        _default_customer_po_rows(
+            [
+                {
+                    "PO NO.": "4500030844",
+                    "SAP Number": "21-44640",
+                    "FINALQTY": 100,
+                }
+            ]
+        ),
+        header_row=1,
+        first_data_row=2,
     )
     path = tmp_path / "base.xlsx"
     wb.save(path)
@@ -147,8 +183,8 @@ class TestSuccess:
                 "GS PTE",
                 "--buyer",
                 "EMAX PTE",
-                "--invoice-month",
-                "2601",
+                "--invoice-no",
+                "INV-001",
                 "--output-dir",
                 str(out_dir),
             ]
@@ -171,8 +207,8 @@ class TestSuccess:
                 "GS PTE",
                 "--buyer",
                 "EMAX PTE",
-                "--invoice-month",
-                "2601",
+                "--invoice-no",
+                "INV-001",
                 "--output-dir",
                 str(out_dir),
                 "--json",
@@ -206,8 +242,8 @@ class TestSuccess:
                 "GS PTE",
                 "--buyer",
                 "EMAX PTE",
-                "--invoice-month",
-                "2601",
+                "--invoice-no",
+                "INV-001",
                 "--output-dir",
                 str(out_dir),
                 "--json",
@@ -239,7 +275,7 @@ class TestInputFile:
                     "documents": ["INVOICE"],
                     "seller": "GS PTE",
                     "buyer": "EMAX PTE",
-                    "invoice_month": "2601",
+                    "invoice_no": "INV-001",
                     "output_dir": str(out_dir),
                 }
             ),
@@ -263,7 +299,7 @@ class TestInputFile:
                     "documents": ["INVOICE"],
                     "seller": "GS PTE",
                     "buyer": "EMAX PTE",
-                    "invoice_month": "2601",
+                    "invoice_no": "INV-001",
                     "output_dir": str(out_dir),
                 }
             ),
@@ -347,8 +383,8 @@ class TestErrorExitCode:
                 "GS PTE",
                 "--buyer",
                 "EMAX PTE",
-                "--invoice-month",
-                "2601",
+                "--invoice-no",
+                "INV-001",
                 "--output-dir",
                 str(out_dir),
             ]
@@ -371,8 +407,8 @@ class TestErrorExitCode:
                 "GS PTE",
                 "--buyer",
                 "EMAX PTE",
-                "--invoice-month",
-                "2601",
+                "--invoice-no",
+                "INV-001",
                 "--output-dir",
                 str(out_dir),
                 "--json",
@@ -421,18 +457,30 @@ class TestNeedsInputExitCode:
                     "ITEM LINE#": "10",
                     "SAP Number": "21-44640",
                     "FINALQTY": 300,
-                    "SK/YM USD FOB": Decimal("28.0"),
-                    "GS PTE FOB": Decimal("32.8"),
+                    "GS-SK/YM USD FOB": Decimal("28.0"),
+                    "EMAX-GS PTE FOB": Decimal("32.8"),
                     "EMAX PTE": Decimal("38.0"),
                     "INV#": "INV-001",
-                    "FACTORY DOC NO.": "FDOC-001",
+                    "SHIP QTY": 300,
                     "CTNS": 12,
                     "TOTAL CBM": Decimal("0.86"),
-                    "外箱": 24,
-                    "2601": 100,
-                    "2602": 200,
+                    "外箱(最终出口装箱率)": 24,
                 }
             ],
+        )
+        ws_cp = wb.create_sheet("客户PO")
+        _write_sheet(
+            ws_cp,
+            CUSTOMER_PO_HEADER,
+            [
+                {
+                    "Purchasing Document": "4500030844",
+                    "Material": "21-44640",
+                    "Order Quantity": 300,
+                }
+            ],
+            header_row=1,
+            first_data_row=2,
         )
         base = tmp_path / "base.xlsx"
         wb.save(base)

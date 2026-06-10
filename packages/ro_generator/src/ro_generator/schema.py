@@ -1,6 +1,6 @@
 """核心包静态 schema：必需 sheet、必需表头、月份列、表头规范化。
 
-来源：产品方案 §9（数据源说明）和 RO DATA BASE.xlsx 实际表头观察。
+来源：templates/base_schema.yaml（产品方案 §9 + 实际表头观察）。
 
 表头规范化的必要性：openpyxl 读出来的表头单元格可能含换行符 (`\\n`)、
 首尾空白、连续空格（如 `"GS PTE \\nFOB "`），下游匹配时必须先归一。
@@ -11,23 +11,27 @@ from __future__ import annotations
 import re
 from typing import Final
 
+from ro_generator.base_schema import base_schema
+
+_schema = base_schema()
+
 # —————————————————————————————————————
 # 必需 sheet
 # —————————————————————————————————————
+SHEET_DATA_BASE: Final = _schema.sheet("DATA BASE").name
+SHEET_PO_RECORD: Final = _schema.sheet("PO record").name
+SHEET_CUSTOMER_PO: Final = _schema.sheet("客户PO").name
 
-SHEET_DATA_BASE: Final = "DATA BASE"
-SHEET_PO_RECORD: Final = "PO record"
-
-REQUIRED_SHEETS: Final[tuple[str, ...]] = (SHEET_DATA_BASE, SHEET_PO_RECORD)
+REQUIRED_SHEETS: Final[tuple[str, ...]] = (SHEET_DATA_BASE, SHEET_PO_RECORD, SHEET_CUSTOMER_PO)
 
 
 # —————————————————————————————————————
 # 表头位置约定
 # —————————————————————————————————————
 #
-# 两张 sheet 的表头都在第 4 行，数据从第 5 行开始（产品方案 §9）。
-HEADER_ROW: Final = 4
-FIRST_DATA_ROW: Final = 5
+# 表头行和数据起始行由 base_schema.yaml 定义，默认第 4/5 行。
+HEADER_ROW: Final = _schema.sheet("PO record").header_row
+FIRST_DATA_ROW: Final = _schema.sheet("PO record").first_data_row
 
 
 # —————————————————————————————————————
@@ -48,64 +52,66 @@ CATEGORY_NAMES: Final[dict[int, str]] = {
 # —————————————————————————————————————
 # 贸易链段（产品方案 §3.3）
 # —————————————————————————————————————
-
-ENTITY_SK_YM: Final = "SK/YM"
+ENTITY_SK: Final = "SK"
+ENTITY_YM: Final = "YM"
 ENTITY_GS_PTE: Final = "GS PTE"
 ENTITY_EMAX_PTE: Final = "EMAX PTE"
 ENTITY_PF: Final = "PF"
 
 # 合法 (seller, buyer) 组合，按链路从工厂到最终客户排序。
 LEGAL_CHAIN_SEGMENTS: Final[tuple[tuple[str, str], ...]] = (
-    (ENTITY_SK_YM, ENTITY_GS_PTE),
+    (ENTITY_SK, ENTITY_YM),
+    (ENTITY_YM, ENTITY_GS_PTE),
     (ENTITY_GS_PTE, ENTITY_EMAX_PTE),
     (ENTITY_EMAX_PTE, ENTITY_PF),
 )
 
 # 卖方主体列表（按贸易链顺序）
-SELLERS: Final[tuple[str, ...]] = (ENTITY_SK_YM, ENTITY_GS_PTE, ENTITY_EMAX_PTE)
+SELLERS: Final[tuple[str, ...]] = (ENTITY_SK, ENTITY_YM, ENTITY_GS_PTE, ENTITY_EMAX_PTE)
 
 # 卖方 → 买方（固定对应关系）
 SELLER_TO_BUYER: Final[dict[str, str]] = {
-    ENTITY_SK_YM: ENTITY_GS_PTE,
+    ENTITY_SK: ENTITY_YM,
+    ENTITY_YM: ENTITY_GS_PTE,
     ENTITY_GS_PTE: ENTITY_EMAX_PTE,
     ENTITY_EMAX_PTE: ENTITY_PF,
 }
 
-# 卖方 → 价格列名
-SELLER_PRICE_COLUMNS: Final[dict[str, str]] = {
-    ENTITY_SK_YM: "SK/YM USD FOB",
-    ENTITY_GS_PTE: "GS PTE FOB",
-    ENTITY_EMAX_PTE: "EMAX PTE",
-}
+# 卖方 → 价格列名（来自 base_schema.yaml，PO record 中）
+SELLER_PRICE_COLUMNS: Final[dict[str, str]] = dict(_schema.price_columns)
 
+# DATA BASE 中按 (卖方, 品类) 的价格列
+DATA_BASE_PRICE_COLUMNS: Final[dict[str, str]] = dict(_schema.data_base_price_columns)
 
-# —————————————————————————————————————
-# 月度列：2601 ~ 2612（2026 年 1-12 月）
-# —————————————————————————————————————
-
-MONTH_COLUMNS: Final[tuple[str, ...]] = tuple(f"26{m:02d}" for m in range(1, 13))
+# PO record 中各链段发票金额列
+INVOICE_AMOUNT_COLUMNS: Final[dict[str, str]] = dict(_schema.invoice_amount_columns)
 
 
 # —————————————————————————————————————
 # 必需表头
 # —————————————————————————————————————
 #
-# 这里只列**必需的**表头，不全部列出。可选字段（如 `RFID`、`MOQ`）在 validator
+# 这里只列**必需的**表头，不全部列出。可选字段在 validator
 # 里走"缺失只产生 low warning"路径。
 #
 # 表头名以**规范化后的形式**给出（去除换行 / 多余空格），匹配时双方都先 normalize。
 
 DATA_BASE_REQUIRED_HEADERS: Final[tuple[str, ...]] = (
-    "SAP",
-    "Material Description",
-    "Category",
+    _schema.field("DATA BASE", "sap"),
+    _schema.field("DATA BASE", "description"),
+    _schema.field("DATA BASE", "category"),
 )
 
 PO_RECORD_REQUIRED_HEADERS: Final[tuple[str, ...]] = (
-    "PO NO.",
-    "ITEM LINE#",
-    "SAP Number",
-    "FINALQTY",
+    _schema.field("PO record", "po_no"),
+    _schema.field("PO record", "item_line"),
+    _schema.field("PO record", "sap"),
+)
+
+CUSTOMER_PO_REQUIRED_HEADERS: Final[tuple[str, ...]] = (
+    _schema.field("客户PO", "purchasing_document"),
+    _schema.field("客户PO", "material"),
+    _schema.field("客户PO", "order_quantity"),
 )
 
 
