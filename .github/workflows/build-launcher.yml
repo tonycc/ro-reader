@@ -97,7 +97,10 @@ jobs:
           )
           [System.IO.File]::WriteAllLines("$PWD\dist\README.txt", $readme, [System.Text.Encoding]::UTF8)
 
-          # 打包
+          # 清理 PyInstaller 在 dist\ 根目录留下的中间产物 exe
+          Remove-Item -Path "dist\*.exe" -ErrorAction SilentlyContinue
+
+          # 打包（只含程序文件夹和辅助文件，不含中间产物）
           Compress-Archive `
             -Path "dist\RO Workbench", "dist\launch.bat", "dist\VERSION.txt", "dist\README.txt" `
             -DestinationPath "dist\RO-Workbench-$v-windows.zip"
