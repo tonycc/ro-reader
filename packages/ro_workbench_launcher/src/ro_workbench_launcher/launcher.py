@@ -60,7 +60,16 @@ def _run_server(port: int) -> None:
         import uvicorn
         from ro_workbench_api.app import app
 
-        config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="info")
+        # log_config=None: 跳过 uvicorn 的 dictConfig 调用。
+        # 默认 LOGGING_CONFIG 引用 "uvicorn.logging.DefaultFormatter" 工厂类，
+        # PyInstaller frozen 环境下 logging.config 无法按字符串路径找到该类，
+        # 会抛 ValueError: Unable to configure formatter "default"。
+        config = uvicorn.Config(
+            app,
+            host="127.0.0.1",
+            port=port,
+            log_config=None,
+        )
         server = uvicorn.Server(config)
 
         def _poll_shutdown() -> None:
