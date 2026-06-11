@@ -69,8 +69,45 @@ jobs:
           )
           [System.IO.File]::WriteAllLines("$PWD\dist\VERSION.txt", $lines, [System.Text.Encoding]::UTF8)
 
-          # launch.bat（bat 文件名用 ASCII，避免编码问题）
-          $bat = "@echo off`r`nstart `"`" `"%~dp0赛肯单据生成工具\赛肯单据生成工具.exe`"`r`n"
+          # launch.bat：显示启动进度，浏览器打开后自动关闭窗口
+          # PS 监控脚本以 Base64(-EncodedCommand) 内嵌，避免 bat/PS 转义冲突
+          $psLines = @(
+            "`$portFile = `$env:TEMP + '\saiken_doc_port.txt'",
+            "`$deadline = (Get-Date).AddSeconds(30)",
+            "Write-Host '  [1/3] 正在初始化 ' -NoNewline -ForegroundColor Cyan",
+            "while (!(Test-Path `$portFile)) {",
+            "    if ((Get-Date) -ge `$deadline) { Write-Host ' 超时' -ForegroundColor Red; Start-Sleep 2; exit 1 }",
+            "    Write-Host '.' -NoNewline; Start-Sleep 0.3",
+            "}",
+            "`$port = (Get-Content `$portFile).Trim()",
+            "Write-Host ''",
+            "Write-Host ('  [2/3] 服务端口：' + `$port) -ForegroundColor Cyan",
+            "`$url = 'http://127.0.0.1:' + `$port + '/api/health'",
+            "`$deadline = (Get-Date).AddSeconds(30)",
+            "Write-Host '  [3/3] 等待服务就绪 ' -NoNewline -ForegroundColor Cyan",
+            "while (`$true) {",
+            "    try { if ((Invoke-WebRequest `$url -UseBasicParsing -TimeoutSec 1 -ErrorAction Stop).StatusCode -eq 200) { break } } catch {}",
+            "    if ((Get-Date) -ge `$deadline) { Write-Host ' 超时' -ForegroundColor Red; Start-Sleep 2; exit 1 }",
+            "    Write-Host '.' -NoNewline; Start-Sleep 0.3",
+            "}",
+            "Write-Host ''",
+            "Write-Host '  启动成功！浏览器已打开。' -ForegroundColor Green",
+            "Start-Sleep 0.8"
+          )
+          $psScript = $psLines -join "`n"
+          $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($psScript))
+          $bat  = "@echo off`r`n"
+          $bat += "chcp 65001 > nul`r`n"
+          $bat += "title 赛肯单据生成工具`r`n"
+          $bat += "echo.`r`n"
+          $bat += "echo   赛肯单据生成工具`r`n"
+          $bat += "echo   ==================`r`n"
+          $bat += "echo.`r`n"
+          $bat += "echo   正在启动，请稍候...`r`n"
+          $bat += "echo.`r`n"
+          $bat += "if exist `"%TEMP%\saiken_doc_port.txt`" del `"%TEMP%\saiken_doc_port.txt`"`r`n"
+          $bat += "start `"`" /B `"%~dp0赛肯单据生成工具\赛肯单据生成工具.exe`"`r`n"
+          $bat += "powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encoded`r`n"
           [System.IO.File]::WriteAllText("$PWD\dist\launch.bat", $bat, [System.Text.Encoding]::UTF8)
 
           # README.txt（中文）
