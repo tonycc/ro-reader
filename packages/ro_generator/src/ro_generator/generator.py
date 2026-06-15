@@ -15,10 +15,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Final
-
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import TYPE_CHECKING, Final
 
 from ro_generator.document_model import (
     DocumentModel,
@@ -26,6 +25,8 @@ from ro_generator.document_model import (
     build_pi_model,
     build_pl_model,
     build_po_model,
+    invoice_no_for_line,
+    invoice_no_matches,
 )
 from ro_generator.errors import RoGeneratorError, WorkbookOpenError
 from ro_generator.models import (
@@ -36,11 +37,12 @@ from ro_generator.models import (
 )
 from ro_generator.packager import (
     build_document_filename,
+    build_invoice_pl_filename,
     build_zip_filename,
     package_zip,
     resolve_output_path,
 )
-from ro_generator.renderer import render_document
+from ro_generator.renderer import render_document, render_document_bundle
 from ro_generator.resolver import resolve_po_lines, resolve_po_rows
 from ro_generator.resources import resource_root
 from ro_generator.schema import (
@@ -51,6 +53,9 @@ from ro_generator.source_index import SourceIndex
 from ro_generator.template_mapping import TemplateMapping, load_template_mapping
 from ro_generator.validator import validate_workbook_structure
 from ro_generator.workbook_reader import WorkbookReader
+
+if TYPE_CHECKING:
+    from ro_generator.workbook_snapshot import WorkbookSnapshot
 
 # —————————————————————————————————————
 # 校验消息 code
@@ -80,6 +85,8 @@ class PreviewResult:
 CODE_UNSUPPORTED_DOCUMENT: Final = "UNSUPPORTED_DOCUMENT_TYPE"
 CODE_UNSUPPORTED_SEGMENT: Final = "UNSUPPORTED_CHAIN_SEGMENT"
 CODE_MAPPING_NOT_FOUND: Final = "MAPPING_NOT_FOUND"
+CODE_PI_NO_MISSING: Final = "PI_NO_MISSING"
+CODE_NO_LINES_FOR_SELLER: Final = "NO_LINES_FOR_SELLER"
 
 INPUT_SELLER: Final = "seller"
 INPUT_BUYER: Final = "buyer"
@@ -132,13 +139,11 @@ def generate(request: DocumentRequest) -> GenerationResult:
         )
 
 
-def preview(request: DocumentRequest) -> "PreviewResult":
+def preview(request: DocumentRequest) -> PreviewResult:
     """生成预览数据，不写 Excel。复用与 generate() 相同的 resolver 和 DocumentModel 构建路径。
 
     只处理单文档。不调用 render_document()。
     """
-    from ro_generator.document_preview import DocumentPreview, build_preview
-
     try:
         return _preview(request)
     except WorkbookOpenError as exc:
@@ -153,7 +158,7 @@ def preview(request: DocumentRequest) -> "PreviewResult":
         )
 
 
-def _preview(request: DocumentRequest) -> "PreviewResult":
+def _preview(request: DocumentRequest) -> PreviewResult:
     """通过构建 snapshot 后委托 preview_from_snapshot 实现预览。
 
     与直接读 Excel 的旧路径行为等价，但复用 snapshot 缓存并消除重复逻辑。
@@ -180,9 +185,9 @@ def _preview(request: DocumentRequest) -> "PreviewResult":
 
 
 def preview_from_snapshot(
-    snapshot: "WorkbookSnapshot",
+    snapshot: WorkbookSnapshot,
     request: DocumentRequest,
-) -> "PreviewResult":
+) -> PreviewResult:
     """基于缓存的 WorkbookSnapshot 生成预览，不读 Excel。
 
     与 preview() 的区别：绕过 WorkbookReader，直接从 snapshot 获取 PO 行和产品索引。
@@ -260,7 +265,9 @@ def preview_from_snapshot(
     # Invoice/PL 需要 INV#
     invoice_no = request.invoice_no
     if doc_type in ("INVOICE", "PL"):
-        distinct_invs = _collect_distinct_invoice_nos(lines)
+        distinct_invs = _collect_distinct_invoice_nos(
+            lines, seller=seller, document_type=doc_type,
+        )
         if len(distinct_invs) > 1 and invoice_no is None:
             return PreviewResult(
                 status="needs_input",
@@ -268,18 +275,18 @@ def preview_from_snapshot(
                 options={"invoice_no": distinct_invs},
                 warnings=warnings_resolver,
             )
-        if invoice_no is not None:
-            inv_values = {item["value"] for item in distinct_invs}
-            if invoice_no not in inv_values:
-                return PreviewResult(
-                    status="error",
-                    errors=(
-                        ValidationMessage(
-                            kind="blocking_error", code="INVOICE_NO_NOT_FOUND",
-                            message=f"指定的 INVOICE# {invoice_no!r} 在 PO {request.po_no} 中不存在",
-                        ),
+        if invoice_no is not None and not _invoice_no_exists(
+            lines, invoice_no, seller=seller, document_type=doc_type,
+        ):
+            return PreviewResult(
+                status="error",
+                errors=(
+                    ValidationMessage(
+                        kind="blocking_error", code="INVOICE_NO_NOT_FOUND",
+                        message=f"指定的 INVOICE# {invoice_no!r} 在 PO {request.po_no} 中不存在",
                     ),
-                )
+                ),
+            )
         if len(distinct_invs) == 1 and invoice_no is None:
             invoice_no = distinct_invs[0]["value"]
 
@@ -345,7 +352,10 @@ def _generate(request: DocumentRequest) -> GenerationResult:
     invoice_no = request.invoice_no
     invoiced_docs = [d for d in documents if d in ("INVOICE", "PL")]
     if invoiced_docs:
-        distinct_invs = _collect_distinct_invoice_nos(lines)
+        invoice_context_doc = "INVOICE" if "INVOICE" in invoiced_docs else "PL"
+        distinct_invs = _collect_distinct_invoice_nos(
+            lines, seller=seller, document_type=invoice_context_doc,
+        )
         if len(distinct_invs) > 1 and invoice_no is None:
             return GenerationResult(
                 status="needs_input",
@@ -353,42 +363,69 @@ def _generate(request: DocumentRequest) -> GenerationResult:
                 options={"invoice_no": distinct_invs},
                 warnings=warnings_resolver,
             )
-        if invoice_no is not None:
-            inv_values = {item["value"] for item in distinct_invs}
-            if invoice_no not in inv_values:
-                return _error_result(
-                    ValidationMessage(
-                        kind="blocking_error", code="INVOICE_NO_NOT_FOUND",
-                        message=f"指定的 INVOICE# {invoice_no!r} 在 PO {request.po_no} 中不存在",
-                    )
+        if invoice_no is not None and not _invoice_no_exists(
+            lines, invoice_no, seller=seller, document_type=invoice_context_doc,
+        ):
+            return _error_result(
+                ValidationMessage(
+                    kind="blocking_error", code="INVOICE_NO_NOT_FOUND",
+                    message=f"指定的 INVOICE# {invoice_no!r} 在 PO {request.po_no} 中不存在",
                 )
+            )
         if len(distinct_invs) == 1 and invoice_no is None:
             invoice_no = distinct_invs[0]["value"]
 
-    # 逐个装配单据
+    # 逐个装配单据。SK/YM 层按 PO record CATEGORY 自动拆成 YM/SK 两组。
     rendered_files: list[tuple[str, Path]] = []
     all_warnings = list(warnings_resolver)
     source_indices: list[SourceIndex] = []
     last_summary: dict[str, object] = {}
 
-    for doc_type in documents:
-        doc_result = _generate_one(
-            lines, seller=seller, buyer=buyer, po_no=request.po_no,
-            invoice_no=invoice_no, doc_type=doc_type,  # type: ignore[arg-type]
-            request=request,
+    generation_plan = _build_generation_plan(seller, buyer, lines)
+    for active_seller, active_buyer, active_lines in generation_plan:
+        combine_invoice_pl = _should_combine_invoice_pl(active_seller, documents)
+        single_documents = tuple(
+            doc_type
+            for doc_type in documents
+            if not (combine_invoice_pl and doc_type in ("INVOICE", "PL"))
         )
-        if doc_result.status == "error":
-            return GenerationResult(
-                status="error",
-                errors=doc_result.errors,
-                warnings=tuple(all_warnings) + doc_result.warnings,
+
+        for doc_type in single_documents:
+            doc_result = _generate_one(
+                active_lines, seller=active_seller, buyer=active_buyer, po_no=request.po_no,
+                invoice_no=invoice_no, doc_type=doc_type,  # type: ignore[arg-type]
+                request=request,
             )
-        if doc_result.files and doc_result.output_file:
-            rendered_files.append((doc_result.files[0], Path(doc_result.output_file)))
-        if isinstance(doc_result.source_index, SourceIndex):
-            source_indices.append(doc_result.source_index)
-        all_warnings.extend(doc_result.warnings)
-        last_summary = doc_result.summary
+            if doc_result.status == "error":
+                return GenerationResult(
+                    status="error",
+                    errors=doc_result.errors,
+                    warnings=tuple(all_warnings) + doc_result.warnings,
+                )
+            if doc_result.files and doc_result.output_file:
+                rendered_files.append((doc_result.files[0], Path(doc_result.output_file)))
+            if isinstance(doc_result.source_index, SourceIndex):
+                source_indices.append(doc_result.source_index)
+            all_warnings.extend(doc_result.warnings)
+            last_summary = doc_result.summary
+
+        if combine_invoice_pl:
+            bundle_result = _generate_invoice_pl_bundle(
+                active_lines, seller=active_seller, buyer=active_buyer, po_no=request.po_no,
+                invoice_no=invoice_no, request=request,
+            )
+            if bundle_result.status == "error":
+                return GenerationResult(
+                    status="error",
+                    errors=bundle_result.errors,
+                    warnings=tuple(all_warnings) + bundle_result.warnings,
+                )
+            if bundle_result.files and bundle_result.output_file:
+                rendered_files.append((bundle_result.files[0], Path(bundle_result.output_file)))
+            if isinstance(bundle_result.source_index, SourceIndex):
+                source_indices.append(bundle_result.source_index)
+            all_warnings.extend(bundle_result.warnings)
+            last_summary = bundle_result.summary
 
     all_warnings_t = tuple(all_warnings)
     if len(rendered_files) == 1:
@@ -432,6 +469,7 @@ def _generate(request: DocumentRequest) -> GenerationResult:
 # —————————————————————————————————————
 
 ENTITIES_WITHOUT_PO: Final = {"SK", "YM"}
+SK_YM_FACTORY_SELLERS: Final = {"SK", "YM"}
 
 
 def build_document_model(
@@ -442,15 +480,13 @@ def build_document_model(
     po_no: str,
     invoice_no: str | None,
     doc_type: DocumentType,
-) -> "BuildDocumentResult":
+) -> BuildDocumentResult:
     """构建单个单据的 DocumentModel。
 
     export 和 preview 共用此函数，避免第二套 seller/buyer/invoice_no/PI 编号判断。
 
     返回 (model, mapping, messages)。model 为 None 时表示阻断错误。
     """
-    from ro_generator.document_model import BuildResult
-
     if doc_type == "PO" and seller in ENTITIES_WITHOUT_PO:
         return BuildDocumentResult(
             model=None,
@@ -459,6 +495,19 @@ def build_document_model(
                 ValidationMessage(
                     kind="blocking_error", code=CODE_MAPPING_NOT_FOUND,
                     message=f"{seller} 主体不提供 PO 模板",
+                ),
+            ),
+        )
+
+    lines = _filter_lines_for_selected_seller(lines, seller)
+    if not lines:
+        return BuildDocumentResult(
+            model=None,
+            mapping=None,
+            messages=(
+                ValidationMessage(
+                    kind="blocking_error", code=CODE_NO_LINES_FOR_SELLER,
+                    message=f"PO {po_no} 中没有属于 {seller} 主体的 CATEGORY 行",
                 ),
             ),
         )
@@ -479,9 +528,13 @@ def build_document_model(
     if doc_type == "PI":
         pi_no = po_no
         if seller == "SK":
-            pi_no = _first_non_empty(line.e10_po for line in lines) or po_no
+            pi_no = _first_non_empty(line.e10_po for line in lines)
+            if pi_no is None:
+                return _missing_pi_no_result(seller=seller, field="E10 PO", lines=lines)
         elif seller == "YM":
-            pi_no = _first_non_empty(line.ym_po for line in lines) or po_no
+            pi_no = _first_non_empty(line.ym_po for line in lines)
+            if pi_no is None:
+                return _missing_pi_no_result(seller=seller, field="YM PO", lines=lines)
         build_result = build_pi_model(lines, seller=seller, buyer=buyer, po_no=po_no, pi_no=pi_no)
     elif doc_type == "PO":
         build_result = build_po_model(lines, seller=seller, buyer=buyer, po_no=po_no)
@@ -516,7 +569,6 @@ def _generate_one(
         lines, seller=seller, buyer=buyer, po_no=po_no,
         invoice_no=invoice_no, doc_type=doc_type,
     )
-
     blocking = tuple(m for m in build.messages if m.kind == "blocking_error")
     doc_warnings = tuple(m for m in build.messages if m.kind == "warning")
     if build.model is None or build.mapping is None:
@@ -543,6 +595,93 @@ def _generate_one(
                 "bold": list(build.mapping.style.bold),
                 "underline": list(build.mapping.style.underline),
             },
+        },
+    )
+
+
+def _should_combine_invoice_pl(seller: str, documents: tuple[str, ...]) -> bool:
+    return seller in {"SK", "YM"} and "INVOICE" in documents and "PL" in documents
+
+
+def _build_generation_plan(
+    seller: str,
+    buyer: str,
+    lines: tuple,  # type: ignore[type-arg]
+) -> tuple[tuple[str, str, tuple], ...]:  # type: ignore[type-arg]
+    if seller not in SK_YM_FACTORY_SELLERS or not _has_po_record_factory_categories(lines):
+        return ((seller, buyer, lines),)
+
+    plan: list[tuple[str, str, tuple]] = []  # type: ignore[type-arg]
+    for factory_seller in ("YM", "SK"):
+        group_lines = _filter_lines_for_selected_seller(lines, factory_seller)
+        if group_lines:
+            plan.append((factory_seller, SELLER_TO_BUYER[factory_seller], group_lines))
+    return tuple(plan) if plan else ((seller, buyer, lines),)
+
+
+def _filter_lines_for_selected_seller(
+    lines: tuple,  # type: ignore[type-arg]
+    seller: str,
+) -> tuple:  # type: ignore[type-arg]
+    if seller not in SK_YM_FACTORY_SELLERS or not _has_po_record_factory_categories(lines):
+        return lines
+    return tuple(line for line in lines if _factory_seller_for_line(line) == seller)
+
+
+def _has_po_record_factory_categories(lines: tuple) -> bool:  # type: ignore[type-arg]
+    return any(_factory_seller_for_line(line) is not None for line in lines)
+
+
+def _factory_seller_for_line(line: object) -> str | None:
+    category = getattr(line, "po_record_category", None)
+    if category in (1, 2):
+        return "YM"
+    if category == 3:
+        return "SK"
+    return None
+
+
+def _generate_invoice_pl_bundle(
+    lines: tuple,  # type: ignore[type-arg]
+    *, seller: str, buyer: str, po_no: str,
+    invoice_no: str | None,
+    request: DocumentRequest,
+) -> GenerationResult:
+    builds: list[BuildDocumentResult] = []
+    warnings: list[ValidationMessage] = []
+    for doc_type in ("INVOICE", "PL"):
+        build = build_document_model(
+            lines, seller=seller, buyer=buyer, po_no=po_no,
+            invoice_no=invoice_no, doc_type=doc_type,  # type: ignore[arg-type]
+        )
+        blocking = tuple(m for m in build.messages if m.kind == "blocking_error")
+        warnings.extend(m for m in build.messages if m.kind == "warning")
+        if build.model is None or build.mapping is None:
+            return GenerationResult(status="error", errors=blocking, warnings=tuple(warnings))
+        builds.append(build)
+
+    filename = build_invoice_pl_filename(
+        seller=seller, po_no=po_no, invoice_no=invoice_no,
+    )
+    output_path = resolve_output_path(
+        request.output_dir, filename, on_conflict=request.on_conflict,
+    )
+    bundle_items = tuple(
+        (build.model, build.mapping)
+        for build in builds
+        if build.model is not None and build.mapping is not None
+    )
+    render_result = render_document_bundle(bundle_items, output_path)
+
+    return GenerationResult(
+        status="success",
+        files=(filename,),
+        output_file=str(render_result.output_path),
+        warnings=tuple(warnings),
+        source_index=render_result.source_index,
+        summary={
+            "combined_documents": ["INVOICE", "PL"],
+            "sheets": [build.mapping.sheet for build in builds if build.mapping is not None],
         },
     )
 
@@ -588,6 +727,29 @@ def _resolve_segment(
     return None, None, ()
 
 
+def _missing_pi_no_result(
+    *,
+    seller: str,
+    field: str,
+    lines: tuple,  # type: ignore[type-arg]
+) -> BuildDocumentResult:
+    row = next((line.source_row for line in lines if line.source_row is not None), None)
+    return BuildDocumentResult(
+        model=None,
+        mapping=None,
+        messages=(
+            ValidationMessage(
+                kind="blocking_error",
+                code=CODE_PI_NO_MISSING,
+                message=f"{seller} PI 要求填写 PO record 的 {field}，请补齐后再生成",
+                sheet="PO record",
+                row=row,
+                field=field,
+            ),
+        ),
+    )
+
+
 def _needs_input(
     base_messages: tuple[ValidationMessage, ...],
     inputs: list[str],
@@ -604,14 +766,30 @@ def _needs_input(
 
 def _collect_distinct_invoice_nos(
     lines: tuple,  # type: ignore[type-arg]
+    *,
+    seller: str,
+    document_type: str,
 ) -> tuple[dict[str, str], ...]:
     seen: list[str] = []
     for line in lines:
-        inv = line.invoice_no
+        inv = invoice_no_for_line(line, seller=seller, document_type=document_type)
         if not inv or inv in seen:
             continue
         seen.append(inv)
     return tuple({"value": inv, "label": inv} for inv in seen)
+
+
+def _invoice_no_exists(
+    lines: tuple,  # type: ignore[type-arg]
+    invoice_no: str,
+    *,
+    seller: str,
+    document_type: str,
+) -> bool:
+    return any(
+        invoice_no_matches(line, invoice_no, seller=seller, document_type=document_type)
+        for line in lines
+    )
 
 
 def _load_mapping(seller: str, document: str) -> TemplateMapping | None:
@@ -636,13 +814,14 @@ _ = (SourceIndex,)
 
 
 __all__ = [
-    "BuildDocumentResult",
     "CODE_MAPPING_NOT_FOUND",
+    "CODE_PI_NO_MISSING",
     "CODE_UNSUPPORTED_DOCUMENT",
     "CODE_UNSUPPORTED_SEGMENT",
     "INPUT_BUYER",
     "INPUT_INVOICE_NO",
     "INPUT_SELLER",
+    "BuildDocumentResult",
     "PreviewResult",
     "build_document_model",
     "builtin_mapping_path",

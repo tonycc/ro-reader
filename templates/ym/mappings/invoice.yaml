@@ -1,7 +1,7 @@
 document: invoice
 template_version: '2026.06'
-template: templates/ym/invoice.xlsx
-sheet: PF Standard Invoice format
+template: templates/ym/invoice&pl.xlsx
+sheet: Standard Invoice format
 header:
   invoice_no: H6
   invoice_date: H7
@@ -11,14 +11,12 @@ header:
 header_fixed:
   term: T/T 75 DAYS AFTER BL DATE
   from: GUANGDONG, CHINA
-  to: KANSAS CITY, MO, USA
 table_header_row:
   - 13
   - 14
-  - 16
 lines:
-  start_row: 18
-  style_source_row: 17
+  start_row: 15
+  style_source_row: 15
   row_fixed:
     G: PCS
   columns:
@@ -29,12 +27,12 @@ lines:
     quantity: F
     amount: H
 totals:
-  quantity: F27
-  amount: H27
+  quantity: F18
+  amount: H18
 style:
   bold:
-  - A1
-  - A2
+  - E1
+  - E2
   - A4
   - A6
   - A7
@@ -46,9 +44,9 @@ style:
   - E13
   - F13
   - H13
-  - A27
-  - F27
-  - H27
+  - A18
+  - F18
+  - H18
   underline:
   - H6
   - H7
@@ -57,7 +55,6 @@ preview_content:
   static_terms:
     term: T/T 75 DAYS AFTER BL DATE
     from: GUANGDONG, CHINA
-    to: KANSAS CITY, MO, USA
   notes:
   - ORIGIN IN CHINA
   column_labels:

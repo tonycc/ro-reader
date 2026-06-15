@@ -1001,6 +1001,9 @@ requires-dist = [
 name = "ro-reader-workspace"
 version = "0.0.0"
 source = { virtual = "." }
+dependencies = [
+    { name = "ro-workbench-api" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -1016,6 +1019,7 @@ dev = [
 ]
 
 [package.metadata]
+requires-dist = [{ name = "ro-workbench-api", editable = "packages/ro_workbench_api" }]
 
 [package.metadata.requires-dev]
 dev = [

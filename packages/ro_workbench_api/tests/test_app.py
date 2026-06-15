@@ -118,6 +118,40 @@ def test_export_rejects_invalid_session():
     assert resp.status_code == 400
 
 
+def test_export_uses_zip_output_format(monkeypatch, tmp_path):
+    from ro_generator.models import GenerationResult
+
+    captured = {}
+
+    def fake_generate(request):
+        captured["output_format"] = request.output_format
+        output = tmp_path / "RO-4500099999-2601.zip"
+        output.write_bytes(b"fake zip")
+        return GenerationResult(
+            status="success",
+            files=("YM-RO-INVOICE&PL-4500099999-2601.xlsx", "SK-RO-INVOICE&PL-4500099999-2601.xlsx"),
+            output_file=str(output),
+        )
+
+    monkeypatch.setattr("ro_workbench_api.app.generate", fake_generate)
+    sid = client.post("/api/session/open", json={"base_file": str(FIXTURE)}).json()["session_id"]
+
+    resp = client.post(
+        "/api/po/4500099999/export",
+        json={
+            "base_file": str(FIXTURE),
+            "po_no": "4500099999",
+            "seller": "YM",
+            "document": "INVOICE",
+        },
+        headers={"X-Session-Id": sid},
+    )
+
+    assert resp.status_code == 200
+    assert captured["output_format"] == "zip"
+    assert resp.json()["output_file"].endswith(".zip")
+
+
 # --- Session expiry ---
 
 def test_cleanup_removes_expired_session():

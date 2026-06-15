@@ -106,7 +106,7 @@ export const useWorkbench = defineStore("workbench", () => {
         const downloadUrl = `/api/download?path=${encodeURIComponent(result.output_file)}&session_id=${getSessionId()}`;
         const a = document.createElement("a");
         a.href = downloadUrl;
-        a.download = result.files[0] || "export.xlsx";
+        a.download = result.output_file.split(/[\\/]/).pop() || result.files[0] || "export.xlsx";
         a.click();
       }
       return result;

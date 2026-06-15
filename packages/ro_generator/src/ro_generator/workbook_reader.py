@@ -49,7 +49,7 @@ class SheetData:
 
 
 class WorkbookReader:
-    """对 openpyxl 的薄包装，按 base 文件的固定布局读两张 sheet。
+    """对 openpyxl 的薄包装，按 base 文件的固定布局读三张 sheet。
 
     用法：
 

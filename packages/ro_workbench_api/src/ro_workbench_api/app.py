@@ -26,14 +26,17 @@ from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from ro_generator.errors import WorkbookOpenError
 from ro_generator.generator import generate, preview_from_snapshot
 from ro_generator.models import DocumentRequest, GenerationResult, ValidationMessage
 from ro_generator.source_index import SourceIndex
-from ro_generator.workbench_service import get_customer_po_data, get_po_data, inspect_file_path, inspect_workbook
+from ro_generator.workbench_service import (
+    get_customer_po_data,
+    get_po_data,
+    inspect_file_path,
+    inspect_workbook,
+)
 from ro_generator.workbook_cache import get_cache_manager
 from ro_generator.workbook_editor import edit_workbook_cell
-from ro_generator.workbook_reader import WorkbookReader
 
 _cleanup_timer: threading.Timer | None = None
 _cleanup_stopped = threading.Event()
@@ -302,7 +305,8 @@ def dry_run(
         base_file=req.base_file,
         po_no=po_no,
         documents=(doc,),  # type: ignore[arg-type]
-        seller=req.seller,invoice_no=req.invoice_no,
+        seller=req.seller,
+        invoice_no=req.invoice_no,
         output_dir=session.temp_dir,
     )
     result = generate(request)
@@ -333,7 +337,8 @@ def preview_document(
         base_file=req.base_file,
         po_no=po_no,
         documents=(doc,),  # type: ignore[arg-type]
-        seller=req.seller,invoice_no=req.invoice_no,
+        seller=req.seller,
+        invoice_no=req.invoice_no,
         output_dir=session.temp_dir,
     )
 
@@ -414,7 +419,9 @@ def export_documents(
         base_file=req.base_file,
         po_no=po_no,
         documents=(doc,),  # type: ignore[arg-type]
-        seller=req.seller,invoice_no=req.invoice_no,
+        seller=req.seller,
+        invoice_no=req.invoice_no,
+        output_format="zip",
         output_dir=session.temp_dir,
     )
     result = generate(request)
@@ -466,3 +473,15 @@ def close_session(req: SessionCloseRequest) -> dict[str, str]:
             shutil.rmtree(info.temp_dir, ignore_errors=True)
         return {"status": "closed"}
     return {"status": "not_found"}
+
+
+def main() -> None:
+    """开发服务器入口：`uv run api` 一键启动。"""
+    import uvicorn
+
+    uvicorn.run(
+        "ro_workbench_api.app:app",
+        host="127.0.0.1",
+        port=54321,
+        reload=True,
+    )

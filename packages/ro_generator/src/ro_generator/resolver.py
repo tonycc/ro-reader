@@ -238,7 +238,7 @@ def _read_customer_po_rows(
 def _resolve_row(
     row: dict[str, object],
     products: dict[str, Product],
-    customer_po_lookup: "CustomerPoLookup",
+    customer_po_lookup: CustomerPoLookup,
 ) -> tuple[OrderLine | None, list[ValidationMessage]]:
     row_number = _int_or_none(row.get(ROW_NUMBER_KEY))
     messages: list[ValidationMessage] = []
@@ -348,6 +348,7 @@ def _resolve_row(
         description=product.description,
         category=product.category,
         quantity=quantity,
+        po_record_category=_int_or_none(row.get(_po("category"))),
         product=product,
         ship_to=_resolve_ship_to(
             sap=sap,
@@ -357,6 +358,11 @@ def _resolve_row(
             sap=sap,
             customer_po_lookup=customer_po_lookup,
             field_name=_cp("manufacturer"),
+        ),
+        final_destination=_resolve_customer_po_field(
+            sap=sap,
+            customer_po_lookup=customer_po_lookup,
+            field_name=_cp("final_destination"),
         ),
         brand=_str_or_none(row.get(_po("brand"))) or product.brand,
         invoice_no=_str_or_none(row.get(_po("inv_no"))),

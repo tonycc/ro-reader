@@ -1,7 +1,7 @@
 document: pi
 template_version: '2026.06'
 template: templates/emax/pi.xlsx
-sheet: PF Standard Invoice format
+sheet: Standard Invoice format
 header:
   pi_no: B6
   document_date: G6
@@ -43,13 +43,13 @@ lines:
     amount: G
     confirmed_ex_factory_date: H
 totals:
-  amount: G24
+  amount: G21
   signature:
-    cell: G26
+    cell: G23
     value_mode: fixed
     value: Joyce
   Date:
-    cell: G27
+    cell: G24
     value_mode: current_date
 style:
   bold:
@@ -62,15 +62,15 @@ style:
   - A13
   - A14
   - A17
+  - F4
   - F6
   - F7
   - F9
   - F13
   - F14
-  - F24
-  - F26
-  - F27
-  - G24
+  - F21
+  - G21
+
 preview_content:
   title: PROFORMA INVOICE
   terms_fields:
@@ -80,15 +80,6 @@ preview_content:
   static_terms:
     incoterm: FOB GUANGDONG
   notes: []
-  source_overrides:
-    po_no:
-      sheet: 客户PO
-      field: Purchasing Document
-      rule: '客户 PO A列"Purchasing Document"'
-    pi_no:
-      sheet: 客户PO
-      field: Purchasing Document
-      rule: '客户 PO A列"Purchasing Document"'
   column_labels:
     A: Country of The Origin
     po_no: PO Number

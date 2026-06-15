@@ -6,7 +6,7 @@ from datetime import date
 from typing import TYPE_CHECKING, Final
 
 from ro_generator.header_multiline import (
-    MANUFACTURER_ADDRESS_FIELDS,
+    MANUFACTURER_HEADER_FIELDS,
     SHIP_TO_HEADER_FIELDS,
     split_manufacturer_address_lines,
     split_ship_to_lines,
@@ -49,7 +49,7 @@ HEADER_FIELD_SPECS: Final[dict[str, HeaderFieldSpec]] = {
         source_type="base_field",
         source_sheet=SHEET_PO_RECORD,
         source_field=None,
-        rule="SK 用 E10 PO，YM 用 YM PO，其他同 PO #",
+        rule="SK 用 E10 PO，YM 用 YM PO，其他同 PO #；SK/YM 缺值时阻断生成",
         model_attr="pi_no",
         render_keys=("pi_no",),
     ),
@@ -135,6 +135,20 @@ HEADER_FIELD_SPECS: Final[dict[str, HeaderFieldSpec]] = {
         source_field=None,
         rule="模板内置交易条款（付款条件、贸易术语等）",
     ),
+    "to": HeaderFieldSpec(
+        label="To",
+        source_type="template_content",
+        source_sheet=None,
+        source_field=None,
+        rule="模板固定文本",
+    ),
+    "manufacturer": HeaderFieldSpec(
+        label="Actual Manufacturer Company",
+        source_type="template_content",
+        source_sheet=None,
+        source_field=None,
+        rule="模板固定文本",
+    ),
     "manufacturer_address": HeaderFieldSpec(
         label="Actual Manufacturer Company Address",
         source_type="base_field",
@@ -143,6 +157,15 @@ HEADER_FIELD_SPECS: Final[dict[str, HeaderFieldSpec]] = {
         rule='客户PO Y列 "manufacturer"',
         model_attr="manufacturer_address",
         render_keys=("manufacturer_address", "manufacturer_address_2"),
+    ),
+    "manufacturer_address_2": HeaderFieldSpec(
+        label="Actual Manufacturer Company Address",
+        source_type="base_field",
+        source_sheet=SHEET_CUSTOMER_PO,
+        source_field="manufacturer",
+        rule='客户PO Y列 "manufacturer" 拆分后的地址第 2 行',
+        model_attr="manufacturer_address",
+        render_keys=("manufacturer_address_2",),
     ),
     "ex_factory_date": HeaderFieldSpec(
         label="Ex-Factory Date",
@@ -168,12 +191,93 @@ _HEADER_SELLER_OVERRIDES: Final[dict[str, list[tuple[frozenset[str], dict[str, s
         }),
     ],
     "pi_no": [
+        (frozenset({"SK"}), {
+            "source_sheet": SHEET_PO_RECORD,
+            "source_field": "E10 PO",
+            "rule": 'PO record 的 "E10 PO" 列，必填',
+        }),
+        (frozenset({"YM"}), {
+            "source_sheet": SHEET_PO_RECORD,
+            "source_field": "YM PO",
+            "rule": 'PO record 的 "YM PO" 列，必填',
+        }),
         (frozenset({"GS PTE"}), {
             "source_sheet": SHEET_CUSTOMER_PO,
             "source_field": "Purchasing Document",
             "rule": '客户PO A列 "Purchasing Document"',
         }),
     ],
+}
+
+_HEADER_CONTEXT_OVERRIDES: Final[dict[tuple[str, str, str], dict[str, str | None]]] = {
+    ("PI", "EMAX PTE", "pi_no"): {
+        "source_sheet": SHEET_CUSTOMER_PO,
+        "source_field": "Purchasing Document",
+        "rule": '客户PO A列 "Purchasing Document"',
+    },
+    ("PI", "EMAX PTE", "ex_factory_date"): {
+        "source_sheet": SHEET_PO_RECORD,
+        "source_field": "FINAL EX-FACTORY DATE",
+        "rule": 'PO record 的 "FINAL EX-FACTORY DATE" 列',
+    },
+    ("INVOICE", "EMAX PTE", "invoice_no"): {
+        "source_sheet": SHEET_PO_RECORD,
+        "source_field": "INV#",
+        "rule": 'PO record 的 "INV#" 列 + "-P"',
+    },
+    ("PL", "EMAX PTE", "invoice_no"): {
+        "source_sheet": SHEET_PO_RECORD,
+        "source_field": "INV#",
+        "rule": '引用 Invoice，最终来自 PO record 的 "INV#" 列 + "-P"',
+    },
+    ("INVOICE", "SK", "invoice_no"): {
+        "source_sheet": SHEET_PO_RECORD,
+        "source_field": "SK/YM INVOICE NO.",
+        "rule": 'PO record 的 "SK/YM INVOICE NO." 列',
+    },
+    ("PL", "SK", "invoice_no"): {
+        "source_sheet": SHEET_PO_RECORD,
+        "source_field": "SK/YM INVOICE NO.",
+        "rule": '引用 Invoice，最终来自 PO record 的 "SK/YM INVOICE NO." 列',
+    },
+    ("INVOICE", "YM", "invoice_no"): {
+        "source_sheet": SHEET_PO_RECORD,
+        "source_field": "SK/YM INVOICE NO.",
+        "rule": 'PO record 的 "SK/YM INVOICE NO." 列',
+    },
+    ("PL", "YM", "invoice_no"): {
+        "source_sheet": SHEET_PO_RECORD,
+        "source_field": "SK/YM INVOICE NO.",
+        "rule": '引用 Invoice，最终来自 PO record 的 "SK/YM INVOICE NO." 列',
+    },
+    ("INVOICE", "SK", "to"): {
+        "source_type": "base_field",
+        "source_sheet": SHEET_CUSTOMER_PO,
+        "source_field": "final destination",
+        "rule": '客户PO Z列 "final destination"',
+        "model_attr": "final_destination",
+    },
+    ("INVOICE", "YM", "to"): {
+        "source_type": "base_field",
+        "source_sheet": SHEET_CUSTOMER_PO,
+        "source_field": "final destination",
+        "rule": '客户PO Z列 "final destination"',
+        "model_attr": "final_destination",
+    },
+    ("PI", "GS PTE", "manufacturer"): {
+        "source_type": "base_field",
+        "source_sheet": SHEET_CUSTOMER_PO,
+        "source_field": "manufacturer",
+        "rule": '客户PO Y列 "manufacturer" 拆分后的制造商名称',
+        "model_attr": "manufacturer_address",
+    },
+    ("PO", "GS PTE", "manufacturer"): {
+        "source_type": "base_field",
+        "source_sheet": SHEET_CUSTOMER_PO,
+        "source_field": "manufacturer",
+        "rule": '客户PO Y列 "manufacturer" 拆分后的制造商名称',
+        "model_attr": "manufacturer_address",
+    },
 }
 
 
@@ -193,7 +297,11 @@ def resolve_header_field_spec(
         return None
     for seller_set, kwargs in _HEADER_SELLER_OVERRIDES.get(field_name, []):
         if seller in seller_set:
-            return replace(spec, **kwargs)
+            spec = replace(spec, **kwargs)
+            break
+    context_kwargs = _HEADER_CONTEXT_OVERRIDES.get((document_type, seller, field_name))
+    if context_kwargs:
+        return replace(spec, **context_kwargs)
     return spec
 
 
@@ -216,7 +324,7 @@ def build_manufacturer_address_values(
     header_keys: Iterable[str],
 ) -> dict[str, str]:
     key_set = set(header_keys)
-    if not any(field_name in key_set for field_name in MANUFACTURER_ADDRESS_FIELDS[1:]):
+    if not any(field_name in key_set for field_name in MANUFACTURER_HEADER_FIELDS):
         return {}
     return {
         field_name: value
@@ -239,7 +347,15 @@ def build_header_resolved_values(
     requested_fields = field_names if field_names is not None else header_key_list
 
     for field_name in requested_fields:
-        if field_name in resolved_values:
+        spec = resolve_header_field_spec(
+            field_name,
+            seller=model.seller,
+            document_type=model.document_type,
+        )
+        model_attr = spec.model_attr if spec is not None else None
+        can_override_fixed = spec is not None and spec.source_type == "base_field" and model_attr is not None
+
+        if field_name in resolved_values and not can_override_fixed:
             continue
         if field_name in ship_to_values:
             resolved_values[field_name] = ship_to_values[field_name]
@@ -248,8 +364,6 @@ def build_header_resolved_values(
             resolved_values[field_name] = mfr_addr_values[field_name]
             continue
 
-        spec = HEADER_FIELD_SPECS.get(field_name)
-        model_attr = spec.model_attr if spec is not None else None
         if model_attr:
             value = getattr(model, model_attr, None)
             if value is not None:

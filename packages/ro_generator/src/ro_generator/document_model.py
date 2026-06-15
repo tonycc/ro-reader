@@ -16,6 +16,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Final
 
+from ro_generator.header_rules import resolve_header_field_spec
 from ro_generator.line_rules import resolve_line_field_spec
 from ro_generator.models import DocumentType, OrderLine, ValidationMessage
 from ro_generator.schema import SHEET_PO_RECORD
@@ -73,7 +74,7 @@ class DocumentModel:
     lines: tuple[DocumentLine, ...]
     total_quantity: Decimal
     total_amount: Decimal
-    pi_no: str | None = None  # PI 编号，SK 用 E10 PO，YM 用 YM PO
+    pi_no: str | None = None  # PI 编号：SK 用 E10 PO，YM 用 YM PO，GS/EMAX 用客户 PO
     invoice_no: str | None = None
     total_carton_count: Decimal | None = None
     total_net_weight: Decimal | None = None
@@ -81,6 +82,7 @@ class DocumentModel:
     total_cbm: Decimal | None = None
     ship_to: str | None = None
     manufacturer_address: str | None = None  # 客户PO "manufacturer" 列
+    final_destination: str | None = None  # 客户PO "final destination" 列
     ex_factory_date: date | None = None
 
 
@@ -96,6 +98,81 @@ class BuildResult:
 
 _Segment = tuple[str, str]
 
+_PRICE_SEGMENT_OVERRIDES: Final[dict[tuple[str, str], _Segment]] = {
+    ("PO", "GS PTE"): ("YM", "GS PTE"),
+}
+_INVOICE_NO_FROM_SK_YM_SELLERS: Final[frozenset[str]] = frozenset({"SK", "YM"})
+_INVOICE_NO_SUFFIX_SELLERS: Final[frozenset[str]] = frozenset({"EMAX PTE"})
+_INVOICE_NO_CONTEXT_DOCS: Final[frozenset[str]] = frozenset({"INVOICE", "PL"})
+
+
+def _price_segment(document_type: str, seller: str, buyer: str) -> _Segment:
+    return _PRICE_SEGMENT_OVERRIDES.get((document_type, seller), (seller, buyer))
+
+
+def invoice_no_for_line(
+    line: OrderLine,
+    *,
+    document_type: str,
+    seller: str,
+) -> str | None:
+    """按单据上下文返回对用户可见、可用于导出的发票号。"""
+    if document_type in _INVOICE_NO_CONTEXT_DOCS and seller in _INVOICE_NO_FROM_SK_YM_SELLERS:
+        return line.sk_ym_invoice_no
+    if document_type in _INVOICE_NO_CONTEXT_DOCS and seller in _INVOICE_NO_SUFFIX_SELLERS:
+        return _append_invoice_suffix(line.invoice_no, "-P")
+    return line.invoice_no
+
+
+def invoice_no_matches(
+    line: OrderLine,
+    requested_invoice_no: str,
+    *,
+    document_type: str,
+    seller: str,
+) -> bool:
+    """判断源行是否属于请求的发票号。
+
+    EMAX 对外展示和导出使用 `INV#-P`，但为兼容已有命令行参数，也接受原始 `INV#` 作为过滤输入。
+    """
+    resolved = invoice_no_for_line(line, document_type=document_type, seller=seller)
+    if resolved == requested_invoice_no:
+        return True
+    if document_type in _INVOICE_NO_CONTEXT_DOCS and seller in _INVOICE_NO_SUFFIX_SELLERS:
+        return line.invoice_no == requested_invoice_no
+    return False
+
+
+def _invoice_source_field(document_type: str, seller: str) -> str:
+    spec = resolve_header_field_spec("invoice_no", document_type=document_type, seller=seller)
+    if spec is not None and spec.source_field:
+        return spec.source_field
+    return "INV#"
+
+
+def _append_invoice_suffix(invoice_no: str | None, suffix: str) -> str | None:
+    if not invoice_no:
+        return None
+    return invoice_no if invoice_no.endswith(suffix) else f"{invoice_no}{suffix}"
+
+
+def _first_matching_invoice_no(
+    lines: tuple[OrderLine, ...],
+    requested_invoice_no: str | None,
+    *,
+    document_type: str,
+    seller: str,
+) -> str | None:
+    for line in lines:
+        inv = invoice_no_for_line(line, document_type=document_type, seller=seller)
+        if not inv:
+            continue
+        if requested_invoice_no is None or invoice_no_matches(
+            line, requested_invoice_no, document_type=document_type, seller=seller,
+        ):
+            return inv
+    return None
+
 
 def _assemble_lines(
     lines: tuple[OrderLine, ...],
@@ -103,6 +180,7 @@ def _assemble_lines(
     invoice_no: str | None,
     po_no: str,
     *,
+    document_type: DocumentType,
     packing: bool = False,
     use_po_record_description: bool = False,
     seller: str = "",
@@ -115,7 +193,7 @@ def _assemble_lines(
     """
     messages: list[ValidationMessage] = []
 
-    sliced = _slice_by_invoice(lines, invoice_no)
+    sliced = _slice_by_invoice(lines, invoice_no, document_type=document_type, seller=seller)
     if invoice_no is not None and not sliced:
         messages.append(
             ValidationMessage(
@@ -160,12 +238,16 @@ def _assemble_lines(
                     )
                 )
 
-        item_line_spec = resolve_line_field_spec("item_line_no", document_type="PI", seller=seller)
+        item_line_spec = resolve_line_field_spec("item_line_no", document_type=document_type, seller=seller)
         item_line_value = original_line.cp_item if item_line_spec.source_field == "item" else original_line.item_line_no
-        item_num_spec = resolve_line_field_spec("item_number", document_type="PI", seller=seller)
+        item_num_spec = resolve_line_field_spec("item_number", document_type=document_type, seller=seller)
         item_num_value = original_line.cp_item if item_num_spec.source_field == "item" else original_line.item_line_no
 
-        ex_factory_spec = resolve_line_field_spec("confirmed_ex_factory_date", document_type="PI", seller=seller)
+        ex_factory_spec = resolve_line_field_spec(
+            "confirmed_ex_factory_date",
+            document_type=document_type,
+            seller=seller,
+        )
         if ex_factory_spec.source_sheet == SHEET_PO_RECORD:
             ex_factory_date = original_line.po_ex_factory_date
         else:
@@ -217,12 +299,17 @@ def _collect_missing_packing_fields(line: OrderLine) -> list[str]:
 def _resolve_model_ex_factory_date(
     lines: tuple[OrderLine, ...], document_type: str, seller: str,
 ) -> date | None:
-    """根据 line_rules 的 seller 覆盖选择正确的出厂日期来源。"""
-    spec = resolve_line_field_spec("confirmed_ex_factory_date", document_type=document_type, seller=seller)
+    """根据 header_rules 选择表头出厂日期来源。"""
+    spec = resolve_header_field_spec(
+        "ex_factory_date",
+        document_type=document_type,
+        seller=seller,
+    )
     if spec.source_sheet == SHEET_PO_RECORD:
         for line in lines:
             if line.po_ex_factory_date is not None:
                 return line.po_ex_factory_date
+        return None
     for line in lines:
         if line.confirmed_ex_factory_date is not None:
             return line.confirmed_ex_factory_date
@@ -237,8 +324,15 @@ def build_pi_model(
     lines: tuple[OrderLine, ...],
     *, seller: str, buyer: str, po_no: str, pi_no: str | None = None,
 ) -> BuildResult:
-    """PI：使用完整 PO 数量。pi_no 默认为 po_no，SK 用 E10 PO，YM 用 YM PO。"""
-    doc_lines, messages = _assemble_lines(lines, (seller, buyer), invoice_no=None, po_no=po_no, seller=seller)
+    """PI：使用完整 PO 数量。pi_no 由上游按 seller 规则解析后传入。"""
+    doc_lines, messages = _assemble_lines(
+        lines,
+        _price_segment("PI", seller, buyer),
+        invoice_no=None,
+        po_no=po_no,
+        document_type="PI",
+        seller=seller,
+    )
     if doc_lines is None:
         return BuildResult(model=None, messages=tuple(messages))
 
@@ -246,6 +340,7 @@ def build_pi_model(
     total_amt = sum((dl.amount for dl in doc_lines), Decimal(0))
     ship_to = _first_non_empty(line.ship_to for line in lines)
     manufacturer_address = _first_non_empty(line.manufacturer_address for line in lines)
+    final_destination = _first_non_empty(line.final_destination for line in lines)
     ex_factory_date = _resolve_model_ex_factory_date(lines, "PI", seller)
 
     return BuildResult(
@@ -254,6 +349,7 @@ def build_pi_model(
             pi_no=pi_no or po_no,
             lines=tuple(doc_lines), total_quantity=total_qty, total_amount=total_amt,
             ship_to=ship_to, manufacturer_address=manufacturer_address,
+            final_destination=final_destination,
             ex_factory_date=ex_factory_date,
         ),
         messages=tuple(messages),
@@ -269,7 +365,14 @@ def build_po_model(
     *, seller: str, buyer: str, po_no: str,
 ) -> BuildResult:
     """PO：与 PI 结构相同，使用完整 PO 数量。"""
-    doc_lines, messages = _assemble_lines(lines, (seller, buyer), invoice_no=None, po_no=po_no, seller=seller)
+    doc_lines, messages = _assemble_lines(
+        lines,
+        _price_segment("PO", seller, buyer),
+        invoice_no=None,
+        po_no=po_no,
+        document_type="PO",
+        seller=seller,
+    )
     if doc_lines is None:
         return BuildResult(model=None, messages=tuple(messages))
 
@@ -277,6 +380,7 @@ def build_po_model(
     total_amt = sum((dl.amount for dl in doc_lines), Decimal(0))
     ship_to = _first_non_empty(line.ship_to for line in lines)
     manufacturer_address = _first_non_empty(line.manufacturer_address for line in lines)
+    final_destination = _first_non_empty(line.final_destination for line in lines)
     ex_factory_date = _resolve_model_ex_factory_date(lines, "PO", seller)
 
     return BuildResult(
@@ -284,6 +388,7 @@ def build_po_model(
             document_type="PO", seller=seller, buyer=buyer, po_no=po_no,
             lines=tuple(doc_lines), total_quantity=total_qty, total_amount=total_amt,
             ship_to=ship_to, manufacturer_address=manufacturer_address,
+            final_destination=final_destination,
             ex_factory_date=ex_factory_date,
         ),
         messages=tuple(messages),
@@ -300,7 +405,7 @@ def build_invoice_model(
     invoice_no: str | None = None,
 ) -> BuildResult:
     """Invoice：按 INV# 过滤行，使用 SHIP QTY。"""
-    segment = (seller, buyer)
+    segment = _price_segment("INVOICE", seller, buyer)
     messages: list[ValidationMessage] = []
 
     doc_lines, assemble_msgs = _assemble_lines(
@@ -308,6 +413,7 @@ def build_invoice_model(
         segment,
         invoice_no=invoice_no,
         po_no=po_no,
+        document_type="INVOICE",
         use_po_record_description=True,
         seller=seller,
     )
@@ -316,13 +422,16 @@ def build_invoice_model(
     if doc_lines is None:
         return BuildResult(model=None, messages=tuple(messages))
 
-    inv_no = invoice_no or _first_non_empty(line.invoice_no for line in lines)
+    inv_no = _first_matching_invoice_no(
+        lines, invoice_no, document_type="INVOICE", seller=seller,
+    )
     if not inv_no:
+        source_field = _invoice_source_field("INVOICE", seller)
         messages.append(
             ValidationMessage(
                 kind="warning", code=CODE_INVOICE_NO_MISSING, severity="high",
-                message="Invoice 单据要求 INV#，但 PO record 中未填写",
-                sheet=SHEET_PO_RECORD, field="INV#",
+                message=f"Invoice 单据要求 {source_field}，但 PO record 中未填写",
+                sheet=SHEET_PO_RECORD, field=source_field,
             )
         )
 
@@ -330,6 +439,7 @@ def build_invoice_model(
     total_amt = sum((dl.amount for dl in doc_lines), Decimal(0))
     ship_to = _first_non_empty(line.ship_to for line in lines)
     manufacturer_address = _first_non_empty(line.manufacturer_address for line in lines)
+    final_destination = _first_non_empty(line.final_destination for line in lines)
     ex_factory_date = _resolve_model_ex_factory_date(lines, "INVOICE", seller)
 
     return BuildResult(
@@ -337,6 +447,7 @@ def build_invoice_model(
             document_type="INVOICE", seller=seller, buyer=buyer, po_no=po_no,
             lines=tuple(doc_lines), total_quantity=total_qty, total_amount=total_amt,
             invoice_no=inv_no, ship_to=ship_to, manufacturer_address=manufacturer_address,
+            final_destination=final_destination,
             ex_factory_date=ex_factory_date,
         ),
         messages=tuple(messages),
@@ -353,7 +464,7 @@ def build_pl_model(
     invoice_no: str | None = None,
 ) -> BuildResult:
     """PL：按 INV# 过滤，使用 SHIP QTY，额外要求装箱字段完整。"""
-    segment = (seller, buyer)
+    segment = _price_segment("PL", seller, buyer)
     messages: list[ValidationMessage] = []
 
     doc_lines, assemble_msgs = _assemble_lines(
@@ -361,6 +472,7 @@ def build_pl_model(
         segment,
         invoice_no=invoice_no,
         po_no=po_no,
+        document_type="PL",
         packing=True,
         use_po_record_description=True,
         seller=seller,
@@ -370,13 +482,16 @@ def build_pl_model(
     if doc_lines is None:
         return BuildResult(model=None, messages=tuple(messages))
 
-    inv_no = invoice_no or _first_non_empty(line.invoice_no for line in lines)
+    inv_no = _first_matching_invoice_no(
+        lines, invoice_no, document_type="PL", seller=seller,
+    )
     if not inv_no:
+        source_field = _invoice_source_field("PL", seller)
         messages.append(
             ValidationMessage(
                 kind="warning", code=CODE_INVOICE_NO_MISSING, severity="high",
-                message="Packing List 要求 INV#，但 PO record 中未填写",
-                sheet=SHEET_PO_RECORD, field="INV#",
+                message=f"Packing List 要求 {source_field}，但 PO record 中未填写",
+                sheet=SHEET_PO_RECORD, field=source_field,
             )
         )
 
@@ -388,6 +503,7 @@ def build_pl_model(
     total_cbm = sum((dl.cbm for dl in doc_lines if dl.cbm is not None), Decimal(0))
     ship_to = _first_non_empty(line.ship_to for line in lines)
     manufacturer_address = _first_non_empty(line.manufacturer_address for line in lines)
+    final_destination = _first_non_empty(line.final_destination for line in lines)
     ex_factory_date = _resolve_model_ex_factory_date(lines, "PL", seller)
 
     return BuildResult(
@@ -395,6 +511,7 @@ def build_pl_model(
             document_type="PL", seller=seller, buyer=buyer, po_no=po_no,
             lines=tuple(doc_lines), total_quantity=total_qty, total_amount=total_amt,
             invoice_no=inv_no, ship_to=ship_to, manufacturer_address=manufacturer_address,
+            final_destination=final_destination,
             ex_factory_date=ex_factory_date,
             total_carton_count=total_carton, total_net_weight=total_nw,
             total_gross_weight=total_gw, total_cbm=total_cbm,
@@ -410,6 +527,9 @@ def build_pl_model(
 def _slice_by_invoice(
     lines: tuple[OrderLine, ...],
     invoice_no: str | None,
+    *,
+    document_type: DocumentType,
+    seller: str,
 ) -> list[tuple[OrderLine, Decimal]]:
     """按 INV# 过滤，返回 (原行, 数量) 列表。
 
@@ -420,7 +540,7 @@ def _slice_by_invoice(
         return [(line, line.quantity) for line in lines]
     out: list[tuple[OrderLine, Decimal]] = []
     for line in lines:
-        if line.invoice_no != invoice_no:
+        if not invoice_no_matches(line, invoice_no, document_type=document_type, seller=seller):
             continue
         qty = line.ship_qty or Decimal("0")
         if qty == 0:

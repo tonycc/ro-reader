@@ -1,6 +1,6 @@
 document: pl
 template_version: '2026.06'
-template: templates/sk/pl.xlsx
+template: templates/sk/invoice&pl.xlsx
 sheet: PL
 header:
   invoice_no: K5
@@ -10,13 +10,10 @@ header:
 header_fixed:
   shipping_mark: C/T#
   shipping_mark_2: MADE IN CHINA
-table_header_row: 
-  - 8
-  - 9
-  - 10
+table_header_row: 8
 lines:
-  start_row: 12
-  style_source_row: 11
+  start_row: 9
+  style_source_row: 9
   row_fixed:
     F: PCS
     H: KGS
@@ -30,13 +27,11 @@ lines:
     net_weight: G
     gross_weight: I
     cbm: K
-    carton_count: M
 totals:
-  quantity: E20
-  net_weight: G20
-  gross_weight: I20
-  cbm: K20
-  carton_count: M20
+  quantity: E12
+  net_weight: G12
+  gross_weight: I12
+  cbm: K12
 style:
   bold:
   - A1
@@ -55,17 +50,15 @@ style:
   - J8
   - K8
   - L8
-  - M8
-  - A20
-  - E20
-  - F20
-  - G20
-  - H20
-  - I20
-  - J20
-  - K20
-  - L20
-  - M20
+  - A12
+  - E12
+  - F12
+  - G12
+  - H12
+  - I12
+  - J12
+  - K12
+  - L12
 preview_content:
   title: PACKING LIST
   static_terms: {}
@@ -82,7 +75,6 @@ preview_content:
     J: ''
     cbm: Measurement
     L: ''
-    carton_count: CTNS
   seller_info:
   - GUANGDONG GLOBALSINO OUTDOOR SPORTS EQUIPMENT LIMITED
   - NO.40 BAIJIA STREET HIGH-TECH INDUSTRIAL DEVELOPMENT ZONE QINGYUAN 511500, GUANGDONG CHINA

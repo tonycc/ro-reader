@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from typing import Final
 
-
 SHIP_TO_HEADER_FIELDS: Final[tuple[str, str, str]] = (
     "ship_to",
     "ship_to_line2",
     "ship_to_line3",
 )
 
-MANUFACTURER_ADDRESS_FIELDS: Final[tuple[str, str]] = (
+MANUFACTURER_HEADER_FIELDS: Final[tuple[str, str, str]] = (
+    "manufacturer",
     "manufacturer_address",
     "manufacturer_address_2",
 )
@@ -28,7 +28,7 @@ def split_header_text(value: str | None, max_lines: int) -> tuple[str, ...]:
         lines = _split_address_like_text(normalized)
 
     if len(lines) > max_lines:
-        lines = lines[: max_lines - 1] + [" ".join(lines[max_lines - 1 :]).strip()]
+        lines = [*lines[: max_lines - 1], " ".join(lines[max_lines - 1 :]).strip()]
 
     padded = lines + [""] * (max_lines - len(lines))
     return tuple(padded[:max_lines])
@@ -38,16 +38,16 @@ def split_ship_to_lines(value: str | None) -> dict[str, str]:
     parts = split_header_text(value, len(SHIP_TO_HEADER_FIELDS))
     return {
         field_name: part
-        for field_name, part in zip(SHIP_TO_HEADER_FIELDS, parts)
+        for field_name, part in zip(SHIP_TO_HEADER_FIELDS, parts, strict=True)
         if part
     }
 
 
 def split_manufacturer_address_lines(value: str | None) -> dict[str, str]:
-    parts = split_header_text(value, len(MANUFACTURER_ADDRESS_FIELDS))
+    parts = split_header_text(value, len(MANUFACTURER_HEADER_FIELDS))
     return {
         field_name: part
-        for field_name, part in zip(MANUFACTURER_ADDRESS_FIELDS, parts)
+        for field_name, part in zip(MANUFACTURER_HEADER_FIELDS, parts, strict=True)
         if part
     }
 
@@ -61,4 +61,3 @@ def _split_address_like_text(value: str) -> list[str]:
     if len(segments) == 3:
         return [segments[0], segments[1], segments[2]]
     return [segments[0], ", ".join(segments[1:-1]), segments[-1]]
-

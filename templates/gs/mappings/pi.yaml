@@ -15,7 +15,6 @@ header:
   manufacturer: G14
   manufacturer_address: G15
   manufacturer_address_2: G16
-  number_of_cartons: B16
 header_fixed:
   incoterm: FOB QINGDAO
   payment_terms: Net 75 days
@@ -26,7 +25,7 @@ header_fixed:
   manufacturer: GLOBALSINO PTE.LTD.
 table_header_row: 19
 lines:
-  start_row: 21
+  start_row: 20
   style_source_row: 20
   row_fixed:
     A: China
@@ -40,34 +39,33 @@ lines:
     amount: H
     confirmed_ex_factory_date: I
 totals:
-  amount: G24
+  amount: G23
   signature:
-    cell: G25
+    cell: G24
     value_mode: fixed
     value: TINA
   Date:
-    cell: G26
+    cell: G25
     value_mode: current_date
 style:
   bold:
   - A1
   - A2
-  - A4
   - A6
   - A7
-  - A9
-  - A13
+  - A10
   - A14
   - A15
   - A19
+  - F1
   - F6
   - F7
-  - F9
-  - F13
+  - F10
   - F14
   - F15
-  - G22
-  
+  - F23
+  - G23
+
 preview_content:
   title: PROFORMA INVOICE
   terms_fields:
@@ -96,5 +94,5 @@ preview_content:
       center: []
       right: [title]
     info:
-      left: [pi_no, incoterm, payment_terms, bill_to, port_of_loading, final_destination, number_of_cartons]
+      left: [pi_no, incoterm, payment_terms, bill_to, port_of_loading, final_destination]
       right: [document_date, ex_factory_date, ship_to, manufacturer, manufacturer_address, manufacturer_address_2]

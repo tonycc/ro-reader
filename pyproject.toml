@@ -3,9 +3,18 @@ name = "ro-reader-workspace"
 version = "0.0.0"
 description = "RO 单据工作台 monorepo 根工作区"
 requires-python = ">=3.11"
+dependencies = [
+    "ro-workbench-api",
+]
+
+[project.scripts]
+api = "ro_workbench_api.app:main"
 
 [tool.uv.workspace]
 members = ["packages/*"]
+
+[tool.uv.sources]
+ro-workbench-api = { workspace = true }
 
 [dependency-groups]
 dev = [

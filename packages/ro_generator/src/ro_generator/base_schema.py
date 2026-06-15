@@ -260,9 +260,9 @@ def _default_schema() -> BaseSchema:
             "SK/combo": "GS-SK/YM COMBO FOB 2026",
             "YM/combo": "GS-SK/YM COMBO FOB 2026",
             "SK/rod": "GS-SK/YM YM ROD FOB 2026",
-            "YM/rod": "GS-SK/YM YM ROD FOB 2026",
+            "YM/rod": "GS-SK/YM COMBO FOB 2026",
             "SK/reel": "GS-SK/YM SK REEL FOB 2026",
-            "YM/reel": "GS-SK/YM SK REEL FOB 2026",
+            "YM/reel": "GS-SK/YM COMBO FOB 2026",
             "GS PTE/combo": "EMAX-GS PTE COMBO FOB 2026",
             "GS PTE/rod": "EMAX-GS PTE ROD FOB 2026",
             "GS PTE/reel": "EMAX-GS PTE REEL FOB 2026",
@@ -282,6 +282,7 @@ def _default_schema() -> BaseSchema:
             "order_quantity": "Order Quantity",
             "ship_date": ("ship DATE", "Ship Date"),
             "ship_to": "ship to",
+            "final_destination": "final destination",
         }),
     )
 

@@ -55,8 +55,8 @@ class TestRealGsInvoiceMapping:
 
     def test_lines_section(self) -> None:
         mapping = load_template_mapping(GS_INVOICE_MAPPING)
-        assert mapping.lines.start_row == 18
-        assert mapping.lines.style_source_row == 17
+        assert mapping.lines.start_row == 15
+        assert mapping.lines.style_source_row == 15
         cols = mapping.lines.columns
         assert isinstance(cols, LineColumns)
         # 新版 GS Invoice 列布局 (2026.06 模板)
@@ -69,8 +69,8 @@ class TestRealGsInvoiceMapping:
 
     def test_totals_section(self) -> None:
         mapping = load_template_mapping(GS_INVOICE_MAPPING)
-        assert mapping.totals["quantity"] == TotalCell(cell="F27")
-        assert mapping.totals["amount"] == TotalCell(cell="H27")
+        assert mapping.totals["quantity"] == TotalCell(cell="F20")
+        assert mapping.totals["amount"] == TotalCell(cell="H20")
 
 
 class TestRealMappingsTableHeaderRows:
@@ -84,9 +84,9 @@ class TestRealMappingsTableHeaderRows:
             (EMAX_PO_MAPPING, [19]),
             (EMAX_PL_MAPPING, [9]),
             (SK_PI_MAPPING, [19]),
-            (SK_PL_MAPPING, [8, 9, 10]),
+            (SK_PL_MAPPING, [8]),
             (YM_PI_MAPPING, [19]),
-            (YM_PL_MAPPING, [8, 9, 10]),
+            (YM_PL_MAPPING, [8]),
         ],
     )
     def test_declares_table_header_row(self, mapping_path: Path, expected_rows: list[int]) -> None:

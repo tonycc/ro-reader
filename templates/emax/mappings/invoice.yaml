@@ -12,13 +12,13 @@ header_fixed:
   term: T/T 90 DAYS AFTER BL DATE
   from: GUANGDONG, CHINA
   to: WEIHAI CITY
-table_header_row: 
+table_header_row:
   - 12
   - 13
   - 14
 lines:
-  start_row: 18
-  style_source_row: 17
+  start_row: 15
+  style_source_row: 15
   row_fixed:
     G: PCS
   columns:
@@ -29,15 +29,16 @@ lines:
     quantity: F
     amount: H
 totals:
-  quantity: F26
-  amount: H26
+  quantity: F19
+  amount: H19
 style:
   bold:
   - A1
   - A2
+  - A3
   - A5
-  - A6
   - A9
+  - A10
   - A11
   - A12
   - B12
@@ -46,10 +47,10 @@ style:
   - E12
   - F12
   - H12
-  - A27
-  - F27
-  - H27
-  
+  - A19
+  - F19
+  - H19
+
 preview_content:
   title: COMMERCIAL INVOICE
   static_terms:

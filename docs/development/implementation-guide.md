@@ -14,7 +14,7 @@
 |---|---|---|
 | 产品决策 | `docs/product/ro-document-generator-product-plan.md` | PM |
 | UI 与交互 | `docs/development/ro-document-workbench-ui-design.md` | 前端 + PM |
-| 字段映射主文档 | `docs/development/unified-field-mapping-guide.md` | 核心包维护者 |
+| 字段映射主文档 | `docs/单据模板字段取值规则汇总.md` | 核心包维护者 |
 | Agent 修复手册 | `docs/development/agent-field-fix-playbook.md` | 核心包维护者 |
 | 字段修复案例库 | `docs/development/field-fix-case-library.md` | 核心包维护者 |
 | 工程实施 | 本文档 | Tech Lead |

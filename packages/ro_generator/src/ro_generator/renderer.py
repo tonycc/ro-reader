@@ -27,16 +27,15 @@ from openpyxl import load_workbook
 from openpyxl.cell.cell import Cell
 from openpyxl.styles import Font
 from openpyxl.utils.cell import coordinate_from_string
+from openpyxl.workbook.workbook import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
 from ro_generator.document_model import DocumentLine, DocumentModel
 from ro_generator.errors import InternalError, TemplateError
 from ro_generator.header_rules import (
     HEADER_DATE_KEYS,
-    HEADER_FIELD_SPECS,
     build_header_resolved_values,
-    header_source_field,
-    header_source_sheet,
+    resolve_header_field_spec,
 )
 from ro_generator.line_rules import (
     line_excel_number_format,
@@ -84,15 +83,7 @@ def render_document(
 
     builder = SourceIndexBuilder()
     try:
-        if mapping.sheet not in wb.sheetnames:
-            raise TemplateError(
-                f"模板 {mapping.template_path.name} 中找不到 sheet {mapping.sheet!r}"
-            )
-        ws: Worksheet = wb[mapping.sheet]
-
-        _write_styles(ws, mapping)
-        _write_header(ws, model, mapping, builder)
-        _write_lines_and_totals(ws, model, mapping, builder)
+        _render_into_workbook(wb, model, mapping, builder)
 
         # 移除模板中未被使用的 sheet（如 GS PL 模板附带 INV sheet）。
         # 前端 SheetJS 默认读第一张 sheet，保留多余 sheet 会导致预览显示错误内容。
@@ -108,6 +99,67 @@ def render_document(
         output_path=output_path.resolve(),
         source_index=builder.build(),
     )
+
+
+def render_document_bundle(
+    items: tuple[tuple[DocumentModel, TemplateMapping], ...],
+    output_path: str | Path,
+) -> RenderResult:
+    """把多个 DocumentModel 渲染到同一个 Excel 模板的多个 sheet。
+
+    用于 SK/YM 的 Invoice + PL 合并导出。所有 mapping 必须指向同一个模板文件。
+    """
+    if not items:
+        raise TemplateError("render_document_bundle 至少需要一个单据")
+
+    template_path = items[0][1].template_path
+    for _, mapping in items:
+        if mapping.template_path != template_path:
+            raise TemplateError("组合导出的 mapping 必须使用同一个模板文件")
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        wb = load_workbook(filename=str(template_path))
+    except Exception as exc:
+        raise TemplateError(f"无法打开模板 {template_path}：{exc}") from exc
+
+    builder = SourceIndexBuilder()
+    try:
+        used_sheets = {mapping.sheet for _, mapping in items}
+        for model, mapping in items:
+            _render_into_workbook(wb, model, mapping, builder)
+
+        for sn in list(wb.sheetnames):
+            if sn not in used_sheets:
+                del wb[sn]
+
+        wb.save(output_path)
+    finally:
+        wb.close()
+
+    return RenderResult(
+        output_path=output_path.resolve(),
+        source_index=builder.build(),
+    )
+
+
+def _render_into_workbook(
+    wb: Workbook,
+    model: DocumentModel,
+    mapping: TemplateMapping,
+    builder: SourceIndexBuilder,
+) -> None:
+    if mapping.sheet not in wb.sheetnames:
+        raise TemplateError(
+            f"模板 {mapping.template_path.name} 中找不到 sheet {mapping.sheet!r}"
+        )
+    ws: Worksheet = wb[mapping.sheet]
+
+    _write_styles(ws, mapping)
+    _write_header(ws, model, mapping, builder)
+    _write_lines_and_totals(ws, model, mapping, builder)
 
 
 # —————————————————————————————————————
@@ -180,17 +232,14 @@ def _write_header(
         if value is not None:
             _safe_set_cell(ws, cell_addr, value)
             written_addrs.add(cell_addr)
-            if _should_trace_header_source(mkey):
-                sheet = header_source_sheet(mkey)
-                field = header_source_field(mkey)
-                # SK/YM/GS 的 ex_factory_date 实际从 PO record 取值
-                if mkey == "ex_factory_date" and model.seller in {"SK", "YM", "GS PTE"}:
-                    sheet = "PO record"
-                    field = "FINAL EX-FACTORY DATE"
-                # GS 的 pi_no 从客户 PO 的 Purchasing Document 取值
-                if mkey == "pi_no" and model.seller == "GS PTE":
-                    sheet = "客户PO"
-                    field = "Purchasing Document"
+            spec = resolve_header_field_spec(
+                mkey,
+                seller=model.seller,
+                document_type=model.document_type,
+            )
+            if spec is not None and spec.source_type == "base_field":
+                sheet = spec.source_sheet if spec and spec.source_sheet else "PO record"
+                field = spec.source_field if spec and spec.source_field else mkey
                 builder.add(
                     cell_addr,
                     SourceLocation(sheet=sheet, row=None, field=field),
@@ -540,9 +589,4 @@ def _write_line_cell(cell: Cell, value: object, spec: object) -> None:
         cell.number_format = number_format
 
 
-def _should_trace_header_source(field_name: str) -> bool:
-    spec = HEADER_FIELD_SPECS.get(field_name)
-    return spec is not None and spec.source_type == "base_field"
-
-
-__all__ = ["render_document"]
+__all__ = ["render_document", "render_document_bundle"]

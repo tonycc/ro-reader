@@ -167,6 +167,23 @@ _SELLER_LINE_OVERRIDES: Final[dict[str, list[tuple[frozenset[str], dict[str, str
     ],
 }
 
+_CONTEXT_LINE_OVERRIDES: Final[dict[tuple[str, str, str], dict[str, str | None]]] = {
+    ("PI", "EMAX PTE", "confirmed_ex_factory_date"): {
+        "rule": 'PO record 的 "FINAL EX-FACTORY DATE" 列',
+        "source_sheet": SHEET_PO_RECORD,
+        "source_field": "FINAL EX-FACTORY DATE",
+    },
+    ("PO", "GS PTE", "confirmed_ex_factory_date"): {
+        "rule": '客户PO 的 "ship DATE" 列',
+        "source_sheet": SHEET_CUSTOMER_PO,
+        "source_field": "ship DATE",
+    },
+}
+
+_UNIT_PRICE_SOURCE_SELLER_OVERRIDES: Final[dict[tuple[str, str], str]] = {
+    ("PO", "GS PTE"): "YM",
+}
+
 
 def get_line_field_spec(field_name: str) -> LineFieldSpec:
     return LINE_FIELD_SPECS.get(
@@ -186,10 +203,28 @@ def _apply_seller_line_override(spec: LineFieldSpec, field_name: str, seller: st
     return spec
 
 
-def _resolve_unit_price_spec(spec: LineFieldSpec, seller: str, category: int | None) -> LineFieldSpec:
+def _apply_context_line_override(
+    spec: LineFieldSpec,
+    *,
+    field_name: str,
+    document_type: str,
+    seller: str,
+) -> LineFieldSpec:
+    kwargs = _CONTEXT_LINE_OVERRIDES.get((document_type, seller, field_name))
+    return replace(spec, **kwargs) if kwargs else spec
+
+
+def _resolve_unit_price_spec(
+    spec: LineFieldSpec,
+    *,
+    document_type: str,
+    seller: str,
+    category: int | None,
+) -> LineFieldSpec:
     """unit_price 按 seller × category 叉积查列名，结果无法预先声明，单独处理。"""
     category_name = CATEGORY_NAMES.get(category or -1, "")
-    column = DATA_BASE_PRICE_COLUMNS.get(f"{seller}/{category_name}")
+    price_seller = _UNIT_PRICE_SOURCE_SELLER_OVERRIDES.get((document_type, seller), seller)
+    column = DATA_BASE_PRICE_COLUMNS.get(f"{price_seller}/{category_name}")
     if column:
         return replace(spec, rule=f"DATA BASE 的 {column} 列", source_sheet=SHEET_DATA_BASE, source_field=column)
     return spec
@@ -208,10 +243,21 @@ def resolve_line_field_spec(
 
     # 2. 主体专属来源覆盖（数据驱动，无 if 链）
     spec = _apply_seller_line_override(spec, field_name, seller)
+    spec = _apply_context_line_override(
+        spec,
+        field_name=field_name,
+        document_type=document_type,
+        seller=seller,
+    )
 
     # 3. unit_price：seller × category 叉积，无法预先声明
     if field_name == "unit_price":
-        spec = _resolve_unit_price_spec(spec, seller, category)
+        spec = _resolve_unit_price_spec(
+            spec,
+            document_type=document_type,
+            seller=seller,
+            category=category,
+        )
 
     return spec
 

@@ -59,6 +59,8 @@ def test_data_base_price_columns():
     # 4 卖方 × 3 品类 = 12
     assert len(s.data_base_price_columns) == 12
     assert s.data_base_price_columns["SK/combo"] == "GS-SK/YM COMBO FOB 2026"
+    assert s.data_base_price_columns["YM/rod"] == "GS-SK/YM COMBO FOB 2026"
+    assert s.data_base_price_columns["YM/reel"] == "GS-SK/YM COMBO FOB 2026"
     assert s.data_base_price_columns["EMAX PTE/reel"] == "EMAX PTE REEL FOB 2026"
 
 

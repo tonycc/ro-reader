@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { useWorkbench } from "../../stores/workbench";
-import { getSessionId } from "../../stores/api";
 
 const wb = useWorkbench();
 const selectedDocs = ref<Set<string>>(new Set(["PI", "PO", "INVOICE", "PL"]));
@@ -20,13 +19,7 @@ function toggleDoc(key: string) {
 }
 
 async function handleExport() {
-  const result = await wb.doExport();
-  if (result?.output_file) {
-    const a = document.createElement("a");
-    a.href = `/api/download?path=${encodeURIComponent(result.output_file)}&session_id=${getSessionId()}`;
-    a.download = result.files?.[0] || "export.xlsx";
-    a.click();
-  }
+  await wb.doExport();
 }
 </script>
 

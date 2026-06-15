@@ -116,9 +116,11 @@ class OrderLine:
     product: Product
 
     # 可选业务字段
+    po_record_category: int | None = None
     cp_item: str = ""  # 客户PO "Item" 列，SK/YM PI 模板"PO item Line Number"来源
     ship_to: str | None = None
     manufacturer_address: str | None = None  # 客户PO "manufacturer" 列
+    final_destination: str | None = None  # 客户PO "final destination" 列
     brand: str | None = None
     invoice_no: str | None = None  # `INV#`
     ship_qty: Decimal | None = None  # SHIP QTY

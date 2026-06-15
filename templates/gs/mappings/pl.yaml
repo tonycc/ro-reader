@@ -4,7 +4,6 @@ template: templates/gs/pl.xlsx
 sheet: 'PL '
 header:
   invoice_no: K5
-  invoice_date: L5
   shipping_mark: C5
   shipping_mark_2: C6
 header_fixed:
@@ -12,8 +11,8 @@ header_fixed:
   shipping_mark_2: MADE IN CHINA
 table_header_row: 8
 lines:
-  start_row: 14
-  style_source_row: 13
+  start_row: 9
+  style_source_row: 9
   row_fixed:
     F: PCS
     H: KGS
@@ -27,17 +26,14 @@ lines:
     net_weight: G
     gross_weight: I
     cbm: K
-    carton_count: M
 totals:
-  quantity: E20
-  net_weight: G20
-  gross_weight: I20
-  cbm: K20
-  carton_count: M20
+  quantity: E15
+  net_weight: G15
+  gross_weight: I15
+  cbm: K15
 style:
   bold:
   - A1
-  - A2
   - A5
   - A8
   - B8
@@ -51,17 +47,15 @@ style:
   - J8
   - K8
   - L8
-  - M8
-  - A20
-  - E20
-  - F20
-  - G20
-  - H20
-  - I20
-  - J20
-  - K20
-  - L20
-  - M20
+  - A15
+  - E15
+  - F15
+  - G15
+  - H15
+  - I15
+  - J15
+  - K15
+  - L15
 preview_content:
   title: PACKING LIST
   static_terms: {}
@@ -79,7 +73,6 @@ preview_content:
     J: ''
     cbm: Measurement
     L: ''
-    carton_count: CTNS
   seller_info:
   - GLOBALSINO PTE.LTD.
   - '10 KAKI BUKIT ROAD 2, #01-37, FIRST EAST CENTRE, SINGAPORE 417868'
@@ -90,4 +83,4 @@ preview_content:
       right: [title]
     info:
       left: [shipping_mark, shipping_mark_2]
-      right: [invoice_no, invoice_date]
+      right: [invoice_no]

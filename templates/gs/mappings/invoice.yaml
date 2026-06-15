@@ -6,7 +6,6 @@ header:
   invoice_no: H6
   invoice_date: H7
   term: H8
-  ship_to: G10
   from: A11
   to: A12
 header_fixed:
@@ -17,8 +16,8 @@ table_header_row:
   - 13
   - 14
 lines:
-  start_row: 18
-  style_source_row: 17
+  start_row: 15
+  style_source_row: 15
   row_fixed:
     G: PCS
   columns:
@@ -29,14 +28,12 @@ lines:
     quantity: F
     amount: H
 totals:
-  quantity: F27
-  amount: H27
+  quantity: F20
+  amount: H20
 style:
   bold:
   - A1
-  - A2
   - A6
-  - A7
   - A10
   - A13
   - B13
@@ -45,9 +42,9 @@ style:
   - E13
   - F13
   - H13
-  - A27
-  - F27
-  - H27
+  - A19
+  - F20
+  - H20
   underline:
   - G6
   - G7
@@ -77,5 +74,5 @@ preview_content:
       center: []
       right: [title]
     info:
-      left: [ship_to, from, to]
+      left: [from, to]
       right: [invoice_no, invoice_date, term]

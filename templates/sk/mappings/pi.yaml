@@ -27,7 +27,7 @@ header_fixed:
 table_header_row: 19
 
 lines:
-  start_row: 21
+  start_row: 20
   style_source_row: 20
   row_fixed:
     A: China
@@ -42,13 +42,13 @@ lines:
     amount: H
     confirmed_ex_factory_date: I
 totals:
-  amount: G22
+  amount: G23
   signature:
-    cell: G23
+    cell: G24
     value_mode: fixed
     value: Greeniee
   Date:
-    cell: G24
+    cell: G25
     value_mode: current_date
 style:
   bold:
@@ -57,26 +57,28 @@ style:
   - A4
   - A6
   - A7
-  - A9
-  - A13
+  - A10
   - A14
   - A15
+  - A16
   - A19
+  - F4
   - F6
   - F7
-  - F9
-  - F13
+  - F10
   - F14
   - F15
-  
+  - F23
+  - G23
+
 preview_content:
   title: PROFORMA INVOICE
   terms_fields:
+  - incoterm
   - payment_terms
-  static_terms:
-    incoterm: FOB GUANGDONG
-    port_of_loading: Guangdong, China
-    final_destination: USA
+  - port_of_loading
+  - final_destination
+  static_terms: {}
   notes: []
   column_labels:
     A: Country of Origin

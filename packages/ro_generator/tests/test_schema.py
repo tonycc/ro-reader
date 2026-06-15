@@ -88,6 +88,8 @@ class TestSchemaConstants:
         # 4 卖方 × 3 品类 = 12 个价格列
         assert len(DATA_BASE_PRICE_COLUMNS) == 12
         assert DATA_BASE_PRICE_COLUMNS["SK/combo"] == "GS-SK/YM COMBO FOB 2026"
+        assert DATA_BASE_PRICE_COLUMNS["YM/rod"] == "GS-SK/YM COMBO FOB 2026"
+        assert DATA_BASE_PRICE_COLUMNS["YM/reel"] == "GS-SK/YM COMBO FOB 2026"
         assert DATA_BASE_PRICE_COLUMNS["EMAX PTE/reel"] == "EMAX PTE REEL FOB 2026"
 
     def test_data_base_headers_includes_sap(self) -> None:

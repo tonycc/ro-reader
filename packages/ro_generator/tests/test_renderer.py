@@ -53,6 +53,7 @@ def make_order_line(
     unit_prices: dict[tuple[str, str], Decimal] | None = None,
     source_row: int | None = None,
     confirmed_ex_factory_date: date | None = None,
+    po_ex_factory_date: date | None = None,
 ) -> OrderLine:
     if unit_prices is None:
         unit_prices = {(ENTITY_GS_PTE, ENTITY_EMAX_PTE): Decimal("32.8")}
@@ -74,6 +75,7 @@ def make_order_line(
         ship_to="EMAX HQ",
         invoice_no="INV-RENDER-001",
         confirmed_ex_factory_date=confirmed_ex_factory_date,
+        po_ex_factory_date=po_ex_factory_date,
         prices=unit_prices,
         subtotals=subtotals,
         source_row=source_row,
@@ -138,7 +140,8 @@ def build_emax_pi() -> DocumentModel:
             quantity=100,
             source_row=5,
             unit_prices={(ENTITY_EMAX_PTE, ENTITY_PF): Decimal("32.8")},
-            confirmed_ex_factory_date=date(2026, 3, 15),
+            confirmed_ex_factory_date=date(2026, 4, 20),
+            po_ex_factory_date=date(2026, 3, 15),
         ),
     )
     result = build_pi_model(lines, seller=ENTITY_EMAX_PTE, buyer=ENTITY_PF, po_no="4500030844")
@@ -264,50 +267,50 @@ class TestRenderBasic:
         result = render_document(model, mapping, tmp_path / "out.xlsx")
         wb = load_workbook(result.output_path)
         ws = wb["INV"]
-        # mapping start_row=18, columns: SAP=D, price=E, qty=F, amount=H, description=C, unit_label row_fixed: G=PCS
-        assert ws["D18"].value == "21-44640"
-        assert ws["E18"].value == 32.8
-        assert ws["F18"].value == 100
-        assert ws["G18"].value == "PCS"
-        assert ws["H18"].value == pytest.approx(3280.0)
-        assert ws["C18"].value == "CB2500.B2"  # description now in C column
+        # mapping start_row=15, columns: SAP=D, price=E, qty=F, amount=H, description=C, unit_label row_fixed: G=PCS
+        assert ws["D15"].value == "21-44640"
+        assert ws["E15"].value == 32.8
+        assert ws["F15"].value == 100
+        assert ws["G15"].value == "PCS"
+        assert ws["H15"].value == pytest.approx(3280.0)
+        assert ws["C15"].value == "CB2500.B2"
 
-        assert ws["D19"].value == "21-44641"
-        assert ws["F19"].value == 200
+        assert ws["D16"].value == "21-44641"
+        assert ws["F16"].value == 200
 
-        assert ws["D20"].value == "21-44642"
-        assert ws["F20"].value == 80
+        assert ws["D17"].value == "21-44642"
+        assert ws["F17"].value == 80
 
     def test_unfilled_reserved_rows_cleared(self, tmp_path: Path) -> None:
-        """3 行 < 预留 7 行，剩余 4 行的样板数据应被清掉。"""
+        """3 行数据写入后，紧接着的样板行应被清掉。"""
         mapping = load_template_mapping(GS_INVOICE_MAPPING)
         model = build_three_line_invoice()
         result = render_document(model, mapping, tmp_path / "out.xlsx")
         wb = load_workbook(result.output_path)
         ws = wb["INV"]
-        # row 21-24 应该没有 SAP（D 列）
-        for row in range(21, 25):
+        # 数据写入 15-17，row 18-19 应被清除（20 是 totals 行）
+        for row in range(18, 20):
             assert ws[f"D{row}"].value is None, f"row {row} 没有清掉 D 列"
             assert ws[f"F{row}"].value is None, f"row {row} 没有清掉 F 列"
 
     def test_totals_written_at_unchanged_position(self, tmp_path: Path) -> None:
-        """3 行不触发插入时，合计行号保持模板原位置 (F27/H27)。"""
+        """3 行不触发插入时，合计行号保持模板原位置 (F20/H20)。"""
         mapping = load_template_mapping(GS_INVOICE_MAPPING)
         model = build_three_line_invoice()
         result = render_document(model, mapping, tmp_path / "out.xlsx")
         wb = load_workbook(result.output_path)
         ws = wb["INV"]
         # openpyxl 读回 Decimal 数值会被规约为 int/float
-        assert ws["F27"].value == 380  # 100+200+80
+        assert ws["F20"].value == 380  # 100+200+80
         # amount: 100*32.8 + 200*32.8 + 80*32.8 = 12464.00
-        assert ws["H27"].value == pytest.approx(12464.0)
+        assert ws["H20"].value == pytest.approx(12464.0)
 
     def test_emax_pi_bill_to_uses_header_fixed_yaml(self, tmp_path: Path) -> None:
         mapping = load_template_mapping(EMAX_PI_MAPPING)
         model = build_emax_pi()
         result = render_document(model, mapping, tmp_path / "emax-pi.xlsx")
         wb = load_workbook(result.output_path)
-        ws = wb["PF Standard Invoice format"]
+        ws = wb["Standard Invoice format"]
         assert ws["B9"].value == "209 Stoneridge Drive"
         assert ws["B10"].value == "Columbia, South Carolina 29210"
         assert ws["B11"].value == "United States"
@@ -315,29 +318,37 @@ class TestRenderBasic:
         assert ws["G10"].value == "Columbia, South Carolina 29210"
         assert ws["G11"].value == "United States"
 
-    def test_emax_pi_ex_factory_date_written_from_customer_po(self, tmp_path: Path) -> None:
+    def test_emax_pi_ex_factory_date_written_from_po_record(self, tmp_path: Path) -> None:
         mapping = load_template_mapping(EMAX_PI_MAPPING)
         model = build_emax_pi()
         result = render_document(model, mapping, tmp_path / "emax-pi.xlsx")
         wb = load_workbook(result.output_path)
-        ws = wb["PF Standard Invoice format"]
+        ws = wb["Standard Invoice format"]
         assert ws["G7"].value == "2026-03-15"
 
         loc = result.source_index.lookup_source("G7")
         assert loc is not None
+        assert loc.sheet == "PO record"
+        assert loc.field == "FINAL EX-FACTORY DATE"
+
+    def test_emax_pi_number_traces_to_customer_po(self, tmp_path: Path) -> None:
+        mapping = load_template_mapping(EMAX_PI_MAPPING)
+        result = render_document(build_emax_pi(), mapping, tmp_path / "emax-pi.xlsx")
+        loc = result.source_index.lookup_source("B6")
+        assert loc is not None
         assert loc.sheet == "客户PO"
-        assert loc.field == "ship DATE"
+        assert loc.field == "Purchasing Document"
 
     def test_emax_pi_totals_can_write_fixed_and_current_date(self, tmp_path: Path) -> None:
         mapping = load_template_mapping(EMAX_PI_MAPPING)
         result = render_document(build_emax_pi(), mapping, tmp_path / "out.xlsx")
         wb = load_workbook(result.output_path)
-        ws = wb["PF Standard Invoice format"]
-        assert ws["G26"].value == "Joyce"
-        assert ws["G27"].value == date.today().strftime("%Y-%m-%d")
+        ws = wb["Standard Invoice format"]
+        assert ws["G23"].value == "Joyce"
+        assert ws["G24"].value == date.today().strftime("%Y-%m-%d")
 
-        signature_loc = result.source_index.lookup_source("G26")
-        date_loc = result.source_index.lookup_source("G27")
+        signature_loc = result.source_index.lookup_source("G23")
+        date_loc = result.source_index.lookup_source("G24")
         assert signature_loc is not None and signature_loc.is_computed
         assert date_loc is not None and date_loc.is_computed
         assert signature_loc.field == "totals.signature"
@@ -347,7 +358,7 @@ class TestRenderBasic:
         mapping = load_template_mapping(EMAX_PI_MAPPING)
         result = render_document(build_emax_pi(), mapping, tmp_path / "out.xlsx")
         wb = load_workbook(result.output_path)
-        ws = wb["PF Standard Invoice format"]
+        ws = wb["Standard Invoice format"]
         assert ws["A17"].value == "Country of The Origin"
         assert ws["B17"].value == "PO Number"
         assert ws["G17"].value == "USD Amount "
@@ -357,16 +368,16 @@ class TestRenderBasic:
         mapping = load_template_mapping(EMAX_PI_MAPPING)
         result = render_document(build_emax_pi(), mapping, tmp_path / "out.xlsx")
         wb = load_workbook(result.output_path)
-        ws = wb["PF Standard Invoice format"]
-        assert ws["F24"].value == "Total"
-        assert ws["F26"].value == "Signature:"
-        assert ws["F27"].value == "Date:"
+        ws = wb["Standard Invoice format"]
+        assert ws["F21"].value == "Total"
+        assert ws["F23"].value == "Signature:"
+        assert ws["F24"].value == "Date:"
 
     def test_emax_pi_reserved_rows_use_consistent_number_formats(self, tmp_path: Path) -> None:
         mapping = load_template_mapping(EMAX_PI_MAPPING)
         result = render_document(build_emax_pi_three_lines(), mapping, tmp_path / "out.xlsx")
         wb = load_workbook(result.output_path)
-        ws = wb["PF Standard Invoice format"]
+        ws = wb["Standard Invoice format"]
         assert ws["E18"].value == pytest.approx(6.71)
         assert ws["E20"].value == pytest.approx(14.51)
         assert ws["E20"].number_format == ws["E18"].number_format
@@ -383,15 +394,15 @@ class TestRenderBasic:
         assert ws["B19"].value == "PO Number"
         assert ws["C19"].value == "Item Number"
         assert ws["H19"].value == "EX-FACTORY DATE"
-        assert ws["C21"].value == "10"
-        assert ws["D21"].value == "CB2500.B2"
-        assert ws["E21"].value == pytest.approx(32.8)
-        assert ws["F21"].value == 100
-        assert ws["G21"].value == pytest.approx(3280.0)
-        assert ws["H21"].value.date() == date(2026, 3, 15)
+        assert ws["C20"].value == "10"
+        assert ws["D20"].value == "CB2500.B2"
+        assert ws["E20"].value == pytest.approx(32.8)
+        assert ws["F20"].value == 100
+        assert ws["G20"].value == pytest.approx(3280.0)
+        assert ws["H20"].value.date() == date(2026, 3, 15)
         assert ws["G23"].value == pytest.approx(3280.0)
         assert "d/mmm/yy" not in ws["G23"].number_format.lower()
-        loc = result.source_index.lookup_source("B21")
+        loc = result.source_index.lookup_source("B20")
         assert loc is not None
         assert loc.sheet == "客户PO"
         assert loc.field == "Purchasing Document"
@@ -418,8 +429,8 @@ class TestRenderBasic:
         result = render_document(model, mapping, tmp_path / "out.xlsx")
         wb = load_workbook(result.output_path)
         ws = wb["PL"]
-        assert ws["K14"].value == pytest.approx(1.2)
-        assert ws["K14"].number_format == "0.00"
+        assert ws["K10"].value == pytest.approx(1.2)
+        assert ws["K10"].number_format == "0.00"
 
     def test_emax_pl_measurement_preserves_source_decimal_places(self, tmp_path: Path) -> None:
         mapping = load_template_mapping(EMAX_PL_MAPPING)
@@ -433,8 +444,8 @@ class TestRenderBasic:
         result = render_document(model, mapping, tmp_path / "out.xlsx")
         wb = load_workbook(result.output_path)
         ws = wb["PL"]
-        assert ws["K14"].value == pytest.approx(1.2)
-        assert ws["K14"].number_format == "0.0000"
+        assert ws["K10"].value == pytest.approx(1.2)
+        assert ws["K10"].number_format == "0.0000"
 
 
 # ————————————————————————————————————————
@@ -450,35 +461,35 @@ class TestRenderOverflow:
         wb = load_workbook(result.output_path)
         ws = wb["INV"]
         for i in range(10):
-            row = 18 + i
+            row = 15 + i
             assert ws[f"D{row}"].value == f"21-4464{i}", f"row {row} D 列未写入第 {i} 行 SAP"
 
     def test_totals_shifted_by_insertion_count(self, tmp_path: Path) -> None:
-        """模板预留区间 = totals_row(27) - start_row(18) = 9 行；
-        10 行只插入 1 行，合计从 F27/H27 平移到 F28/H28。
+        """模板预留区间 = totals_row(20) - start_row(15) = 5 行；
+        10 行插入 5 行，合计从 F20/H20 平移到 F25/H25。
         """
         mapping = load_template_mapping(GS_INVOICE_MAPPING)
         model = build_overflowing_invoice()
         result = render_document(model, mapping, tmp_path / "out.xlsx")
         wb = load_workbook(result.output_path)
         ws = wb["INV"]
-        assert ws["F28"].value is not None
-        assert ws["H28"].value is not None
+        assert ws["F25"].value is not None
+        assert ws["H25"].value is not None
         # 10 行总数: 50+51+...+59 = 545
-        assert ws["F28"].value == 545
+        assert ws["F25"].value == 545
 
     def test_inserted_rows_have_styles(self, tmp_path: Path) -> None:
-        """新插入的行单元格必须有样式（来自 style_source_row 19）。
+        """新插入的行单元格必须有样式（来自 style_source_row 15）。
 
-        预留区间 = 27-18 = 9 行（rows 18-26），10 行触发插入 1 行 at row 27。
+        预留区间 = 20-15 = 5 行（rows 15-19），10 行触发插入 5 行。
         """
         mapping = load_template_mapping(GS_INVOICE_MAPPING)
         model = build_overflowing_invoice()
         result = render_document(model, mapping, tmp_path / "out.xlsx")
         wb = load_workbook(result.output_path)
         ws = wb["INV"]
-        cell = ws["D27"]
-        assert cell.has_style, "插入行 row 27 D 列缺样式"
+        cell = ws["D20"]
+        assert cell.has_style, "插入行 row 20 D 列缺样式"
 
 
 # ————————————————————————————————————————
@@ -556,8 +567,8 @@ class TestSourceIndex:
     def test_data_row_traces_back_to_po_record(self, tmp_path: Path) -> None:
         mapping = load_template_mapping(GS_INVOICE_MAPPING)
         result = render_document(build_three_line_invoice(), mapping, tmp_path / "out.xlsx")
-        # 第一行的 SAP（D18）应溯源到 PO record source_row=5 的 SAP Number 字段
-        loc = result.source_index.lookup_source("D18")
+        # 第一行的 SAP（D15）应溯源到 PO record source_row=5 的 SAP Number 字段
+        loc = result.source_index.lookup_source("D15")
         assert loc is not None
         assert loc.sheet == "PO record"
         assert loc.row == 5
@@ -566,7 +577,7 @@ class TestSourceIndex:
     def test_quantity_traces_to_ship_qty_for_invoice(self, tmp_path: Path) -> None:
         mapping = load_template_mapping(GS_INVOICE_MAPPING)
         result = render_document(build_three_line_invoice(), mapping, tmp_path / "out.xlsx")
-        loc = result.source_index.lookup_source("F18")
+        loc = result.source_index.lookup_source("F15")
         assert loc is not None
         assert loc.field == "SHIP QTY"
 
@@ -574,7 +585,7 @@ class TestSourceIndex:
         # Invoice/PL 的 description 来自 PO record（出货时的商品描述），不是 DATA BASE
         mapping = load_template_mapping(GS_INVOICE_MAPPING)
         result = render_document(build_three_line_invoice(), mapping, tmp_path / "out.xlsx")
-        loc = result.source_index.lookup_source("C18")
+        loc = result.source_index.lookup_source("C15")
         assert loc is not None
         assert loc.sheet == "PO record"
         assert isinstance(loc.row, int)  # PO record 逐行数据，有源行号
@@ -593,7 +604,7 @@ class TestSourceIndex:
         """amount 列写公式，UI 上溯源应标识为"由工作台计算"。"""
         mapping = load_template_mapping(GS_INVOICE_MAPPING)
         result = render_document(build_three_line_invoice(), mapping, tmp_path / "out.xlsx")
-        loc = result.source_index.lookup_source("H18")
+        loc = result.source_index.lookup_source("H15")
         assert loc is not None
         assert loc.is_computed
         assert loc.sheet == COMPUTED_SHEET
@@ -601,9 +612,9 @@ class TestSourceIndex:
     def test_totals_marked_computed(self, tmp_path: Path) -> None:
         mapping = load_template_mapping(GS_INVOICE_MAPPING)
         result = render_document(build_three_line_invoice(), mapping, tmp_path / "out.xlsx")
-        # 模板原合计在 F27/H27（3 行不触发插入）
-        qty_loc = result.source_index.lookup_source("F27")
-        amt_loc = result.source_index.lookup_source("H27")
+        # 模板原合计在 F20/H20（3 行不触发插入）
+        qty_loc = result.source_index.lookup_source("F20")
+        amt_loc = result.source_index.lookup_source("H20")
         assert qty_loc is not None and qty_loc.is_computed
         assert amt_loc is not None and amt_loc.is_computed
         assert qty_loc.field == "total_quantity"
@@ -618,8 +629,18 @@ class TestSourceIndex:
         assert loc.field == "INV#"
 
     def test_ship_to_header_traces_to_customer_po(self, tmp_path: Path) -> None:
-        mapping = load_template_mapping(GS_INVOICE_MAPPING)
-        result = render_document(build_three_line_invoice(), mapping, tmp_path / "out.xlsx")
+        from ro_generator.template_mapping import load_template_mapping as ltm
+        gs_pi_mapping = REPO_ROOT / "templates" / "gs" / "mappings" / "pi.yaml"
+        mapping = ltm(gs_pi_mapping)
+        model = build_pi_model(
+            (
+                make_order_line(sap="21-44640", description="CB2500.B2", gs_model="GS-100", quantity=100,
+                                unit_prices={(ENTITY_GS_PTE, ENTITY_EMAX_PTE): Decimal("32.8")}),
+            ),
+            seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="4500030844",
+        )
+        assert model.model is not None, model.messages
+        result = render_document(model.model, mapping, tmp_path / "out.xlsx")
         loc = result.source_index.lookup_source("G10")
         assert loc is not None
         assert loc.sheet == "客户PO"

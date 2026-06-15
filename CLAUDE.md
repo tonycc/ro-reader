@@ -21,7 +21,7 @@ tests/fixtures/        合成 base 文件生成脚本
 - `docs/product/ro-document-generator-product-plan.md`：**产品方案**（最权威，所有产品决策以此为准）。
 - `docs/development/ro-document-workbench-ui-design.md`：**前端 UI 与交互设计**。
 - `docs/development/implementation-guide.md`：**工程实施指南**（含各 Phase 细粒度任务清单与状态）。
-- `docs/development/unified-field-mapping-guide.md`：**统一字段映射与配置指南**（同时面向业务与开发/agent：覆盖字段来源链路、四类单据口径、预览配置规范、模板 mapping 以及修改决策表）。
+- `docs/单据模板字段取值规则汇总.md`：**单据模板字段取值规则汇总**（当前字段来源基准，按模板汇总字段取值规则）。
 - `docs/development/phase-0-spike-results.md`：Phase 0 spike 结论。
 
 > 当 docs 文件之间冲突时，优先级为：产品方案 > UI 设计 > 实施指南 > CLAUDE.md。
@@ -277,7 +277,7 @@ Session 通过 `X-Session-Id` header 传递（前端 Pinia store 自动管理）
 ## 模板处理注意
 
 - `.xls` 老格式已通过 `xlrd` 一次性转换为 `.xlsx`（EMAX Invoice、EMAX PL），原始 `.xls` 保留在 `templates/_legacy_xls/` 留底。业务方今后只在 `.xlsx` 模板上修改。
-- 更新其他 mapping 时，应参考当前成熟 `PI` mapping 沉淀出的规范格式；权威说明见 `docs/development/unified-field-mapping-guide.md`，示例起点见 `templates/_examples/`。但**不能**把某一份真实业务 `pi.yaml` 逐字复制成其它单据或主体的 mapping；必须按单据类型、主体信息和模板结构保留边界。
+- 更新其他 mapping 时，应参考当前成熟 `PI` mapping 沉淀出的规范格式；字段取值基准见 `docs/单据模板字段取值规则汇总.md`，示例起点见 `templates/_examples/`。但**不能**把某一份真实业务 `pi.yaml` 逐字复制成其它单据或主体的 mapping；必须按单据类型、主体信息和模板结构保留边界。
 - 对 mapping 做规范化收敛时，应主动清理无效空配置和旧结构残留，例如空 `to_label`、旧 `terms: {}`、已不参与布局或渲染的占位字段；不要保留“虽然不报错但没有实际作用”的配置噪音。
 - 如果 `start_row` 上方存在真实表格表头，mapping 中应显式声明 `table_header_row`；不要再依赖渲染器启发式猜测哪一行是表头。
 - `style_source_row` 必须指向真实明细样式行。renderer 会先用它统一预留明细区样式，再写值、插入新行，避免模板脏格式把单价/数量显示成日期等错误格式。
