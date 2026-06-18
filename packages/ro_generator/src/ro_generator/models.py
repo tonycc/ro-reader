@@ -130,7 +130,7 @@ class OrderLine:
     reel_sap: str | None = None
     reel_description: str | None = None
     e10_po: str | None = None  # SK 工厂 PO 号 (PO record Q列)
-    ym_po: str | None = None   # YM 工厂 PO 号 (PO record R列)
+    ym_po: str | None = None  # YM 工厂 PO 号 (PO record R列)
 
     # 日期
     order_date: date | None = None

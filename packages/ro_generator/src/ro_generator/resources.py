@@ -12,6 +12,7 @@ def resource_root() -> Path:
     override = os.environ.get("RO_WORKBENCH_RESOURCE_ROOT")
     if override:
         return Path(override)
-    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        return Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    meipass = getattr(sys, "_MEIPASS", None)
+    if getattr(sys, "frozen", False) and isinstance(meipass, str):
+        return Path(meipass)
     return Path(__file__).resolve().parents[4]

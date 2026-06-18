@@ -62,8 +62,13 @@ PO_RECORD_HEADER = [
 CUSTOMER_PO_HEADER = ["Purchasing Document", "Material", "Order Quantity"]
 
 
-def _write_sheet(ws: Any, headers: list[str], rows: list[dict[str, Any]],
-                 header_row: int = 4, first_data_row: int = 5) -> None:
+def _write_sheet(
+    ws: Any,
+    headers: list[str],
+    rows: list[dict[str, Any]],
+    header_row: int = 4,
+    first_data_row: int = 5,
+) -> None:
     for c_idx, header in enumerate(headers, start=1):
         ws.cell(row=header_row, column=c_idx, value=header)
     for r_offset, row in enumerate(rows):
@@ -80,11 +85,13 @@ def _default_customer_po_rows(po_record_rows: list[dict[str, Any]]) -> list[dict
         material = row.get("SAP Number")
         if po_no is None or material is None:
             continue
-        rows.append({
-            "Purchasing Document": po_no,
-            "Material": material,
-            "Order Quantity": row.get("FINALQTY", 100),
-        })
+        rows.append(
+            {
+                "Purchasing Document": po_no,
+                "Material": material,
+                "Order Quantity": row.get("FINALQTY", 100),
+            }
+        )
     return rows
 
 
@@ -180,7 +187,8 @@ class TestSuccess:
                 "--docs",
                 "invoice",
                 "--seller",
-                "GS PTE",                "--invoice-no",
+                "GS PTE",
+                "--invoice-no",
                 "INV-001",
                 "--output-dir",
                 str(out_dir),
@@ -201,7 +209,8 @@ class TestSuccess:
                 "--docs",
                 "invoice",
                 "--seller",
-                "GS PTE",                "--invoice-no",
+                "GS PTE",
+                "--invoice-no",
                 "INV-001",
                 "--output-dir",
                 str(out_dir),
@@ -233,7 +242,8 @@ class TestSuccess:
                 "--docs",
                 "invoice",
                 "--seller",
-                "GS PTE",                "--invoice-no",
+                "GS PTE",
+                "--invoice-no",
                 "INV-001",
                 "--output-dir",
                 str(out_dir),
@@ -264,7 +274,8 @@ class TestInputFile:
                     "base_file": str(base),
                     "po_no": "4500030844",
                     "documents": ["INVOICE"],
-                    "seller": "GS PTE",                    "invoice_no": "INV-001",
+                    "seller": "GS PTE",
+                    "invoice_no": "INV-001",
                     "output_dir": str(out_dir),
                 }
             ),
@@ -286,7 +297,8 @@ class TestInputFile:
                     "base_file": str(base),
                     "po_no": "WILL_BE_OVERRIDDEN",
                     "documents": ["INVOICE"],
-                    "seller": "GS PTE",                    "invoice_no": "INV-001",
+                    "seller": "GS PTE",
+                    "invoice_no": "INV-001",
                     "output_dir": str(out_dir),
                 }
             ),
@@ -367,7 +379,8 @@ class TestErrorExitCode:
                 "--docs",
                 "invoice",
                 "--seller",
-                "GS PTE",                "--invoice-no",
+                "GS PTE",
+                "--invoice-no",
                 "INV-001",
                 "--output-dir",
                 str(out_dir),
@@ -388,7 +401,8 @@ class TestErrorExitCode:
                 "--docs",
                 "invoice",
                 "--seller",
-                "GS PTE",                "--invoice-no",
+                "GS PTE",
+                "--invoice-no",
                 "INV-001",
                 "--output-dir",
                 str(out_dir),
@@ -475,7 +489,8 @@ class TestNeedsInputExitCode:
                 "--docs",
                 "invoice",
                 "--seller",
-                "GS PTE",                "--output-dir",
+                "GS PTE",
+                "--output-dir",
                 str(tmp_path / "out"),
                 "--json",
             ]

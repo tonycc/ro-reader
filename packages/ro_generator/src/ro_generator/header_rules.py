@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
 from datetime import date
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, TypedDict
 
 from ro_generator.header_multiline import (
     MANUFACTURER_HEADER_FIELDS,
@@ -26,6 +26,16 @@ class HeaderFieldSpec:
     source_field: str | None = None
     model_attr: str | None = None
     render_keys: tuple[str, ...] = ()
+
+
+class HeaderFieldOverride(TypedDict, total=False):
+    label: str
+    source_type: str
+    rule: str
+    source_sheet: str | None
+    source_field: str | None
+    model_attr: str | None
+    render_keys: tuple[str, ...]
 
 
 HEADER_DATE_KEYS: Final[frozenset[str]] = frozenset(
@@ -185,34 +195,46 @@ HEADER_FIELD_SPECS: Final[dict[str, HeaderFieldSpec]] = {
 # field_name → [(seller_set, override_kwargs), ...]
 # —————————————————————————————————————
 
-_HEADER_SELLER_OVERRIDES: Final[dict[str, list[tuple[frozenset[str], dict[str, str | None]]]]] = {
+_HEADER_SELLER_OVERRIDES: Final[dict[str, list[tuple[frozenset[str], HeaderFieldOverride]]]] = {
     "ex_factory_date": [
-        (frozenset({"SK", "YM", "GS PTE"}), {
-            "source_sheet": SHEET_PO_RECORD,
-            "source_field": "FINAL EX-FACTORY DATE",
-            "rule": 'PO record 的 "FINAL EX-FACTORY DATE" 列',
-        }),
+        (
+            frozenset({"SK", "YM", "GS PTE"}),
+            {
+                "source_sheet": SHEET_PO_RECORD,
+                "source_field": "FINAL EX-FACTORY DATE",
+                "rule": 'PO record 的 "FINAL EX-FACTORY DATE" 列',
+            },
+        ),
     ],
     "pi_no": [
-        (frozenset({"SK"}), {
-            "source_sheet": SHEET_PO_RECORD,
-            "source_field": "E10 PO",
-            "rule": 'PO record 的 "E10 PO" 列，必填',
-        }),
-        (frozenset({"YM"}), {
-            "source_sheet": SHEET_PO_RECORD,
-            "source_field": "YM PO",
-            "rule": 'PO record 的 "YM PO" 列，必填',
-        }),
-        (frozenset({"GS PTE"}), {
-            "source_sheet": SHEET_CUSTOMER_PO,
-            "source_field": "Purchasing Document",
-            "rule": '客户PO A列 "Purchasing Document"',
-        }),
+        (
+            frozenset({"SK"}),
+            {
+                "source_sheet": SHEET_PO_RECORD,
+                "source_field": "E10 PO",
+                "rule": 'PO record 的 "E10 PO" 列，必填',
+            },
+        ),
+        (
+            frozenset({"YM"}),
+            {
+                "source_sheet": SHEET_PO_RECORD,
+                "source_field": "YM PO",
+                "rule": 'PO record 的 "YM PO" 列，必填',
+            },
+        ),
+        (
+            frozenset({"GS PTE"}),
+            {
+                "source_sheet": SHEET_CUSTOMER_PO,
+                "source_field": "Purchasing Document",
+                "rule": '客户PO A列 "Purchasing Document"',
+            },
+        ),
     ],
 }
 
-_HEADER_CONTEXT_OVERRIDES: Final[dict[tuple[str, str, str], dict[str, str | None]]] = {
+_HEADER_CONTEXT_OVERRIDES: Final[dict[tuple[str, str, str], HeaderFieldOverride]] = {
     ("PI", "EMAX PTE", "pi_no"): {
         "source_sheet": SHEET_CUSTOMER_PO,
         "source_field": "Purchasing Document",

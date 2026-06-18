@@ -198,7 +198,8 @@ def _build_request(args: argparse.Namespace) -> DocumentRequest:
         base_file=str(raw["base_file"]),
         po_no=str(raw["po_no"]),
         documents=tuple(documents_upper),  # type: ignore[arg-type]
-        seller=_optional_str(raw.get("seller")),invoice_no=_optional_str(raw.get("invoice_no")),
+        seller=_optional_str(raw.get("seller")),
+        invoice_no=_optional_str(raw.get("invoice_no")),
         output_format=output_format,
         output_dir=str(raw.get("output_dir") or "outputs"),
         on_conflict=on_conflict,

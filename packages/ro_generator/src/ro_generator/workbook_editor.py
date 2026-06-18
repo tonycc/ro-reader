@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, cast
 
 from openpyxl import load_workbook
 
@@ -67,11 +68,13 @@ def edit_workbook_cell(
             normalize_header(field),
             normalize_header(schema.field(sheet, field)),
         }
-        col_idx = next((col_map[candidate] for candidate in field_candidates if candidate in col_map), None)
+        col_idx = next(
+            (col_map[candidate] for candidate in field_candidates if candidate in col_map), None
+        )
         if col_idx is None:
             return EditResult(ok=False, message=f"表头中找不到字段 {field!r}")
 
-        ws.cell(row=row, column=col_idx, value=value)
+        ws.cell(row=row, column=col_idx, value=cast(Any, value))
         wb.save(str(path))
         return EditResult(ok=True, message=f"已更新 {sheet} row={row} {field}")
     except Exception as exc:

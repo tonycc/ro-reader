@@ -13,14 +13,34 @@ from ro_generator.workbook_cache import WorkbookCacheManager
 # —————————————————————————————————————
 
 DATA_BASE_HEADER = [
-    "SAP", "Material Description", "Category", "GS MODEL",
-    "round value", "L", "W", "H",
+    "SAP",
+    "Material Description",
+    "Category",
+    "GS MODEL",
+    "round value",
+    "L",
+    "W",
+    "H",
 ]
 PO_RECORD_HEADER = [
-    "PO NO.", "ITEM LINE#", "SAP Number", "DESCRIPTION", "FINALQTY",
-    "GS-SK/YM USD FOB", "EMAX-GS PTE FOB", "EMAX PTE",
-    "INV#", "SHIP QTY", "CTNS", "TOTAL CBM",
-    "外箱(最终出口装箱率)", "N/W", "G/W", "L", "W", "H",
+    "PO NO.",
+    "ITEM LINE#",
+    "SAP Number",
+    "DESCRIPTION",
+    "FINALQTY",
+    "GS-SK/YM USD FOB",
+    "EMAX-GS PTE FOB",
+    "EMAX PTE",
+    "INV#",
+    "SHIP QTY",
+    "CTNS",
+    "TOTAL CBM",
+    "外箱(最终出口装箱率)",
+    "N/W",
+    "G/W",
+    "L",
+    "W",
+    "H",
 ]
 
 
@@ -56,20 +76,37 @@ def make_base_file(tmp_path, *, data_base_rows, po_record_rows, name="base.xlsx"
 
 
 COMBO_PRODUCT = {
-    "SAP": "21-44640", "Material Description": "CB2500.B2",
-    "Category": 1, "GS MODEL": "Q1",
-    "round value": 24, "L": 60, "W": 40, "H": 30,
+    "SAP": "21-44640",
+    "Material Description": "CB2500.B2",
+    "Category": 1,
+    "GS MODEL": "Q1",
+    "round value": 24,
+    "L": 60,
+    "W": 40,
+    "H": 30,
 }
 
 
 def basic_po_row(**overrides):
     base = {
-        "PO NO.": "4500030844", "ITEM LINE#": "10", "SAP Number": "21-44640",
-        "DESCRIPTION": "CB2500.B2", "FINALQTY": 100,
-        "GS-SK/YM USD FOB": 28.0, "EMAX-GS PTE FOB": 32.8,
-        "EMAX PTE": 38.0, "INV#": "INV-001", "SHIP QTY": 100,
-        "外箱(最终出口装箱率)": 24, "CTNS": 5, "TOTAL CBM": 0.36,
-        "N/W": 8.5, "G/W": 10.1, "L": 48, "W": 31, "H": 35,
+        "PO NO.": "4500030844",
+        "ITEM LINE#": "10",
+        "SAP Number": "21-44640",
+        "DESCRIPTION": "CB2500.B2",
+        "FINALQTY": 100,
+        "GS-SK/YM USD FOB": 28.0,
+        "EMAX-GS PTE FOB": 32.8,
+        "EMAX PTE": 38.0,
+        "INV#": "INV-001",
+        "SHIP QTY": 100,
+        "外箱(最终出口装箱率)": 24,
+        "CTNS": 5,
+        "TOTAL CBM": 0.36,
+        "N/W": 8.5,
+        "G/W": 10.1,
+        "L": 48,
+        "W": 31,
+        "H": 35,
     }
     base.update(overrides)
     return base
@@ -78,6 +115,7 @@ def basic_po_row(**overrides):
 # —————————————————————————————————————
 # Tests
 # —————————————————————————————————————
+
 
 class TestCacheHit:
     def test_repeated_get_returns_same_snapshot(self, tmp_path):
@@ -199,12 +237,16 @@ class TestConcurrency:
 
     def test_different_files_independent(self, tmp_path):
         path1 = make_base_file(
-            tmp_path, data_base_rows=[COMBO_PRODUCT],
-            po_record_rows=[basic_po_row()], name="base1.xlsx",
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[basic_po_row()],
+            name="base1.xlsx",
         )
         path2 = make_base_file(
-            tmp_path, data_base_rows=[COMBO_PRODUCT],
-            po_record_rows=[basic_po_row(**{"PO NO.": "4500099999"})], name="base2.xlsx",
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[basic_po_row(**{"PO NO.": "4500099999"})],
+            name="base2.xlsx",
         )
         cache = WorkbookCacheManager(ttl_seconds=3600)
         s1 = cache.get_snapshot(path1)

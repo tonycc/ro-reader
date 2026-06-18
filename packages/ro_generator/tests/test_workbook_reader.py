@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from openpyxl import Workbook
+from openpyxl.worksheet.worksheet import Worksheet
 from ro_generator.errors import WorkbookOpenError
 from ro_generator.workbook_reader import (
     CELL_NUMBER_FORMATS_KEY,
@@ -201,20 +202,18 @@ class TestReadSheet:
 
     def test_rows_include_number_formats(self, tmp_path: Path) -> None:
         wb = Workbook()
-        ws = wb.active
+        ws = cast(Worksheet, wb.active)
         ws.title = "PO record"
-        for r_idx, row in enumerate(
-            [
-                ["", "", "", ""],
-                ["", "", "", ""],
-                ["", "", "", ""],
-                ["PO NO.", "SAP Number", "FINALQTY", "INV#"],
-                ["4500030844", "21-44640", 1.2, "INV-001"],
-            ],
-            start=1,
-        ):
+        rows: list[list[object]] = [
+            ["", "", "", ""],
+            ["", "", "", ""],
+            ["", "", "", ""],
+            ["PO NO.", "SAP Number", "FINALQTY", "INV#"],
+            ["4500030844", "21-44640", 1.2, "INV-001"],
+        ]
+        for r_idx, row in enumerate(rows, start=1):
             for c_idx, val in enumerate(row, start=1):
-                ws.cell(row=r_idx, column=c_idx, value=val)
+                ws.cell(row=r_idx, column=c_idx, value=cast(Any, val))
         ws["C5"].number_format = "0.0000"
         path = tmp_path / "formatted.xlsx"
         wb.save(path)

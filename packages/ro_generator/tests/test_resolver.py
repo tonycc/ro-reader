@@ -106,7 +106,9 @@ def make_base_file(
     _write_sheet(
         ws_cp,
         CUSTOMER_PO_HEADER,
-        customer_po_rows if customer_po_rows is not None else _default_customer_po_rows(po_record_rows or []),
+        customer_po_rows
+        if customer_po_rows is not None
+        else _default_customer_po_rows(po_record_rows or []),
         header_row=1,
         first_data_row=2,
     )
@@ -116,8 +118,13 @@ def make_base_file(
     return path
 
 
-def _write_sheet(ws: Any, headers: list[Any], rows: list[dict[str, Any]],
-                 header_row: int = 4, first_data_row: int = 5) -> None:
+def _write_sheet(
+    ws: Any,
+    headers: list[Any],
+    rows: list[dict[str, Any]],
+    header_row: int = 4,
+    first_data_row: int = 5,
+) -> None:
     """写入 sheet 表头和数据。"""
     for c_idx, header in enumerate(headers, start=1):
         ws.cell(row=header_row, column=c_idx, value=header)
@@ -135,12 +142,14 @@ def _default_customer_po_rows(po_record_rows: list[dict[str, Any]]) -> list[dict
         material = row.get("SAP Number")
         if po_no is None or material is None:
             continue
-        rows.append({
-            "Purchasing Document": po_no,
-            "Material": material,
-            "ship to": "Customer PO Ship To",
-            "Order Quantity": row.get("FINALQTY", 100),
-        })
+        rows.append(
+            {
+                "Purchasing Document": po_no,
+                "Material": material,
+                "ship to": "Customer PO Ship To",
+                "Order Quantity": row.get("FINALQTY", 100),
+            }
+        )
     return rows
 
 
@@ -257,12 +266,14 @@ class TestPoLookup:
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
             po_record_rows=[basic_po_row(**{"SHIP TO": "PO Record Ship To"})],
-            customer_po_rows=[{
-                "Purchasing Document": "4500030844",
-                "Material": "21-44640",
-                "ship to": "Customer PO Ship To",
-                "Order Quantity": 100,
-            }],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Material": "21-44640",
+                    "ship to": "Customer PO Ship To",
+                    "Order Quantity": 100,
+                }
+            ],
         )
         with WorkbookReader(path) as reader:
             result = resolve_po_lines(reader, "4500030844")
@@ -273,12 +284,14 @@ class TestPoLookup:
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
             po_record_rows=[basic_po_row(**{"ITEM LINE#": "10"})],
-            customer_po_rows=[{
-                "Purchasing Document": "4500030844",
-                "Material": "21-44640",
-                "ship to": "Customer PO Ship To",
-                "Order Quantity": 100,
-            }],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Material": "21-44640",
+                    "ship to": "Customer PO Ship To",
+                    "Order Quantity": 100,
+                }
+            ],
         )
         with WorkbookReader(path) as reader:
             result = resolve_po_lines(reader, "4500030844")
@@ -299,12 +312,14 @@ class TestPoLookup:
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
             po_record_rows=[basic_po_row(FINALQTY=100)],
-            customer_po_rows=[{
-                "Purchasing Document": "4500030844",
-                "Material": "21-44640",
-                "ship to": "Customer PO Ship To",
-                "Order Quantity": 240,
-            }],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Material": "21-44640",
+                    "ship to": "Customer PO Ship To",
+                    "Order Quantity": 240,
+                }
+            ],
         )
         with WorkbookReader(path) as reader:
             result = resolve_po_lines(reader, "4500030844")
@@ -313,15 +328,21 @@ class TestPoLookup:
     def test_prices_read_from_data_base_price_matrix(self, tmp_path: Path) -> None:
         path = make_base_file(
             tmp_path,
-            data_base_rows=[{
-                **COMBO_PRODUCT,
-                "EMAX-GS PTE COMBO FOB 2026": Decimal("66.6"),
-                "EMAX PTE COMBO FOB 2026": Decimal("88.8"),
-            }],
-            po_record_rows=[basic_po_row(**{
-                "EMAX-GS PTE FOB": Decimal("32.8"),
-                "EMAX PTE": Decimal("38.0"),
-            })],
+            data_base_rows=[
+                {
+                    **COMBO_PRODUCT,
+                    "EMAX-GS PTE COMBO FOB 2026": Decimal("66.6"),
+                    "EMAX PTE COMBO FOB 2026": Decimal("88.8"),
+                }
+            ],
+            po_record_rows=[
+                basic_po_row(
+                    **{
+                        "EMAX-GS PTE FOB": Decimal("32.8"),
+                        "EMAX PTE": Decimal("38.0"),
+                    }
+                )
+            ],
         )
         with WorkbookReader(path) as reader:
             result = resolve_po_lines(reader, "4500030844")
@@ -334,12 +355,14 @@ class TestPoLookup:
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
             po_record_rows=[basic_po_row(**{"SHIP TO": "PO Record Ship To"})],
-            customer_po_rows=[{
-                "Purchasing Document": "4500030844",
-                "Material": "21-44640",
-                "ship to": "Matching Customer Ship To",
-                "Order Quantity": 100,
-            }],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Material": "21-44640",
+                    "ship to": "Matching Customer Ship To",
+                    "Order Quantity": 100,
+                }
+            ],
         )
         with WorkbookReader(path) as reader:
             result = resolve_po_lines(reader, "4500030844")
@@ -426,12 +449,14 @@ class TestQty:
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
             po_record_rows=[basic_po_row(FINALQTY=100)],
-            customer_po_rows=[{
-                "Purchasing Document": "4500030844",
-                "Material": "OTHER-MATERIAL",
-                "ship to": "Customer PO Ship To",
-                "Order Quantity": 100,
-            }],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Material": "OTHER-MATERIAL",
+                    "ship to": "Customer PO Ship To",
+                    "Order Quantity": 100,
+                }
+            ],
         )
         with WorkbookReader(path) as reader:
             result = resolve_po_lines(reader, "4500030844")
@@ -447,12 +472,14 @@ class TestQty:
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
             po_record_rows=[basic_po_row(FINALQTY=100)],
-            customer_po_rows=[{
-                "Purchasing Document": "4500030844",
-                "Material": "21-44640",
-                "ship to": "Customer PO Ship To",
-                "Order Quantity": None,
-            }],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Material": "21-44640",
+                    "ship to": "Customer PO Ship To",
+                    "Order Quantity": None,
+                }
+            ],
         )
         with WorkbookReader(path) as reader:
             result = resolve_po_lines(reader, "4500030844")
@@ -471,12 +498,14 @@ class TestQty:
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
             po_record_rows=[basic_po_row(FINALQTY=100)],
-            customer_po_rows=[{
-                "Purchasing Document": "4500030844",
-                "Material": "21-44640",
-                "ship to": "Customer PO Ship To",
-                "Order Quantity": "abc",
-            }],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Material": "21-44640",
+                    "ship to": "Customer PO Ship To",
+                    "Order Quantity": "abc",
+                }
+            ],
         )
         with WorkbookReader(path) as reader:
             result = resolve_po_lines(reader, "4500030844")
@@ -523,12 +552,14 @@ class TestPrices:
     def test_only_one_segment_priced(self, tmp_path: Path) -> None:
         path = make_base_file(
             tmp_path,
-            data_base_rows=[{
-                **COMBO_PRODUCT,
-                "GS-SK/YM COMBO FOB 2026": None,
-                "EMAX-GS PTE COMBO FOB 2026": Decimal("32.8"),
-                "EMAX PTE COMBO FOB 2026": None,
-            }],
+            data_base_rows=[
+                {
+                    **COMBO_PRODUCT,
+                    "GS-SK/YM COMBO FOB 2026": None,
+                    "EMAX-GS PTE COMBO FOB 2026": Decimal("32.8"),
+                    "EMAX PTE COMBO FOB 2026": None,
+                }
+            ],
             po_record_rows=[basic_po_row()],
         )
         with WorkbookReader(path) as reader:
@@ -542,12 +573,14 @@ class TestPrices:
         """缺价格→high warning，仍创建 OrderLine（prices={}）。"""
         path = make_base_file(
             tmp_path,
-            data_base_rows=[{
-                **COMBO_PRODUCT,
-                "GS-SK/YM COMBO FOB 2026": None,
-                "EMAX-GS PTE COMBO FOB 2026": None,
-                "EMAX PTE COMBO FOB 2026": None,
-            }],
+            data_base_rows=[
+                {
+                    **COMBO_PRODUCT,
+                    "GS-SK/YM COMBO FOB 2026": None,
+                    "EMAX-GS PTE COMBO FOB 2026": None,
+                    "EMAX PTE COMBO FOB 2026": None,
+                }
+            ],
             po_record_rows=[basic_po_row()],
         )
         with WorkbookReader(path) as reader:

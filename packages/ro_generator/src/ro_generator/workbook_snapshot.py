@@ -31,6 +31,7 @@ _bs = base_schema()
 # PO 状态模型（原在 workbench_service，移到此处避免循环导入）
 # —————————————————————————————————————
 
+
 @dataclass(frozen=True)
 class PoInspection:
     po_no: str
@@ -44,6 +45,7 @@ class PoInspection:
 # —————————————————————————————————————
 # FileSignature
 # —————————————————————————————————————
+
 
 @dataclass(frozen=True)
 class FileSignature:
@@ -64,15 +66,14 @@ class FileSignature:
         if not isinstance(other, FileSignature):
             return NotImplemented
         return (
-            self.path == other.path
-            and self.mtime_ns == other.mtime_ns
-            and self.size == other.size
+            self.path == other.path and self.mtime_ns == other.mtime_ns and self.size == other.size
         )
 
 
 # —————————————————————————————————————
 # WorkbookSnapshot
 # —————————————————————————————————————
+
 
 @dataclass(frozen=True)
 class WorkbookSnapshot:
@@ -112,6 +113,7 @@ class WorkbookSnapshot:
 # —————————————————————————————————————
 # 构建入口
 # —————————————————————————————————————
+
 
 def build_workbook_snapshot(base_file: str) -> WorkbookSnapshot:
     """一次性读取 workbook，构建完整快照。"""
@@ -163,9 +165,7 @@ def build_workbook_snapshot(base_file: str) -> WorkbookSnapshot:
             po_index_builder.setdefault(po_no, []).append(idx)
 
         po_rows = tuple(all_rows)
-        po_index: dict[str, tuple[int, ...]] = {
-            k: tuple(v) for k, v in po_index_builder.items()
-        }
+        po_index: dict[str, tuple[int, ...]] = {k: tuple(v) for k, v in po_index_builder.items()}
 
         # 构建 po_summary
         # 构建 customer_po_rows 和 customer_po_index
@@ -185,9 +185,7 @@ def build_workbook_snapshot(base_file: str) -> WorkbookSnapshot:
             cp_index_builder.setdefault(pd_no, []).append(idx)
 
         cp_rows = tuple(cp_all_rows)
-        cp_index: dict[str, tuple[int, ...]] = {
-            k: tuple(v) for k, v in cp_index_builder.items()
-        }
+        cp_index: dict[str, tuple[int, ...]] = {k: tuple(v) for k, v in cp_index_builder.items()}
 
         po_summary = _build_po_summary(
             po_index,
@@ -217,6 +215,7 @@ def build_workbook_snapshot(base_file: str) -> WorkbookSnapshot:
 # PO Summary 构建
 # —————————————————————————————————————
 
+
 def _build_po_summary(
     po_index: dict[str, tuple[int, ...]],
     po_rows: tuple[dict[str, object], ...],
@@ -228,9 +227,7 @@ def _build_po_summary(
     summaries: list[PoInspection] = []
     for po_no, indices in po_index.items():
         rows = tuple(po_rows[i] for i in indices)
-        customer_rows = tuple(
-            customer_po_rows[i] for i in customer_po_index.get(po_no, ())
-        )
+        customer_rows = tuple(customer_po_rows[i] for i in customer_po_index.get(po_no, ()))
         resolve_result = resolve_po_rows(
             rows,
             products,
@@ -263,8 +260,10 @@ def _build_po_summary(
 # 错误
 # —————————————————————————————————————
 
+
 class BuildSnapshotError(Exception):
     """构建 WorkbookSnapshot 失败。"""
+
     pass
 
 

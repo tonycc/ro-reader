@@ -224,10 +224,8 @@ class WorkbookReader:
         max_data_col 限制列范围，避免 Excel 维度污染导致每行创建大量空值。
         """
         # 重新建立一次迭代器：read_only 工作表里读两次需要重新 iter_rows
-        iter_kwargs: dict[str, object] = {}
-        if max_data_col > 0:
-            iter_kwargs["max_col"] = max_data_col
-        for cur_row, row_cells in enumerate(ws.iter_rows(**iter_kwargs), start=1):
+        row_iter = ws.iter_rows(max_col=max_data_col) if max_data_col > 0 else ws.iter_rows()
+        for cur_row, row_cells in enumerate(row_iter, start=1):
             if cur_row < first_data_row:
                 continue
             if _is_blank_row(row_cells):

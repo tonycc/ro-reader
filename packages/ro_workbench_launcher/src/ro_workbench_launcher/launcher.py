@@ -43,7 +43,7 @@ def _find_frontend_dist() -> str:
 def _find_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+        return int(s.getsockname()[1])
 
 
 def _run_server(port: int) -> None:
@@ -57,6 +57,7 @@ def _run_server(port: int) -> None:
         # Windows frozen 环境必须用 SelectorEventLoop；ProactorEventLoop 不兼容
         if sys.platform == "win32":
             import asyncio
+
             asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
         import uvicorn
@@ -105,8 +106,8 @@ def _wait_until_ready(port: int, timeout: float = 30.0) -> bool:
 def _run_tray(port: int) -> None:
     """系统托盘，提供退出入口。"""
     try:
-        import pystray
-        from PIL import Image, ImageDraw
+        import pystray  # type: ignore[import-not-found]
+        from PIL import Image, ImageDraw  # type: ignore[import-not-found]
     except ImportError:
         print(f"赛肯单据生成工具运行中: http://127.0.0.1:{port}", file=sys.stderr)
         print("按 Ctrl+C 退出", file=sys.stderr)
@@ -127,7 +128,9 @@ def _run_tray(port: int) -> None:
         _shutdown_requested.set()
 
     icon = pystray.Icon(
-        "赛肯单据生成工具", img, "赛肯单据生成工具",
+        "赛肯单据生成工具",
+        img,
+        "赛肯单据生成工具",
         menu=pystray.Menu(
             pystray.MenuItem(
                 f"打开赛肯单据工具 (:{port})",
@@ -146,6 +149,7 @@ def _fatal(msg: str) -> None:
     if sys.platform == "win32":
         try:
             import ctypes
+
             ctypes.windll.user32.MessageBoxW(0, msg, "赛肯单据工具 - 启动失败", 0x10)
         except Exception:
             pass
@@ -186,9 +190,11 @@ def main() -> None:
 
     if not _wait_until_ready(port):
         if _server_error is not None:
-            details = "".join(traceback.format_exception(
-                type(_server_error), _server_error, _server_error.__traceback__
-            ))
+            details = "".join(
+                traceback.format_exception(
+                    type(_server_error), _server_error, _server_error.__traceback__
+                )
+            )
             _fatal(
                 f"工作台服务启动失败（端口 {port}）：\n\n"
                 f"{type(_server_error).__name__}: {_server_error}\n\n"
@@ -213,5 +219,6 @@ def main() -> None:
 if __name__ == "__main__":
     # Windows PyInstaller 必需：防止 multiprocessing spawn 无限递归
     import multiprocessing
+
     multiprocessing.freeze_support()
     main()

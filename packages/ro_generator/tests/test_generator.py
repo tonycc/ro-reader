@@ -22,25 +22,56 @@ from ro_generator.source_index import SourceIndex
 from ro_generator.workbook_reader import WorkbookReader
 
 DATA_BASE_HEADER = [
-    "SAP", "Material Description", "Category", "GS MODEL",
+    "SAP",
+    "Material Description",
+    "Category",
+    "GS MODEL",
     "GS-SK/YM COMBO FOB 2026",
     "GS-SK/YM YM ROD FOB 2026",
     "GS-SK/YM SK REEL FOB 2026",
-    "EMAX-GS PTE COMBO FOB 2026", "EMAX PTE COMBO FOB 2026",
-    "round value", "L", "W", "H",
+    "EMAX-GS PTE COMBO FOB 2026",
+    "EMAX PTE COMBO FOB 2026",
+    "round value",
+    "L",
+    "W",
+    "H",
 ]
 
 PO_RECORD_HEADER = [
-    "PO NO.", "ITEM LINE#", "SAP Number", "DESCRIPTION", "FINALQTY",
-    "GS-SK/YM USD FOB", "EMAX-GS PTE FOB", "EMAX PTE",
-    "INV#", "SHIP QTY", "SK/YM INVOICE NO.", "CTNS", "TOTAL CBM", "外箱(最终出口装箱率)",
-    "N/W", "G/W", "L", "W", "H", "FINAL EX-FACTORY DATE",
-    "E10 PO", "YM PO", "CATEGORY",
+    "PO NO.",
+    "ITEM LINE#",
+    "SAP Number",
+    "DESCRIPTION",
+    "FINALQTY",
+    "GS-SK/YM USD FOB",
+    "EMAX-GS PTE FOB",
+    "EMAX PTE",
+    "INV#",
+    "SHIP QTY",
+    "SK/YM INVOICE NO.",
+    "CTNS",
+    "TOTAL CBM",
+    "外箱(最终出口装箱率)",
+    "N/W",
+    "G/W",
+    "L",
+    "W",
+    "H",
+    "FINAL EX-FACTORY DATE",
+    "E10 PO",
+    "YM PO",
+    "CATEGORY",
 ]
 
 CUSTOMER_PO_HEADER = [
-    "Purchasing Document", "Item", "Material", "ship to", "Order Quantity", "ship DATE",
-    "manufacturer", "final destination",
+    "Purchasing Document",
+    "Item",
+    "Material",
+    "ship to",
+    "Order Quantity",
+    "ship DATE",
+    "manufacturer",
+    "final destination",
 ]
 
 
@@ -60,18 +91,22 @@ def _default_customer_po_rows(po_record_rows):
         material = row.get("SAP Number")
         if po_no is None or material is None:
             continue
-        rows.append({
-            "Purchasing Document": po_no,
-            "Item": str(row.get("ITEM LINE#", "10")),
-            "Material": material,
-            "ship to": "Customer PO Ship To",
-            "Order Quantity": row.get("FINALQTY", 100),
-            "ship DATE": row.get("FINAL EX-FACTORY DATE"),
-        })
+        rows.append(
+            {
+                "Purchasing Document": po_no,
+                "Item": str(row.get("ITEM LINE#", "10")),
+                "Material": material,
+                "ship to": "Customer PO Ship To",
+                "Order Quantity": row.get("FINALQTY", 100),
+                "ship DATE": row.get("FINAL EX-FACTORY DATE"),
+            }
+        )
     return rows
 
 
-def make_base_file(tmp_path, *, data_base_rows, po_record_rows, customer_po_rows=None, name="base.xlsx"):
+def make_base_file(
+    tmp_path, *, data_base_rows, po_record_rows, customer_po_rows=None, name="base.xlsx"
+):
     wb = Workbook()
     default = wb.active
     if default is not None:
@@ -84,7 +119,9 @@ def make_base_file(tmp_path, *, data_base_rows, po_record_rows, customer_po_rows
     _write_sheet(
         ws_cp,
         CUSTOMER_PO_HEADER,
-        customer_po_rows if customer_po_rows is not None else _default_customer_po_rows(po_record_rows),
+        customer_po_rows
+        if customer_po_rows is not None
+        else _default_customer_po_rows(po_record_rows),
         header_row=1,
         first_data_row=2,
     )
@@ -110,13 +147,25 @@ COMBO_PRODUCT = {
 
 def basic_po_row(**overrides):
     base = {
-        "PO NO.": "4500030844", "ITEM LINE#": "10", "SAP Number": "21-44640",
-        "DESCRIPTION": "CB2500.B2", "FINALQTY": 100,
-        "GS-SK/YM USD FOB": Decimal("28.0"), "EMAX-GS PTE FOB": Decimal("32.8"),
-        "EMAX PTE": Decimal("38.0"), "INV#": "INV-001", "SHIP QTY": 100,
+        "PO NO.": "4500030844",
+        "ITEM LINE#": "10",
+        "SAP Number": "21-44640",
+        "DESCRIPTION": "CB2500.B2",
+        "FINALQTY": 100,
+        "GS-SK/YM USD FOB": Decimal("28.0"),
+        "EMAX-GS PTE FOB": Decimal("32.8"),
+        "EMAX PTE": Decimal("38.0"),
+        "INV#": "INV-001",
+        "SHIP QTY": 100,
         "SK/YM INVOICE NO.": "SKYM-INV-001",
-        "外箱(最终出口装箱率)": 24, "CTNS": 5, "TOTAL CBM": Decimal("0.36"),
-        "N/W": Decimal("8.5"), "G/W": Decimal("10.1"), "L": 48, "W": 31, "H": 35,
+        "外箱(最终出口装箱率)": 24,
+        "CTNS": 5,
+        "TOTAL CBM": Decimal("0.36"),
+        "N/W": Decimal("8.5"),
+        "G/W": Decimal("10.1"),
+        "L": 48,
+        "W": 31,
+        "H": 35,
         "FINAL EX-FACTORY DATE": date(2026, 3, 15),
         "CATEGORY": 1,
     }
@@ -126,9 +175,17 @@ def basic_po_row(**overrides):
 
 class TestSuccessPath:
     def test_invoice_with_seller_and_invoice_no(self, tmp_path):
-        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
-        request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-                                  seller="GS PTE", invoice_no="INV-001", output_dir=str(tmp_path / "out"))
+        path = make_base_file(
+            tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
+        )
+        request = DocumentRequest(
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("INVOICE",),
+            seller="GS PTE",
+            invoice_no="INV-001",
+            output_dir=str(tmp_path / "out"),
+        )
         result = generate(request)
         assert result.status == "success", result.errors
         assert result.output_file is not None
@@ -145,15 +202,23 @@ class TestSuccessPath:
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
             po_record_rows=[basic_po_row()],
-            customer_po_rows=[{
-                "Purchasing Document": "4500030844",
-                "Material": "21-44640",
-                "ship to": "Customer PO Warehouse",
-                "Order Quantity": 100,
-            }],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Material": "21-44640",
+                    "ship to": "Customer PO Warehouse",
+                    "Order Quantity": 100,
+                }
+            ],
         )
-        request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-                                  seller="GS PTE", invoice_no="INV-001", output_dir=str(tmp_path / "out"))
+        request = DocumentRequest(
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("INVOICE",),
+            seller="GS PTE",
+            invoice_no="INV-001",
+            output_dir=str(tmp_path / "out"),
+        )
         result = generate(request)
         wb = load_workbook(result.output_file)
         ws = wb["INV"]
@@ -175,8 +240,11 @@ class TestSuccessPath:
             po_record_rows=[basic_po_row(**{field: expected, "CATEGORY": category})],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PI",),
-            seller=seller, output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PI",),
+            seller=seller,
+            output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
 
@@ -196,20 +264,24 @@ class TestSuccessPath:
             tmp_path,
             data_base_rows=[COMBO_PRODUCT, reel_product],
             po_record_rows=[
-                basic_po_row(**{
-                    "ITEM LINE#": "10",
-                    "SAP Number": "21-44640",
-                    "DESCRIPTION": "YM ITEM",
-                    "CATEGORY": 1,
-                    "YM PO": "YM-PI-001",
-                }),
-                basic_po_row(**{
-                    "ITEM LINE#": "20",
-                    "SAP Number": "21-REEL",
-                    "DESCRIPTION": "SK ITEM",
-                    "CATEGORY": 3,
-                    "E10 PO": "SK-PI-001",
-                }),
+                basic_po_row(
+                    **{
+                        "ITEM LINE#": "10",
+                        "SAP Number": "21-44640",
+                        "DESCRIPTION": "YM ITEM",
+                        "CATEGORY": 1,
+                        "YM PO": "YM-PI-001",
+                    }
+                ),
+                basic_po_row(
+                    **{
+                        "ITEM LINE#": "20",
+                        "SAP Number": "21-REEL",
+                        "DESCRIPTION": "SK ITEM",
+                        "CATEGORY": 3,
+                        "E10 PO": "SK-PI-001",
+                    }
+                ),
             ],
             customer_po_rows=[
                 {
@@ -221,8 +293,11 @@ class TestSuccessPath:
             ],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PI",),
-            seller="SK", output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PI",),
+            seller="SK",
+            output_dir=str(tmp_path / "out"),
         )
 
         result = generate(request)
@@ -236,26 +311,50 @@ class TestSuccessPath:
 
 class TestNeedsInput:
     def test_multiple_invoices_needs_input(self, tmp_path):
-        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT],
-            po_record_rows=[basic_po_row(FINALQTY=100, **{"INV#": "INV-001"}),
-                            basic_po_row(**{"ITEM LINE#": "20", "FINALQTY": 100, "INV#": "INV-002"})])
-        request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-                                  seller="GS PTE", output_dir=str(tmp_path / "out"))
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[
+                basic_po_row(FINALQTY=100, **{"INV#": "INV-001"}),
+                basic_po_row(**{"ITEM LINE#": "20", "FINALQTY": 100, "INV#": "INV-002"}),
+            ],
+        )
+        request = DocumentRequest(
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("INVOICE",),
+            seller="GS PTE",
+            output_dir=str(tmp_path / "out"),
+        )
         result = generate(request)
         assert result.status == "needs_input"
         assert INPUT_INVOICE_NO in result.missing_inputs
 
     def test_single_invoice_auto_selects(self, tmp_path):
-        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
-        request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-                                  seller="GS PTE", output_dir=str(tmp_path / "out"))
+        path = make_base_file(
+            tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
+        )
+        request = DocumentRequest(
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("INVOICE",),
+            seller="GS PTE",
+            output_dir=str(tmp_path / "out"),
+        )
         result = generate(request)
         assert result.status == "success", result.errors
 
     def test_segment_undecided_returns_needs_input(self, tmp_path):
-        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
-        request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-                                  invoice_no="INV-001", output_dir=str(tmp_path / "out"))
+        path = make_base_file(
+            tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
+        )
+        request = DocumentRequest(
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("INVOICE",),
+            invoice_no="INV-001",
+            output_dir=str(tmp_path / "out"),
+        )
         result = generate(request)
         assert result.status == "needs_input"
         assert INPUT_SELLER in result.missing_inputs
@@ -263,34 +362,67 @@ class TestNeedsInput:
 
 class TestErrorPath:
     def test_unknown_po(self, tmp_path):
-        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
-        request = DocumentRequest(base_file=str(path), po_no="9999999", documents=("INVOICE",),
-                                  seller="GS PTE", invoice_no="INV-001", output_dir=str(tmp_path / "out"))
+        path = make_base_file(
+            tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
+        )
+        request = DocumentRequest(
+            base_file=str(path),
+            po_no="9999999",
+            documents=("INVOICE",),
+            seller="GS PTE",
+            invoice_no="INV-001",
+            output_dir=str(tmp_path / "out"),
+        )
         result = generate(request)
         assert result.status == "error"
         assert any(m.code == "PO_NOT_FOUND" for m in result.errors)
 
     def test_missing_invoice_no_blocks_generation(self, tmp_path):
-        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT],
-                              po_record_rows=[basic_po_row(**{"INV#": None})])
-        request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-                                  seller="GS PTE", invoice_no="INV-001", output_dir=str(tmp_path / "out"))
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[basic_po_row(**{"INV#": None})],
+        )
+        request = DocumentRequest(
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("INVOICE",),
+            seller="GS PTE",
+            invoice_no="INV-001",
+            output_dir=str(tmp_path / "out"),
+        )
         result = generate(request)
         assert result.status == "error"
 
     def test_empty_invoice_no_without_selection_warns_and_generates(self, tmp_path):
-        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT],
-                              po_record_rows=[basic_po_row(**{"INV#": None})])
-        request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-                                  seller="GS PTE", output_dir=str(tmp_path / "out"))
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[basic_po_row(**{"INV#": None})],
+        )
+        request = DocumentRequest(
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("INVOICE",),
+            seller="GS PTE",
+            output_dir=str(tmp_path / "out"),
+        )
         result = generate(request)
         assert result.status == "success"
         assert any(m.code == "INVOICE_NO_MISSING" for m in result.warnings)
 
     def test_multi_doc_generates_both(self, tmp_path):
-        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
-        request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("PI", "INVOICE"),
-                                  seller="GS PTE", invoice_no="INV-001", output_dir=str(tmp_path / "out"))
+        path = make_base_file(
+            tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
+        )
+        request = DocumentRequest(
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PI", "INVOICE"),
+            seller="GS PTE",
+            invoice_no="INV-001",
+            output_dir=str(tmp_path / "out"),
+        )
         result = generate(request)
         assert result.status == "success", result.errors
         assert len(result.files) == 2
@@ -303,11 +435,24 @@ class TestErrorPath:
         ],
     )
     def test_non_factory_invoice_pl_generates_single_workbook_with_two_sheets(
-        self, tmp_path, seller, invoice_no, expected_file, invoice_sheet,
+        self,
+        tmp_path,
+        seller,
+        invoice_no,
+        expected_file,
+        invoice_sheet,
     ):
-        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
-        request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("INVOICE", "PL"),
-                                  seller=seller, invoice_no=invoice_no, output_dir=str(tmp_path / "out"))
+        path = make_base_file(
+            tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
+        )
+        request = DocumentRequest(
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("INVOICE", "PL"),
+            seller=seller,
+            invoice_no=invoice_no,
+            output_dir=str(tmp_path / "out"),
+        )
         result = generate(request)
 
         assert result.status == "success", result.errors
@@ -320,9 +465,16 @@ class TestErrorPath:
         assert "PL" in wb.sheetnames
 
     def test_sk_ym_po_blocked(self, tmp_path):
-        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
-        request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("PO",),
-                                  seller="SK", output_dir=str(tmp_path / "out"))
+        path = make_base_file(
+            tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
+        )
+        request = DocumentRequest(
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PO",),
+            seller="SK",
+            output_dir=str(tmp_path / "out"),
+        )
         result = generate(request)
         assert result.status == "error"
         assert any(m.code == CODE_MAPPING_NOT_FOUND for m in result.errors)
@@ -342,8 +494,11 @@ class TestErrorPath:
             po_record_rows=[basic_po_row(**{field: None, "CATEGORY": category})],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PI",),
-            seller=seller, output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PI",),
+            seller=seller,
+            output_dir=str(tmp_path / "out"),
         )
         result = generate(request)
 
@@ -351,9 +506,14 @@ class TestErrorPath:
         assert any(m.code == "PI_NO_MISSING" and m.field == field for m in result.errors)
 
     def test_missing_workbook_returns_error(self, tmp_path):
-        request = DocumentRequest(base_file=str(tmp_path / "nope.xlsx"), po_no="4500030844",
-                                  documents=("INVOICE",), seller="GS PTE",
-                                  invoice_no="INV-001", output_dir=str(tmp_path / "out"))
+        request = DocumentRequest(
+            base_file=str(tmp_path / "nope.xlsx"),
+            po_no="4500030844",
+            documents=("INVOICE",),
+            seller="GS PTE",
+            invoice_no="INV-001",
+            output_dir=str(tmp_path / "out"),
+        )
         result = generate(request)
         assert result.status == "error"
         assert any(m.code == "WORKBOOK_OPEN_ERROR" for m in result.errors)
@@ -366,8 +526,14 @@ class TestErrorPath:
         wb.create_sheet("DATA BASE")
         path = tmp_path / "incomplete.xlsx"
         wb.save(path)
-        request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-                                  seller="GS PTE", invoice_no="INV-001", output_dir=str(tmp_path / "out"))
+        request = DocumentRequest(
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("INVOICE",),
+            seller="GS PTE",
+            invoice_no="INV-001",
+            output_dir=str(tmp_path / "out"),
+        )
         result = generate(request)
         assert result.status == "error"
         assert any(m.code == "SHEET_MISSING" for m in result.errors)
@@ -375,10 +541,19 @@ class TestErrorPath:
 
 class TestWarningsPropagation:
     def test_formula_fallback_warning_in_result(self, tmp_path):
-        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT],
-                              po_record_rows=[basic_po_row(FINALQTY=240, **{"CTNS": None, "TOTAL CBM": None})])
-        request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-                                  seller="GS PTE", invoice_no="INV-001", output_dir=str(tmp_path / "out"))
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[basic_po_row(FINALQTY=240, **{"CTNS": None, "TOTAL CBM": None})],
+        )
+        request = DocumentRequest(
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("INVOICE",),
+            seller="GS PTE",
+            invoice_no="INV-001",
+            output_dir=str(tmp_path / "out"),
+        )
         result = generate(request)
         assert result.status == "success", result.errors
         assert any(m.code == "FORMULA_FALLBACK" for m in result.warnings)
@@ -386,10 +561,18 @@ class TestWarningsPropagation:
 
 class TestConflictStrategy:
     def test_overwrite_replaces_existing(self, tmp_path):
-        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
-        request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-                                  seller="GS PTE", invoice_no="INV-001",
-                                  output_dir=str(tmp_path / "out"), on_conflict="overwrite")
+        path = make_base_file(
+            tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
+        )
+        request = DocumentRequest(
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("INVOICE",),
+            seller="GS PTE",
+            invoice_no="INV-001",
+            output_dir=str(tmp_path / "out"),
+            on_conflict="overwrite",
+        )
         first = generate(request)
         assert first.status == "success"
         second = generate(request)
@@ -400,22 +583,35 @@ class TestConflictStrategy:
 @pytest.mark.parametrize("_label", ["smoke"])
 def test_generation_result_immutable(tmp_path, _label):
     path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
-    request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-                              seller="GS PTE", invoice_no="INV-001", output_dir=str(tmp_path / "out"))
+    request = DocumentRequest(
+        base_file=str(path),
+        po_no="4500030844",
+        documents=("INVOICE",),
+        seller="GS PTE",
+        invoice_no="INV-001",
+        output_dir=str(tmp_path / "out"),
+    )
     import dataclasses
+
     result = generate(request)
     with pytest.raises(dataclasses.FrozenInstanceError):
-        result.status = "error"  # type: ignore[misc]
+        result.status = "error"
 
 
 class TestBuildDocumentModel:
     def test_builds_invoice_model(self, tmp_path):
-        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
+        path = make_base_file(
+            tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
+        )
         with WorkbookReader(str(path)) as reader:
             resolved = resolve_po_lines(reader, "4500030844")
         build = build_document_model(
-            resolved.lines, seller="GS PTE", buyer="EMAX PTE",
-            po_no="4500030844", invoice_no="INV-001", doc_type="INVOICE",
+            resolved.lines,
+            seller="GS PTE",
+            buyer="EMAX PTE",
+            po_no="4500030844",
+            invoice_no="INV-001",
+            doc_type="INVOICE",
         )
         assert build.model is not None
         assert build.mapping is not None
@@ -425,12 +621,18 @@ class TestBuildDocumentModel:
         assert len(build.model.lines) == 1
 
     def test_builds_pi_model(self, tmp_path):
-        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
+        path = make_base_file(
+            tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
+        )
         with WorkbookReader(str(path)) as reader:
             resolved = resolve_po_lines(reader, "4500030844")
         build = build_document_model(
-            resolved.lines, seller="GS PTE", buyer="EMAX PTE",
-            po_no="4500030844", invoice_no=None, doc_type="PI",
+            resolved.lines,
+            seller="GS PTE",
+            buyer="EMAX PTE",
+            po_no="4500030844",
+            invoice_no=None,
+            doc_type="PI",
         )
         assert build.model is not None
         assert build.model.document_type == "PI"
@@ -439,12 +641,18 @@ class TestBuildDocumentModel:
         assert build.model.ship_to == "Customer PO Ship To"
 
     def test_sk_po_blocked(self, tmp_path):
-        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
+        path = make_base_file(
+            tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
+        )
         with WorkbookReader(str(path)) as reader:
             resolved = resolve_po_lines(reader, "4500030844")
         build = build_document_model(
-            resolved.lines, seller="SK", buyer="GS PTE",
-            po_no="4500030844", invoice_no=None, doc_type="PO",
+            resolved.lines,
+            seller="SK",
+            buyer="GS PTE",
+            po_no="4500030844",
+            invoice_no=None,
+            doc_type="PO",
         )
         assert build.model is None
         assert any(m.code == CODE_MAPPING_NOT_FOUND for m in build.messages)
@@ -452,10 +660,15 @@ class TestBuildDocumentModel:
 
 class TestPreviewFunction:
     def test_preview_returns_structured_data(self, tmp_path):
-        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
+        path = make_base_file(
+            tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
+        )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-            seller="GS PTE", invoice_no="INV-001",
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("INVOICE",),
+            seller="GS PTE",
+            invoice_no="INV-001",
             output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
@@ -473,10 +686,15 @@ class TestPreviewFunction:
         assert len(getattr(p, "source_entries", [])) > 0
 
     def test_preview_no_output_file(self, tmp_path):
-        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
+        path = make_base_file(
+            tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
+        )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-            seller="GS PTE", invoice_no="INV-001",
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("INVOICE",),
+            seller="GS PTE",
+            invoice_no="INV-001",
             output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
@@ -485,11 +703,18 @@ class TestPreviewFunction:
         assert not hasattr(result, "output_file")
 
     def test_preview_needs_input_for_multiple_invoices(self, tmp_path):
-        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT],
-            po_record_rows=[basic_po_row(FINALQTY=100, **{"INV#": "INV-001"}),
-                            basic_po_row(**{"ITEM LINE#": "20", "FINALQTY": 100, "INV#": "INV-002"})])
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[
+                basic_po_row(FINALQTY=100, **{"INV#": "INV-001"}),
+                basic_po_row(**{"ITEM LINE#": "20", "FINALQTY": 100, "INV#": "INV-002"}),
+            ],
+        )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("INVOICE",),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("INVOICE",),
             seller="GS PTE",
             output_dir=str(tmp_path / "out"),
         )
@@ -498,20 +723,30 @@ class TestPreviewFunction:
         assert INPUT_INVOICE_NO in result.missing_inputs
 
     def test_preview_error_for_missing_po(self, tmp_path):
-        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
+        path = make_base_file(
+            tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
+        )
         request = DocumentRequest(
-            base_file=str(path), po_no="9999999", documents=("INVOICE",),
-            seller="GS PTE", invoice_no="INV-001",
+            base_file=str(path),
+            po_no="9999999",
+            documents=("INVOICE",),
+            seller="GS PTE",
+            invoice_no="INV-001",
             output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
         assert result.status == "error"
 
     def test_preview_contains_seller_info(self, tmp_path):
-        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
+        path = make_base_file(
+            tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
+        )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-            seller="GS PTE", invoice_no="INV-001",
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("INVOICE",),
+            seller="GS PTE",
+            invoice_no="INV-001",
             output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
@@ -521,10 +756,15 @@ class TestPreviewFunction:
         assert any("GLOBALSINO" in line for line in seller_info)
 
     def test_preview_contains_terms(self, tmp_path):
-        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
+        path = make_base_file(
+            tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
+        )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-            seller="GS PTE", invoice_no="INV-001",
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("INVOICE",),
+            seller="GS PTE",
+            invoice_no="INV-001",
             output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
@@ -538,10 +778,15 @@ class TestPreviewFunction:
         }
 
     def test_preview_terms_merge_resolved_header_fields_and_static_terms(self, tmp_path):
-        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
+        path = make_base_file(
+            tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
+        )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PI",),
-            seller="EMAX PTE", output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PI",),
+            seller="EMAX PTE",
+            output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
         assert result.status == "success"
@@ -570,14 +815,20 @@ class TestPreviewFunction:
 
     @pytest.mark.parametrize(("seller", "pi_field"), [("SK", "E10 PO"), ("YM", "YM PO")])
     def test_sk_ym_pi_preview_terms_reuse_export_header_fixed_values(
-        self, tmp_path, seller, pi_field,
+        self,
+        tmp_path,
+        seller,
+        pi_field,
     ):
         category = 3 if seller == "SK" else 1
         po_row = basic_po_row(**{pi_field: "PI-4500030844", "CATEGORY": category})
         path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[po_row])
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PI",),
-            seller=seller, output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PI",),
+            seller=seller,
+            output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
         assert result.status == "success"
@@ -595,10 +846,15 @@ class TestPreviewFunction:
         assert terms["port_of_loading"] == resolved_values["port_of_loading"]
 
     def test_preview_document_date_source_entry_is_system_generated(self, tmp_path):
-        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
+        path = make_base_file(
+            tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
+        )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PI",),
-            seller="EMAX PTE", output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PI",),
+            seller="EMAX PTE",
+            output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
         assert result.status == "success"
@@ -615,17 +871,22 @@ class TestPreviewFunction:
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
             po_record_rows=[basic_po_row(**{"FINAL EX-FACTORY DATE": date(2026, 3, 15)})],
-            customer_po_rows=[{
-                "Purchasing Document": "4500030844",
-                "Material": "21-44640",
-                "ship to": "Customer PO Warehouse",
-                "Order Quantity": 100,
-                "ship DATE": date(2026, 4, 20),
-            }],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Material": "21-44640",
+                    "ship to": "Customer PO Warehouse",
+                    "Order Quantity": 100,
+                    "ship DATE": date(2026, 4, 20),
+                }
+            ],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PI",),
-            seller="EMAX PTE", output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PI",),
+            seller="EMAX PTE",
+            output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
         assert result.status == "success"
@@ -647,15 +908,19 @@ class TestPreviewFunction:
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
             po_record_rows=[basic_po_row()],
-            customer_po_rows=[{
-                "Purchasing Document": "4500030844",
-                "Material": "21-44640",
-                "ship to": "Customer PO Warehouse",
-                "Order Quantity": 100,
-            }],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Material": "21-44640",
+                    "ship to": "Customer PO Warehouse",
+                    "Order Quantity": 100,
+                }
+            ],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PI",),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PI",),
             seller="GS PTE",
             output_dir=str(tmp_path / "out"),
         )
@@ -685,16 +950,21 @@ class TestPreviewFunction:
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
             po_record_rows=[basic_po_row()],
-            customer_po_rows=[{
-                "Purchasing Document": "4500030844",
-                "Material": "21-44640",
-                "ship to": "209 Stoneridge Drive, Columbia, South Carolina 29210, United States",
-                "Order Quantity": 100,
-            }],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Material": "21-44640",
+                    "ship to": "209 Stoneridge Drive, Columbia, South Carolina 29210, United States",
+                    "Order Quantity": 100,
+                }
+            ],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PI",),
-            seller="EMAX PTE", output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PI",),
+            seller="EMAX PTE",
+            output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
         assert result.status == "success"
@@ -726,20 +996,25 @@ class TestPreviewFunction:
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
             po_record_rows=[basic_po_row()],
-            customer_po_rows=[{
-                "Purchasing Document": "4500030844",
-                "Material": "21-44640",
-                "ship to": (
-                    "Rather Outdoors Corporation,\n"
-                    "40 Industrial Road,Dauphin, MB R7N 2V2\n"
-                    "Rather Outdoors Corporation, 40 Industrial Road,Dauphin, MB R7N 2V2"
-                ),
-                "Order Quantity": 100,
-            }],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Material": "21-44640",
+                    "ship to": (
+                        "Rather Outdoors Corporation,\n"
+                        "40 Industrial Road,Dauphin, MB R7N 2V2\n"
+                        "Rather Outdoors Corporation, 40 Industrial Road,Dauphin, MB R7N 2V2"
+                    ),
+                    "Order Quantity": 100,
+                }
+            ],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PI",),
-            seller="EMAX PTE", output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PI",),
+            seller="EMAX PTE",
+            output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
         assert result.status == "success"
@@ -752,8 +1027,11 @@ class TestPreviewFunction:
         assert "ship_to_line3" not in resolved_values
 
         export_request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PI",),
-            seller="EMAX PTE", output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PI",),
+            seller="EMAX PTE",
+            output_dir=str(tmp_path / "out"),
         )
         export_result = generate(export_request)
         assert export_result.status == "success", export_result.errors
@@ -765,27 +1043,28 @@ class TestPreviewFunction:
 
     @pytest.mark.parametrize("doc_type", ["PI", "PO"])
     def test_gs_pi_po_manufacturer_fields_use_customer_po_y(self, tmp_path, doc_type):
-        manufacturer = (
-            "ACME FACTORY LIMITED\n"
-            "NO. 1 INDUSTRIAL ROAD\n"
-            "QINGYUAN, GUANGDONG, CHINA"
-        )
+        manufacturer = "ACME FACTORY LIMITED\nNO. 1 INDUSTRIAL ROAD\nQINGYUAN, GUANGDONG, CHINA"
         path = make_base_file(
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
             po_record_rows=[basic_po_row()],
-            customer_po_rows=[{
-                "Purchasing Document": "4500030844",
-                "Item": "10",
-                "Material": "21-44640",
-                "ship to": "Customer PO Warehouse",
-                "Order Quantity": 100,
-                "manufacturer": manufacturer,
-            }],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Item": "10",
+                    "Material": "21-44640",
+                    "ship to": "Customer PO Warehouse",
+                    "Order Quantity": 100,
+                    "manufacturer": manufacturer,
+                }
+            ],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=(doc_type,),
-            seller="GS PTE", output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=(doc_type,),
+            seller="GS PTE",
+            output_dir=str(tmp_path / "out"),
         )
 
         preview_result = preview(request)
@@ -815,17 +1094,22 @@ class TestPreviewFunction:
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
             po_record_rows=[basic_po_row(**{"ITEM LINE#": "10"})],
-            customer_po_rows=[{
-                "Purchasing Document": "4500030844",
-                "Item": "CP-ITEM-001",
-                "Material": "21-44640",
-                "ship to": "Customer PO Warehouse",
-                "Order Quantity": 100,
-            }],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Item": "CP-ITEM-001",
+                    "Material": "21-44640",
+                    "ship to": "Customer PO Warehouse",
+                    "Order Quantity": 100,
+                }
+            ],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PI",),
-            seller="EMAX PTE", output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PI",),
+            seller="EMAX PTE",
+            output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
         assert result.status == "success"
@@ -845,17 +1129,22 @@ class TestPreviewFunction:
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
             po_record_rows=[basic_po_row(**{"ITEM LINE#": "10"})],
-            customer_po_rows=[{
-                "Purchasing Document": "4500030844",
-                "Material": "21-44640",
-                "ship to": "Customer PO Warehouse",
-                "Order Quantity": 100,
-                "ship DATE": date(2026, 3, 15),
-            }],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Material": "21-44640",
+                    "ship to": "Customer PO Warehouse",
+                    "Order Quantity": 100,
+                    "ship DATE": date(2026, 3, 15),
+                }
+            ],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PO",),
-            seller="GS PTE", output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PO",),
+            seller="GS PTE",
+            output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
         assert result.status == "success"
@@ -873,27 +1162,38 @@ class TestPreviewFunction:
     def test_emax_pi_line_sources_follow_data_base_and_customer_po_rules(self, tmp_path):
         path = make_base_file(
             tmp_path,
-            data_base_rows=[{
-                **COMBO_PRODUCT,
-                "Material Description": "DB Description",
-                "EMAX PTE COMBO FOB 2026": Decimal("88.8"),
-            }],
-            po_record_rows=[basic_po_row(**{
-                "DESCRIPTION": "PO Description",
-                "FINALQTY": 100,
-                "FINAL EX-FACTORY DATE": date(2026, 3, 15),
-            })],
-            customer_po_rows=[{
-                "Purchasing Document": "4500030844",
-                "Material": "21-44640",
-                "ship to": "Customer PO Warehouse",
-                "Order Quantity": 240,
-                "ship DATE": date(2026, 4, 20),
-            }],
+            data_base_rows=[
+                {
+                    **COMBO_PRODUCT,
+                    "Material Description": "DB Description",
+                    "EMAX PTE COMBO FOB 2026": Decimal("88.8"),
+                }
+            ],
+            po_record_rows=[
+                basic_po_row(
+                    **{
+                        "DESCRIPTION": "PO Description",
+                        "FINALQTY": 100,
+                        "FINAL EX-FACTORY DATE": date(2026, 3, 15),
+                    }
+                )
+            ],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Material": "21-44640",
+                    "ship to": "Customer PO Warehouse",
+                    "Order Quantity": 240,
+                    "ship DATE": date(2026, 4, 20),
+                }
+            ],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PI",),
-            seller="EMAX PTE", output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PI",),
+            seller="EMAX PTE",
+            output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
         assert result.status == "success"
@@ -909,7 +1209,9 @@ class TestPreviewFunction:
         description_entry = next(e for e in entries if e["preview_field"] == "line[0].description")
         unit_price_entry = next(e for e in entries if e["preview_field"] == "line[0].unit_price")
         quantity_entry = next(e for e in entries if e["preview_field"] == "line[0].quantity")
-        ex_factory_entry = next(e for e in entries if e["preview_field"] == "line[0].confirmed_ex_factory_date")
+        ex_factory_entry = next(
+            e for e in entries if e["preview_field"] == "line[0].confirmed_ex_factory_date"
+        )
         assert description_entry["sheet"] == "DATA BASE"
         assert description_entry["field"] == "Material Description"
         assert unit_price_entry["sheet"] == "DATA BASE"
@@ -923,21 +1225,28 @@ class TestPreviewFunction:
     def test_emax_pi_preview_formats_usd_unit_price_and_amount_with_dollar(self, tmp_path):
         path = make_base_file(
             tmp_path,
-            data_base_rows=[{
-                **COMBO_PRODUCT,
-                "EMAX PTE COMBO FOB 2026": Decimal("88.8"),
-            }],
+            data_base_rows=[
+                {
+                    **COMBO_PRODUCT,
+                    "EMAX PTE COMBO FOB 2026": Decimal("88.8"),
+                }
+            ],
             po_record_rows=[basic_po_row()],
-            customer_po_rows=[{
-                "Purchasing Document": "4500030844",
-                "Material": "21-44640",
-                "ship to": "Customer PO Warehouse",
-                "Order Quantity": 240,
-            }],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Material": "21-44640",
+                    "ship to": "Customer PO Warehouse",
+                    "Order Quantity": 240,
+                }
+            ],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PI",),
-            seller="EMAX PTE", output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PI",),
+            seller="EMAX PTE",
+            output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
         assert result.status == "success"
@@ -958,23 +1267,30 @@ class TestPreviewFunction:
     def test_emax_po_unit_price_uses_emax_pte_fob_column(self, tmp_path):
         path = make_base_file(
             tmp_path,
-            data_base_rows=[{
-                **COMBO_PRODUCT,
-                "EMAX-GS PTE COMBO FOB 2026": Decimal("32.8"),
-                "EMAX PTE COMBO FOB 2026": Decimal("88.8"),
-            }],
+            data_base_rows=[
+                {
+                    **COMBO_PRODUCT,
+                    "EMAX-GS PTE COMBO FOB 2026": Decimal("32.8"),
+                    "EMAX PTE COMBO FOB 2026": Decimal("88.8"),
+                }
+            ],
             po_record_rows=[basic_po_row(**{"FINALQTY": 100})],
-            customer_po_rows=[{
-                "Purchasing Document": "4500030844",
-                "Item": "10",
-                "Material": "21-44640",
-                "ship to": "Customer PO Warehouse",
-                "Order Quantity": 240,
-            }],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Item": "10",
+                    "Material": "21-44640",
+                    "ship to": "Customer PO Warehouse",
+                    "Order Quantity": 240,
+                }
+            ],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PO",),
-            seller="EMAX PTE", output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PO",),
+            seller="EMAX PTE",
+            output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
         assert result.status == "success"
@@ -991,23 +1307,30 @@ class TestPreviewFunction:
     def test_gs_po_unit_price_uses_gs_sk_ym_fob_column(self, tmp_path):
         path = make_base_file(
             tmp_path,
-            data_base_rows=[{
-                **COMBO_PRODUCT,
-                "GS-SK/YM COMBO FOB 2026": Decimal("28.0"),
-                "EMAX-GS PTE COMBO FOB 2026": Decimal("32.8"),
-            }],
+            data_base_rows=[
+                {
+                    **COMBO_PRODUCT,
+                    "GS-SK/YM COMBO FOB 2026": Decimal("28.0"),
+                    "EMAX-GS PTE COMBO FOB 2026": Decimal("32.8"),
+                }
+            ],
             po_record_rows=[basic_po_row(**{"FINALQTY": 100})],
-            customer_po_rows=[{
-                "Purchasing Document": "4500030844",
-                "Item": "10",
-                "Material": "21-44640",
-                "ship to": "Customer PO Warehouse",
-                "Order Quantity": 240,
-            }],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Item": "10",
+                    "Material": "21-44640",
+                    "ship to": "Customer PO Warehouse",
+                    "Order Quantity": 240,
+                }
+            ],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PO",),
-            seller="GS PTE", output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PO",),
+            seller="GS PTE",
+            output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
         assert result.status == "success"
@@ -1026,32 +1349,47 @@ class TestPreviewFunction:
         [("PI", None), ("INVOICE", "SKYM-INV-001")],
     )
     def test_ym_pi_and_invoice_unit_price_always_use_g_column(
-        self, tmp_path, doc_type, invoice_no,
+        self,
+        tmp_path,
+        doc_type,
+        invoice_no,
     ):
         path = make_base_file(
             tmp_path,
-            data_base_rows=[{
-                **COMBO_PRODUCT,
-                "Category": 2,
-                "GS-SK/YM COMBO FOB 2026": Decimal("28.0"),
-                "GS-SK/YM YM ROD FOB 2026": Decimal("99.0"),
-            }],
-            po_record_rows=[basic_po_row(**{
-                "FINALQTY": 100,
-                "SHIP QTY": 40,
-                "SK/YM INVOICE NO.": "SKYM-INV-001",
-                "YM PO": "YM-PI-001",
-            })],
-            customer_po_rows=[{
-                "Purchasing Document": "4500030844",
-                "Item": "10",
-                "Material": "21-44640",
-                "Order Quantity": 240,
-            }],
+            data_base_rows=[
+                {
+                    **COMBO_PRODUCT,
+                    "Category": 2,
+                    "GS-SK/YM COMBO FOB 2026": Decimal("28.0"),
+                    "GS-SK/YM YM ROD FOB 2026": Decimal("99.0"),
+                }
+            ],
+            po_record_rows=[
+                basic_po_row(
+                    **{
+                        "FINALQTY": 100,
+                        "SHIP QTY": 40,
+                        "SK/YM INVOICE NO.": "SKYM-INV-001",
+                        "YM PO": "YM-PI-001",
+                    }
+                )
+            ],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Item": "10",
+                    "Material": "21-44640",
+                    "Order Quantity": 240,
+                }
+            ],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=(doc_type,),
-            seller="YM", invoice_no=invoice_no, output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=(doc_type,),
+            seller="YM",
+            invoice_no=invoice_no,
+            output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
         assert result.status == "success"
@@ -1077,21 +1415,30 @@ class TestPreviewFunction:
         path = make_base_file(
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
-            po_record_rows=[basic_po_row(**{
-                "FINAL EX-FACTORY DATE": date(2026, 3, 15),
-            })],
-            customer_po_rows=[{
-                "Purchasing Document": "4500030844",
-                "Item": "10",
-                "Material": "21-44640",
-                "ship to": "Customer PO Warehouse",
-                "Order Quantity": 240,
-                "ship DATE": date(2026, 4, 20),
-            }],
+            po_record_rows=[
+                basic_po_row(
+                    **{
+                        "FINAL EX-FACTORY DATE": date(2026, 3, 15),
+                    }
+                )
+            ],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Item": "10",
+                    "Material": "21-44640",
+                    "ship to": "Customer PO Warehouse",
+                    "Order Quantity": 240,
+                    "ship DATE": date(2026, 4, 20),
+                }
+            ],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PO",),
-            seller="GS PTE", output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PO",),
+            seller="GS PTE",
+            output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
         assert result.status == "success"
@@ -1104,7 +1451,9 @@ class TestPreviewFunction:
 
         entries = getattr(p, "source_entries", [])
         header_entry = next(e for e in entries if e["preview_field"] == "ex_factory_date")
-        line_entry = next(e for e in entries if e["preview_field"] == "line[0].confirmed_ex_factory_date")
+        line_entry = next(
+            e for e in entries if e["preview_field"] == "line[0].confirmed_ex_factory_date"
+        )
         assert header_entry["sheet"] == "PO record"
         assert header_entry["field"] == "FINAL EX-FACTORY DATE"
         assert line_entry["sheet"] == "客户PO"
@@ -1117,8 +1466,11 @@ class TestPreviewFunction:
             po_record_rows=[basic_po_row(**{"INV#": "EMAX20260710"})],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-            seller="EMAX PTE", output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("INVOICE",),
+            seller="EMAX PTE",
+            output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
         assert result.status == "success"
@@ -1138,16 +1490,24 @@ class TestPreviewFunction:
         path = make_base_file(
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
-            po_record_rows=[basic_po_row(**{
-                "SK/YM INVOICE NO.": "SKYM-GS-001",
-                "SHIP QTY": 40,
-                "YM PO": "YM-PI-001",
-                "CATEGORY": 3 if seller == "SK" else 1,
-            })],
+            po_record_rows=[
+                basic_po_row(
+                    **{
+                        "SK/YM INVOICE NO.": "SKYM-GS-001",
+                        "SHIP QTY": 40,
+                        "YM PO": "YM-PI-001",
+                        "CATEGORY": 3 if seller == "SK" else 1,
+                    }
+                )
+            ],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("INVOICE", "PL"),
-            seller=seller, invoice_no="SKYM-GS-001", output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("INVOICE", "PL"),
+            seller=seller,
+            invoice_no="SKYM-GS-001",
+            output_dir=str(tmp_path / "out"),
         )
 
         result = generate(request)
@@ -1168,7 +1528,11 @@ class TestPreviewFunction:
         [("YM", "21-44640", "21-REEL"), ("SK", "21-REEL", "21-44640")],
     )
     def test_sk_ym_invoice_and_pl_export_uses_selected_seller_workbook(
-        self, tmp_path, seller, expected_sap, unexpected_sap,
+        self,
+        tmp_path,
+        seller,
+        expected_sap,
+        unexpected_sap,
     ):
         reel_product = {
             **COMBO_PRODUCT,
@@ -1181,22 +1545,26 @@ class TestPreviewFunction:
             tmp_path,
             data_base_rows=[COMBO_PRODUCT, reel_product],
             po_record_rows=[
-                basic_po_row(**{
-                    "ITEM LINE#": "10",
-                    "SAP Number": "21-44640",
-                    "DESCRIPTION": "COMBO ITEM",
-                    "SHIP QTY": 40,
-                    "SK/YM INVOICE NO.": "SKYM-GS-001",
-                    "CATEGORY": 1,
-                }),
-                basic_po_row(**{
-                    "ITEM LINE#": "20",
-                    "SAP Number": "21-REEL",
-                    "DESCRIPTION": "REEL ITEM",
-                    "SHIP QTY": 30,
-                    "SK/YM INVOICE NO.": "SKYM-GS-001",
-                    "CATEGORY": 3,
-                }),
+                basic_po_row(
+                    **{
+                        "ITEM LINE#": "10",
+                        "SAP Number": "21-44640",
+                        "DESCRIPTION": "COMBO ITEM",
+                        "SHIP QTY": 40,
+                        "SK/YM INVOICE NO.": "SKYM-GS-001",
+                        "CATEGORY": 1,
+                    }
+                ),
+                basic_po_row(
+                    **{
+                        "ITEM LINE#": "20",
+                        "SAP Number": "21-REEL",
+                        "DESCRIPTION": "REEL ITEM",
+                        "SHIP QTY": 30,
+                        "SK/YM INVOICE NO.": "SKYM-GS-001",
+                        "CATEGORY": 3,
+                    }
+                ),
             ],
             customer_po_rows=[
                 {
@@ -1214,8 +1582,12 @@ class TestPreviewFunction:
             ],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("INVOICE", "PL"),
-            seller=seller, invoice_no="SKYM-GS-001", output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("INVOICE", "PL"),
+            seller=seller,
+            invoice_no="SKYM-GS-001",
+            output_dir=str(tmp_path / "out"),
         )
 
         result = generate(request)
@@ -1236,7 +1608,10 @@ class TestPreviewFunction:
         [("YM", "21-44640"), ("SK", "21-REEL")],
     )
     def test_sk_ym_preview_filters_lines_by_po_record_category(
-        self, tmp_path, seller, expected_sap,
+        self,
+        tmp_path,
+        seller,
+        expected_sap,
     ):
         reel_product = {
             **COMBO_PRODUCT,
@@ -1249,22 +1624,26 @@ class TestPreviewFunction:
             tmp_path,
             data_base_rows=[COMBO_PRODUCT, reel_product],
             po_record_rows=[
-                basic_po_row(**{
-                    "ITEM LINE#": "10",
-                    "SAP Number": "21-44640",
-                    "DESCRIPTION": "COMBO ITEM",
-                    "SHIP QTY": 40,
-                    "SK/YM INVOICE NO.": "SKYM-GS-001",
-                    "CATEGORY": 1,
-                }),
-                basic_po_row(**{
-                    "ITEM LINE#": "20",
-                    "SAP Number": "21-REEL",
-                    "DESCRIPTION": "REEL ITEM",
-                    "SHIP QTY": 30,
-                    "SK/YM INVOICE NO.": "SKYM-GS-001",
-                    "CATEGORY": 3,
-                }),
+                basic_po_row(
+                    **{
+                        "ITEM LINE#": "10",
+                        "SAP Number": "21-44640",
+                        "DESCRIPTION": "COMBO ITEM",
+                        "SHIP QTY": 40,
+                        "SK/YM INVOICE NO.": "SKYM-GS-001",
+                        "CATEGORY": 1,
+                    }
+                ),
+                basic_po_row(
+                    **{
+                        "ITEM LINE#": "20",
+                        "SAP Number": "21-REEL",
+                        "DESCRIPTION": "REEL ITEM",
+                        "SHIP QTY": 30,
+                        "SK/YM INVOICE NO.": "SKYM-GS-001",
+                        "CATEGORY": 3,
+                    }
+                ),
             ],
             customer_po_rows=[
                 {
@@ -1282,8 +1661,12 @@ class TestPreviewFunction:
             ],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-            seller=seller, invoice_no="SKYM-GS-001", output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("INVOICE",),
+            seller=seller,
+            invoice_no="SKYM-GS-001",
+            output_dir=str(tmp_path / "out"),
         )
 
         result = preview(request)
@@ -1299,15 +1682,22 @@ class TestPreviewFunction:
         path = make_base_file(
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
-            po_record_rows=[basic_po_row(**{
-                "INV#": "RAW-INV-001",
-                "SK/YM INVOICE NO.": "SKYM-GS-001",
-                "CATEGORY": 3,
-            })],
+            po_record_rows=[
+                basic_po_row(
+                    **{
+                        "INV#": "RAW-INV-001",
+                        "SK/YM INVOICE NO.": "SKYM-GS-001",
+                        "CATEGORY": 3,
+                    }
+                )
+            ],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=(doc_type,),
-            seller="SK", output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=(doc_type,),
+            seller="SK",
+            output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
         assert result.status == "success"
@@ -1329,19 +1719,25 @@ class TestPreviewFunction:
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
             po_record_rows=[basic_po_row(**{"CATEGORY": category})],
-            customer_po_rows=[{
-                "Purchasing Document": "4500030844",
-                "Item": "10",
-                "Material": "21-44640",
-                "ship to": "Customer PO Warehouse",
-                "Order Quantity": 100,
-                "ship DATE": date(2026, 4, 20),
-                "final destination": final_destination,
-            }],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Item": "10",
+                    "Material": "21-44640",
+                    "ship to": "Customer PO Warehouse",
+                    "Order Quantity": 100,
+                    "ship DATE": date(2026, 4, 20),
+                    "final destination": final_destination,
+                }
+            ],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-            seller=seller, invoice_no="SKYM-INV-001", output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("INVOICE",),
+            seller=seller,
+            invoice_no="SKYM-INV-001",
+            output_dir=str(tmp_path / "out"),
         )
         preview_result = preview(request)
         assert preview_result.status == "success", preview_result.errors
@@ -1366,8 +1762,11 @@ class TestPreviewFunction:
         db_row["Material Description"] = "DB Description"
         path = make_base_file(tmp_path, data_base_rows=[db_row], po_record_rows=[po_row])
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("INVOICE",),
-            seller="GS PTE", invoice_no="INV-001",
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("INVOICE",),
+            seller="GS PTE",
+            invoice_no="INV-001",
         )
         result = preview(request)
         assert result.status == "success"
@@ -1383,10 +1782,15 @@ class TestPreviewFunction:
         assert description_entry["value"] == "PO Record Description"
 
     def test_preview_pl_totals_keep_shared_labels_and_values(self, tmp_path):
-        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
+        path = make_base_file(
+            tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
+        )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PL",),
-            seller="GS PTE", invoice_no="INV-001",
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PL",),
+            seller="GS PTE",
+            invoice_no="INV-001",
         )
         result = preview(request)
         assert result.status == "success"
@@ -1434,8 +1838,11 @@ class TestPreviewFunction:
             po_record_rows=[basic_po_row(**{"CTNS": Decimal("7")})],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PL",),
-            seller=seller, invoice_no=invoice_no,
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PL",),
+            seller=seller,
+            invoice_no=invoice_no,
         )
         result = preview(request)
         assert result.status == "success", result.errors
@@ -1468,16 +1875,23 @@ class TestPreviewFunction:
         path = make_base_file(
             tmp_path,
             data_base_rows=[product],
-            po_record_rows=[basic_po_row(**{
-                "SAP Number": sap,
-                "CATEGORY": category,
-                "SK/YM INVOICE NO.": "SKYM-GS-001",
-                "CTNS": Decimal("7"),
-            })],
+            po_record_rows=[
+                basic_po_row(
+                    **{
+                        "SAP Number": sap,
+                        "CATEGORY": category,
+                        "SK/YM INVOICE NO.": "SKYM-GS-001",
+                        "CTNS": Decimal("7"),
+                    }
+                )
+            ],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PL",),
-            seller=seller, invoice_no="SKYM-GS-001",
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PL",),
+            seller=seller,
+            invoice_no="SKYM-GS-001",
         )
         result = preview(request)
         assert result.status == "success", result.errors
@@ -1504,16 +1918,24 @@ class TestPreviewFunction:
         path = make_base_file(
             tmp_path,
             data_base_rows=[product],
-            po_record_rows=[basic_po_row(**{
-                "SAP Number": sap,
-                "CATEGORY": category,
-                "SK/YM INVOICE NO.": "SKYM-GS-001",
-                "CTNS": Decimal("7"),
-            })],
+            po_record_rows=[
+                basic_po_row(
+                    **{
+                        "SAP Number": sap,
+                        "CATEGORY": category,
+                        "SK/YM INVOICE NO.": "SKYM-GS-001",
+                        "CTNS": Decimal("7"),
+                    }
+                )
+            ],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PL",),
-            seller=seller, invoice_no="SKYM-GS-001", output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PL",),
+            seller=seller,
+            invoice_no="SKYM-GS-001",
+            output_dir=str(tmp_path / "out"),
         )
         result = generate(request)
         assert result.status == "success", result.errors
@@ -1532,7 +1954,13 @@ class TestPreviewFunction:
         ],
     )
     def test_export_gs_emax_pl_writes_ctns_column(
-        self, tmp_path, seller, invoice_no, sheet, line_cell, total_cell,
+        self,
+        tmp_path,
+        seller,
+        invoice_no,
+        sheet,
+        line_cell,
+        total_cell,
     ):
         path = make_base_file(
             tmp_path,
@@ -1540,8 +1968,12 @@ class TestPreviewFunction:
             po_record_rows=[basic_po_row(**{"CTNS": Decimal("7")})],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PL",),
-            seller=seller, invoice_no=invoice_no, output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PL",),
+            seller=seller,
+            invoice_no=invoice_no,
+            output_dir=str(tmp_path / "out"),
         )
         result = generate(request)
         assert result.status == "success", result.errors
@@ -1552,10 +1984,15 @@ class TestPreviewFunction:
         assert ws[total_cell].value == 7
 
     def test_preview_emax_pl_includes_shipping_mark_headers(self, tmp_path):
-        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
+        path = make_base_file(
+            tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
+        )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PL",),
-            seller="EMAX PTE", invoice_no="INV-001",
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PL",),
+            seller="EMAX PTE",
+            invoice_no="INV-001",
         )
         result = preview(request)
         assert result.status == "success"
@@ -1580,8 +2017,11 @@ class TestPreviewFunction:
         db_row["Material Description"] = "DB Description"
         path = make_base_file(tmp_path, data_base_rows=[db_row], po_record_rows=[po_row])
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PL",),
-            seller="EMAX PTE", invoice_no="INV-001",
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PL",),
+            seller="EMAX PTE",
+            invoice_no="INV-001",
         )
         result = preview(request)
         assert result.status == "success"
@@ -1600,10 +2040,15 @@ class TestPreviewFunction:
         assert po_no_entry["field"] == "Purchasing Document"
 
     def test_preview_emax_pl_includes_fixed_unit_columns(self, tmp_path):
-        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
+        path = make_base_file(
+            tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
+        )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PL",),
-            seller="EMAX PTE", invoice_no="INV-001",
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PL",),
+            seller="EMAX PTE",
+            invoice_no="INV-001",
         )
         result = preview(request)
         assert result.status == "success"
@@ -1611,8 +2056,18 @@ class TestPreviewFunction:
         p = result.preview
         assert p is not None
         assert [c["key"] for c in p.column_labels] == [
-            "po_no", "description", "sap", "quantity", "F",
-            "net_weight", "H", "gross_weight", "J", "cbm", "L", "carton_count",
+            "po_no",
+            "description",
+            "sap",
+            "quantity",
+            "F",
+            "net_weight",
+            "H",
+            "gross_weight",
+            "J",
+            "cbm",
+            "L",
+            "carton_count",
         ]
         labels = {c["key"]: c["label"] for c in p.column_labels}
         assert labels["F"] == ""
@@ -1634,8 +2089,11 @@ class TestPreviewFunction:
             po_record_rows=[basic_po_row(**{"TOTAL CBM": Decimal("1.2")})],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PL",),
-            seller="EMAX PTE", invoice_no="INV-001",
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PL",),
+            seller="EMAX PTE",
+            invoice_no="INV-001",
         )
         result = preview(request)
         assert result.status == "success"
@@ -1665,8 +2123,11 @@ class TestPreviewFunction:
         wb.close()
 
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PL",),
-            seller="EMAX PTE", invoice_no="INV-001",
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PL",),
+            seller="EMAX PTE",
+            invoice_no="INV-001",
         )
         result = preview(request)
         assert result.status == "success"
@@ -1679,8 +2140,12 @@ class TestPreviewFunction:
         cbm_entry = next(e for e in entries if e["preview_field"] == "line[0].cbm")
         assert cbm_entry["value"] == "1.2000"
 
-    @pytest.mark.parametrize("seller, expected_right", [("SK", ["invoice_no", "invoice_date"]), ("YM", ["invoice_no"])])
-    def test_preview_sk_ym_pl_layout_uses_supported_header_fields(self, tmp_path, seller, expected_right):
+    @pytest.mark.parametrize(
+        "seller, expected_right", [("SK", ["invoice_no", "invoice_date"]), ("YM", ["invoice_no"])]
+    )
+    def test_preview_sk_ym_pl_layout_uses_supported_header_fields(
+        self, tmp_path, seller, expected_right
+    ):
         category = 3 if seller == "SK" else 1
         path = make_base_file(
             tmp_path,
@@ -1688,8 +2153,11 @@ class TestPreviewFunction:
             po_record_rows=[basic_po_row(**{"CATEGORY": category})],
         )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PL",),
-            seller=seller, invoice_no="SKYM-INV-001",
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PL",),
+            seller=seller,
+            invoice_no="SKYM-INV-001",
         )
         result = preview(request)
         assert result.status == "success"
@@ -1704,10 +2172,15 @@ class TestPreviewFunction:
         assert top.get("left", []) == ["seller_info"]
 
     def test_preview_emax_pi_includes_custom_totals_from_mapping(self, tmp_path):
-        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
+        path = make_base_file(
+            tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
+        )
         request = DocumentRequest(
-            base_file=str(path), po_no="4500030844", documents=("PI",),
-            seller="EMAX PTE", output_dir=str(tmp_path / "out"),
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("PI",),
+            seller="EMAX PTE",
+            output_dir=str(tmp_path / "out"),
         )
         result = preview(request)
         assert result.status == "success"
@@ -1719,7 +2192,13 @@ class TestPreviewFunction:
         assert totals["Date"] == date.today().strftime("%Y-%m-%d")
 
         extra_items = totals.get("_extra_items", [])
-        assert {"key": "signature", "label": "Signature", "value": "Joyce", "source_type": "template_content", "rule": "mapping.totals 固定值"} in extra_items
+        assert {
+            "key": "signature",
+            "label": "Signature",
+            "value": "Joyce",
+            "source_type": "template_content",
+            "rule": "mapping.totals 固定值",
+        } in extra_items
         assert {
             "key": "Date",
             "label": "Date",

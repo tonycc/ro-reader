@@ -52,6 +52,7 @@ CODE_FORMULA_FALLBACK: Final = "FORMULA_FALLBACK"
 # 字段别名快捷方式
 # —————————————————————————————————————
 
+
 def _db(key: str) -> str:
     return _bs.field("DATA BASE", key)
 
@@ -66,14 +67,14 @@ def _cp(key: str) -> str:
 
 # PO record 价格列，从 (seller, buyer) → 列名
 PO_PRICE_COLUMNS: Final[dict[tuple[str, str], str]] = {
-    (seller, SELLER_TO_BUYER[seller]): col
-    for seller, col in SELLER_PRICE_COLUMNS.items()
+    (seller, SELLER_TO_BUYER[seller]): col for seller, col in SELLER_PRICE_COLUMNS.items()
 }
 
 
 # —————————————————————————————————————
 # 公开 API
 # —————————————————————————————————————
+
 
 @dataclass(frozen=True)
 class ResolveResult:
@@ -82,8 +83,10 @@ class ResolveResult:
 
 
 def resolve_po_lines(
-    reader: WorkbookReader, po_no: str,
-    *, products: dict[str, Product] | None = None,
+    reader: WorkbookReader,
+    po_no: str,
+    *,
+    products: dict[str, Product] | None = None,
     row_filter: Callable[[dict[str, object]], bool] | None = None,
 ) -> ResolveResult:
     """解析指定 PO 号的所有订单行。
@@ -151,6 +154,7 @@ def resolve_po_rows(
 # DATA BASE → Product 索引
 # —————————————————————————————————————
 
+
 def build_product_index(reader: WorkbookReader) -> dict[str, Product]:
     """从 DATA BASE sheet 建立 SAP 到产品主数据的索引。"""
     sheet = reader.read_sheet(SHEET_DATA_BASE)
@@ -212,6 +216,7 @@ _build_product_index = build_product_index
 # PO record 行解析
 # —————————————————————————————————————
 
+
 def _read_po_record_rows(
     reader: WorkbookReader,
     po_no: str,
@@ -257,9 +262,12 @@ def _resolve_row(
     if not sap:
         messages.append(
             ValidationMessage(
-                kind="blocking_error", code=CODE_SAP_MISSING,
-                message="行缺少 SAP Number", sheet=SHEET_PO_RECORD,
-                row=row_number, field=_po("sap"),
+                kind="blocking_error",
+                code=CODE_SAP_MISSING,
+                message="行缺少 SAP Number",
+                sheet=SHEET_PO_RECORD,
+                row=row_number,
+                field=_po("sap"),
             )
         )
         return None, messages
@@ -268,9 +276,12 @@ def _resolve_row(
     if product is None:
         messages.append(
             ValidationMessage(
-                kind="blocking_error", code=CODE_SAP_NOT_IN_DATA_BASE,
+                kind="blocking_error",
+                code=CODE_SAP_NOT_IN_DATA_BASE,
                 message=f"SAP {sap!r} 在 DATA BASE 中不存在",
-                sheet=SHEET_DATA_BASE, row=row_number, field=_po("sap"),
+                sheet=SHEET_DATA_BASE,
+                row=row_number,
+                field=_po("sap"),
             )
         )
         return None, messages
@@ -295,7 +306,8 @@ def _resolve_row(
         if quantity is None:
             messages.append(
                 ValidationMessage(
-                    kind="blocking_error", code=CODE_QTY_INVALID,
+                    kind="blocking_error",
+                    code=CODE_QTY_INVALID,
                     message=(
                         f"客户PO row {_row_label(qty_row)}（Material {sap}）的 "
                         f"Order Quantity 不是有效数字：{qty_raw!r}"
@@ -313,10 +325,14 @@ def _resolve_row(
     if not prices:
         messages.append(
             ValidationMessage(
-                kind="warning", code=CODE_NO_PRICES,
+                kind="warning",
+                code=CODE_NO_PRICES,
                 message=f"SAP {sap!r} 在所有链段下均无可用价格",
-                sheet=SHEET_DATA_BASE, row=None,
-                field=next(iter(DATA_BASE_PRICE_COLUMNS.values())) if DATA_BASE_PRICE_COLUMNS else "price",
+                sheet=SHEET_DATA_BASE,
+                row=None,
+                field=next(iter(DATA_BASE_PRICE_COLUMNS.values()))
+                if DATA_BASE_PRICE_COLUMNS
+                else "price",
                 severity="high",
             )
         )
@@ -326,14 +342,16 @@ def _resolve_row(
 
     # 装箱字段（公式列回退）
     carton_count, ctns_msg = _read_with_fallback(
-        row, _po("carton_count"),
+        row,
+        _po("carton_count"),
         lambda: _compute_ctns(quantity, product.carton_qty),
         row_number,
     )
     if ctns_msg is not None:
         messages.append(ctns_msg)
     total_cbm, cbm_msg = _read_with_fallback(
-        row, _po("total_cbm"),
+        row,
+        _po("total_cbm"),
         lambda: _compute_total_cbm(product, carton_count),
         row_number,
     )
@@ -353,7 +371,8 @@ def _resolve_row(
             sap=sap,
             customer_po_lookup=customer_po_lookup,
             field_name=_cp("item"),
-        ) or "",
+        )
+        or "",
         sap=sap,
         description=product.description,
         category=product.category,
@@ -458,11 +477,14 @@ def _resolve_customer_po_material(
     sap: str,
     customer_po_lookup: CustomerPoLookup,
 ) -> str:
-    return _resolve_customer_po_field(
-        sap=sap,
-        customer_po_lookup=customer_po_lookup,
-        field_name=_cp("material"),
-    ) or ""
+    return (
+        _resolve_customer_po_field(
+            sap=sap,
+            customer_po_lookup=customer_po_lookup,
+            field_name=_cp("material"),
+        )
+        or ""
+    )
 
 
 def _resolve_cp_field_by_spec(
@@ -475,11 +497,14 @@ def _resolve_cp_field_by_spec(
     """根据 line_rules 的 seller 专属覆盖解析客户PO字段值。"""
     spec = resolve_line_field_spec(field_key, document_type="PI", seller=seller)
     field_name = _cp(spec.source_field) if spec.source_field else _cp(field_key)
-    return _resolve_customer_po_field(
-        sap=sap,
-        customer_po_lookup=customer_po_lookup,
-        field_name=field_name,
-    ) or ""
+    return (
+        _resolve_customer_po_field(
+            sap=sap,
+            customer_po_lookup=customer_po_lookup,
+            field_name=field_name,
+        )
+        or ""
+    )
 
 
 def _resolve_customer_po_raw_entry(
@@ -505,30 +530,37 @@ def _resolve_customer_po_quantity_entry(
     """按当前 SAP 精确匹配客户PO Material 后读取 Order Quantity。"""
     by_material, all_rows = customer_po_lookup
     if not all_rows:
-        return None, None, ValidationMessage(
-            kind="blocking_error",
-            code=CODE_QTY_MISSING,
-            message=(
-                f"客户PO中没有 PO {po_no} 的记录，无法按 SAP {sap} "
-                "匹配 Material 并读取 Order Quantity"
+        return (
+            None,
+            None,
+            ValidationMessage(
+                kind="blocking_error",
+                code=CODE_QTY_MISSING,
+                message=(
+                    f"客户PO中没有 PO {po_no} 的记录，无法按 SAP {sap} "
+                    "匹配 Material 并读取 Order Quantity"
+                ),
+                sheet=SHEET_CUSTOMER_PO,
+                row=None,
+                field=_cp("purchasing_document"),
             ),
-            sheet=SHEET_CUSTOMER_PO,
-            row=None,
-            field=_cp("purchasing_document"),
         )
 
     rows = by_material.get(sap, ())
     if not rows:
-        return None, None, ValidationMessage(
-            kind="blocking_error",
-            code=CODE_QTY_MISSING,
-            message=(
-                f"客户PO中有 PO {po_no}，但没有 Material = {sap} 的行，"
-                "无法读取 Order Quantity"
+        return (
+            None,
+            None,
+            ValidationMessage(
+                kind="blocking_error",
+                code=CODE_QTY_MISSING,
+                message=(
+                    f"客户PO中有 PO {po_no}，但没有 Material = {sap} 的行，无法读取 Order Quantity"
+                ),
+                sheet=SHEET_CUSTOMER_PO,
+                row=None,
+                field=_cp("material"),
             ),
-            sheet=SHEET_CUSTOMER_PO,
-            row=None,
-            field=_cp("material"),
         )
 
     field_name = _cp("order_quantity")
@@ -538,16 +570,20 @@ def _resolve_customer_po_quantity_entry(
             return row, raw, None
 
     first_row = rows[0]
-    return first_row, None, ValidationMessage(
-        kind="blocking_error",
-        code=CODE_QTY_MISSING,
-        message=(
-            f"客户PO row {_row_label(first_row)}（Material {sap}）的 "
-            "Order Quantity 为空，请补齐后再生成"
+    return (
+        first_row,
+        None,
+        ValidationMessage(
+            kind="blocking_error",
+            code=CODE_QTY_MISSING,
+            message=(
+                f"客户PO row {_row_label(first_row)}（Material {sap}）的 "
+                "Order Quantity 为空，请补齐后再生成"
+            ),
+            sheet=SHEET_CUSTOMER_PO,
+            row=_row_number(first_row),
+            field=field_name,
         ),
-        sheet=SHEET_CUSTOMER_PO,
-        row=_row_number(first_row),
-        field=field_name,
     )
 
 
@@ -632,9 +668,12 @@ def _read_with_fallback(
     computed = fallback_fn()
     if computed is not None:
         msg = ValidationMessage(
-            kind="warning", code=CODE_FORMULA_FALLBACK,
+            kind="warning",
+            code=CODE_FORMULA_FALLBACK,
             message=f"字段 {field_name!r} 为空，使用公式回退计算",
-            sheet=SHEET_PO_RECORD, row=row_number, field=field_name,
+            sheet=SHEET_PO_RECORD,
+            row=row_number,
+            field=field_name,
             severity="high",
         )
         return computed, msg
@@ -645,10 +684,12 @@ def _read_with_fallback(
 # 公式
 # —————————————————————————————————————
 
+
 def _compute_ctns(quantity: Decimal, carton_qty: Decimal | None) -> Decimal | None:
     if carton_qty is None or carton_qty == 0:
         return None
     from math import ceil
+
     return Decimal(ceil(int(quantity / carton_qty)))
 
 
@@ -665,6 +706,7 @@ def _compute_total_cbm(product: Product, carton_count: Decimal | None) -> Decima
 # 小工具
 # —————————————————————————————————————
 
+
 def _str_or_none(value: object) -> str | None:
     if isinstance(value, str):
         s = value.strip()
@@ -680,12 +722,20 @@ def _str_or_empty(value: object) -> str:
 
 
 def _int_or_none(value: object) -> int | None:
-    try:
-        if isinstance(value, float) and value != int(value):
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value) if value == int(value) else None
+    if isinstance(value, Decimal):
+        return int(value) if value == value.to_integral_value() else None
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
             return None
-        return int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return None
+    return None
 
 
 def _decimal_from_row(row: dict[str, object], field_name: str) -> Decimal | None:
@@ -721,6 +771,7 @@ def _date_or_none(value: object) -> date | None:
     if value is None:
         return None
     from datetime import datetime as dt
+
     if isinstance(value, dt):
         return value.date()
     if isinstance(value, date):

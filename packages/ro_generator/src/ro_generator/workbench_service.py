@@ -66,11 +66,13 @@ def inspect_workbook(base_file: str) -> WorkbookInspectionResult:
         return WorkbookInspectionResult(ok=True, po_list=snapshot.po_summary)
     except (WorkbookOpenError, BuildSnapshotError, OSError) as exc:
         msg = str(exc)
-        if hasattr(exc, "message"):
-            msg = exc.message  # type: ignore[attr-defined]
+        message = getattr(exc, "message", None)
+        if isinstance(message, str):
+            msg = message
         code = getattr(exc, "code", "WORKBOOK_OPEN_ERROR")
         return WorkbookInspectionResult(
-            ok=False, po_list=(),
+            ok=False,
+            po_list=(),
             errors=(ValidationMessage(kind="blocking_error", code=code, message=msg),),
         )
 

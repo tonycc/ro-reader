@@ -61,10 +61,14 @@ def validate_workbook_structure(
         messages.extend(_check_headers(reader, SHEET_PO_RECORD, PO_RECORD_REQUIRED_HEADERS))
     if reader.has_sheet(SHEET_CUSTOMER_PO) and SHEET_CUSTOMER_PO not in skip_sheets:
         cp_cfg = _schema.sheet("客户PO")
-        messages.extend(_check_headers(
-            reader, SHEET_CUSTOMER_PO, CUSTOMER_PO_REQUIRED_HEADERS,
-            header_row=cp_cfg.header_row,
-        ))
+        messages.extend(
+            _check_headers(
+                reader,
+                SHEET_CUSTOMER_PO,
+                CUSTOMER_PO_REQUIRED_HEADERS,
+                header_row=cp_cfg.header_row,
+            )
+        )
 
     return tuple(messages)
 

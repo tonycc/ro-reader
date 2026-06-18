@@ -72,8 +72,10 @@ explicit_package_bases = true
 mypy_path = ["packages/ro_generator/src", "packages/ro_workbench_api/src", "packages/ro_workbench_launcher/src"]
 
 [[tool.mypy.overrides]]
-module = ["tests.*"]
+module = ["tests.*", "packages.*.tests.*"]
 disallow_untyped_defs = false
+disallow_untyped_calls = false
+check_untyped_defs = false
 
 [tool.pytest.ini_options]
 testpaths = ["packages/*/tests", "tests"]

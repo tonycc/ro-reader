@@ -27,6 +27,7 @@ DEFAULT_TTL_SECONDS: Final = 1800  # 30 分钟未访问自动清理
 # 内部缓存条目
 # —————————————————————————————————————
 
+
 @dataclass
 class _CachedEntry:
     snapshot: WorkbookSnapshot
@@ -40,6 +41,7 @@ class _CachedEntry:
 # —————————————————————————————————————
 # 缓存管理器
 # —————————————————————————————————————
+
 
 class WorkbookCacheManager:
     """按 base 文件路径管理 WorkbookSnapshot 缓存。"""
@@ -95,14 +97,16 @@ class WorkbookCacheManager:
         with self._lock:
             entries = []
             for key, entry in self._cache.items():
-                entries.append({
-                    "base_file": key,
-                    "file_size": entry.signature.size,
-                    "po_count": len(entry.snapshot.po_index),
-                    "row_count": len(entry.snapshot.po_rows),
-                    "age_seconds": round(time.time() - entry.snapshot.created_at, 1),
-                    "last_access_seconds_ago": round(time.time() - entry.last_access, 1),
-                })
+                entries.append(
+                    {
+                        "base_file": key,
+                        "file_size": entry.signature.size,
+                        "po_count": len(entry.snapshot.po_index),
+                        "row_count": len(entry.snapshot.po_rows),
+                        "age_seconds": round(time.time() - entry.snapshot.created_at, 1),
+                        "last_access_seconds_ago": round(time.time() - entry.last_access, 1),
+                    }
+                )
             return {
                 "entry_count": len(self._cache),
                 "build_lock_count": len(self._build_locks),
@@ -115,10 +119,7 @@ class WorkbookCacheManager:
         now = time.time()
         removed = 0
         with self._lock:
-            expired = [
-                k for k, v in self._cache.items()
-                if now - v.last_access > self._ttl
-            ]
+            expired = [k for k, v in self._cache.items() if now - v.last_access > self._ttl]
             for k in expired:
                 self._cache.pop(k, None)
                 self._build_locks.pop(k, None)
@@ -147,6 +148,7 @@ def get_cache_manager() -> WorkbookCacheManager:
 # —————————————————————————————————————
 # 辅助
 # —————————————————————————————————————
+
 
 def _normalize_path(path: str) -> str:
     return str(Path(path).resolve())

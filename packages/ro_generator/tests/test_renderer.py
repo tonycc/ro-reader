@@ -156,7 +156,7 @@ def build_emax_pi_three_lines() -> DocumentModel:
     lines = (
         make_order_line(
             sap="11-19833",
-            description='Accel 6\'6" M/F Casting Rod 2pc',
+            description="Accel 6'6\" M/F Casting Rod 2pc",
             gs_model="Q1",
             quantity=120,
             item_line_no="10",
@@ -166,7 +166,7 @@ def build_emax_pi_three_lines() -> DocumentModel:
         ),
         make_order_line(
             sap="11-19835",
-            description='Accel 7\'0" M/F Casting Rod 2pc',
+            description="Accel 7'0\" M/F Casting Rod 2pc",
             gs_model="Q2",
             quantity=120,
             item_line_no="20",
@@ -176,7 +176,7 @@ def build_emax_pi_three_lines() -> DocumentModel:
         ),
         make_order_line(
             sap="11-18369",
-            description='Speed Stick 6\'6" L Spinning Rod 3PC',
+            description="Speed Stick 6'6\" L Spinning Rod 3PC",
             gs_model="Q3",
             quantity=64,
             item_line_no="30",
@@ -435,9 +435,7 @@ class TestRenderBasic:
         model = build_emax_pl()
         model = replace(
             model,
-            lines=(
-                replace(model.lines[0], cbm=Decimal("1.2")),
-            ),
+            lines=(replace(model.lines[0], cbm=Decimal("1.2")),),
         )
         result = render_document(model, mapping, tmp_path / "out.xlsx")
         wb = load_workbook(result.output_path)
@@ -450,9 +448,7 @@ class TestRenderBasic:
         model = build_emax_pl()
         model = replace(
             model,
-            lines=(
-                replace(model.lines[0], cbm=Decimal("1.2000")),
-            ),
+            lines=(replace(model.lines[0], cbm=Decimal("1.2000")),),
         )
         result = render_document(model, mapping, tmp_path / "out.xlsx")
         wb = load_workbook(result.output_path)
@@ -654,14 +650,22 @@ class TestSourceIndex:
 
     def test_gs_pi_fixed_ship_to_header_has_no_base_source_trace(self, tmp_path: Path) -> None:
         from ro_generator.template_mapping import load_template_mapping as ltm
+
         gs_pi_mapping = REPO_ROOT / "templates" / "gs" / "mappings" / "pi.yaml"
         mapping = ltm(gs_pi_mapping)
         model = build_pi_model(
             (
-                make_order_line(sap="21-44640", description="CB2500.B2", gs_model="GS-100", quantity=100,
-                                unit_prices={(ENTITY_GS_PTE, ENTITY_EMAX_PTE): Decimal("32.8")}),
+                make_order_line(
+                    sap="21-44640",
+                    description="CB2500.B2",
+                    gs_model="GS-100",
+                    quantity=100,
+                    unit_prices={(ENTITY_GS_PTE, ENTITY_EMAX_PTE): Decimal("32.8")},
+                ),
             ),
-            seller=ENTITY_GS_PTE, buyer=ENTITY_EMAX_PTE, po_no="4500030844",
+            seller=ENTITY_GS_PTE,
+            buyer=ENTITY_EMAX_PTE,
+            po_no="4500030844",
         )
         assert model.model is not None, model.messages
         result = render_document(model.model, mapping, tmp_path / "out.xlsx")
@@ -672,7 +676,9 @@ class TestSourceIndex:
         loc = result.source_index.lookup_source("G10")
         assert loc is None
 
-    def test_emax_pi_ship_to_continuation_headers_trace_to_customer_po(self, tmp_path: Path) -> None:
+    def test_emax_pi_ship_to_continuation_headers_trace_to_customer_po(
+        self, tmp_path: Path
+    ) -> None:
         mapping = load_template_mapping(EMAX_PI_MAPPING)
         result = render_document(build_emax_pi(), mapping, tmp_path / "out.xlsx")
         line2 = result.source_index.lookup_source("G10")

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from decimal import Decimal
-from typing import Final
+from typing import Final, TypedDict
 
 from ro_generator.schema import (
     CATEGORY_NAMES,
@@ -28,6 +28,20 @@ class LineFieldSpec:
     none_placeholder: str | None = None
     display_decimal_places: int | None = None
     display_prefix: str | None = None
+
+
+class LineFieldOverride(TypedDict, total=False):
+    rule: str
+    source_sheet: str | None
+    source_field: str | None
+    source_type: str
+    computed: bool
+    fixed_value: bool
+    skip_if_none: bool
+    zero_placeholder: str | None
+    none_placeholder: str | None
+    display_decimal_places: int | None
+    display_prefix: str | None
 
 
 LINE_FIELD_SPECS: Final[dict[str, LineFieldSpec]] = {
@@ -130,7 +144,7 @@ LINE_FIELD_SPECS: Final[dict[str, LineFieldSpec]] = {
 # INVOICE/PL 用出货时数据；PL 额外覆盖 cbm
 # —————————————————————————————————————
 
-_INVOICE_PL_OVERRIDES: Final[dict[str, dict[str, str | None]]] = {
+_INVOICE_PL_OVERRIDES: Final[dict[str, LineFieldOverride]] = {
     "quantity": {
         "rule": "Invoice/PL 使用 PO record 的月度出货数量",
         "source_sheet": SHEET_PO_RECORD,
@@ -143,7 +157,7 @@ _INVOICE_PL_OVERRIDES: Final[dict[str, dict[str, str | None]]] = {
     },
 }
 
-_PL_ONLY_OVERRIDES: Final[dict[str, dict[str, str | None]]] = {
+_PL_ONLY_OVERRIDES: Final[dict[str, LineFieldOverride]] = {
     **_INVOICE_PL_OVERRIDES,
     "cbm": {
         "rule": 'PL 使用 PO record AJ列 "TOTAL CBM"',
@@ -154,7 +168,7 @@ _PL_ONLY_OVERRIDES: Final[dict[str, dict[str, str | None]]] = {
 }
 
 # document_type → {field_name → override_kwargs}
-_DOC_FAMILY_OVERRIDES: Final[dict[str, dict[str, dict[str, str | None]]]] = {
+_DOC_FAMILY_OVERRIDES: Final[dict[str, dict[str, LineFieldOverride]]] = {
     "INVOICE": _INVOICE_PL_OVERRIDES,
     "PL": _PL_ONLY_OVERRIDES,
 }
@@ -164,17 +178,20 @@ _DOC_FAMILY_OVERRIDES: Final[dict[str, dict[str, dict[str, str | None]]]] = {
 # field_name → [(seller_set, override_kwargs), ...]
 # —————————————————————————————————————
 
-_SELLER_LINE_OVERRIDES: Final[dict[str, list[tuple[frozenset[str], dict[str, str | None]]]]] = {
+_SELLER_LINE_OVERRIDES: Final[dict[str, list[tuple[frozenset[str], LineFieldOverride]]]] = {
     "confirmed_ex_factory_date": [
-        (frozenset({"SK", "YM", "GS PTE"}), {
-            "rule": 'PO record 的 "FINAL EX-FACTORY DATE" 列',
-            "source_sheet": SHEET_PO_RECORD,
-            "source_field": "FINAL EX-FACTORY DATE",
-        }),
+        (
+            frozenset({"SK", "YM", "GS PTE"}),
+            {
+                "rule": 'PO record 的 "FINAL EX-FACTORY DATE" 列',
+                "source_sheet": SHEET_PO_RECORD,
+                "source_field": "FINAL EX-FACTORY DATE",
+            },
+        ),
     ],
 }
 
-_CONTEXT_LINE_OVERRIDES: Final[dict[tuple[str, str, str], dict[str, str | None]]] = {
+_CONTEXT_LINE_OVERRIDES: Final[dict[tuple[str, str, str], LineFieldOverride]] = {
     ("PI", "EMAX PTE", "confirmed_ex_factory_date"): {
         "rule": 'PO record 的 "FINAL EX-FACTORY DATE" 列',
         "source_sheet": SHEET_PO_RECORD,
@@ -233,7 +250,12 @@ def _resolve_unit_price_spec(
     price_seller = _UNIT_PRICE_SOURCE_SELLER_OVERRIDES.get((document_type, seller), seller)
     column = DATA_BASE_PRICE_COLUMNS.get(f"{price_seller}/{category_name}")
     if column:
-        return replace(spec, rule=f"DATA BASE 的 {column} 列", source_sheet=SHEET_DATA_BASE, source_field=column)
+        return replace(
+            spec,
+            rule=f"DATA BASE 的 {column} 列",
+            source_sheet=SHEET_DATA_BASE,
+            source_field=column,
+        )
     return spec
 
 
@@ -246,7 +268,11 @@ def resolve_line_field_spec(
 ) -> LineFieldSpec:
     # 1. 按单据族叠加覆盖（INVOICE/PL 使用出货数据；PI/PO 沿用默认）
     doc_kwargs = _DOC_FAMILY_OVERRIDES.get(document_type, {}).get(field_name)
-    spec = replace(get_line_field_spec(field_name), **doc_kwargs) if doc_kwargs else get_line_field_spec(field_name)
+    spec = (
+        replace(get_line_field_spec(field_name), **doc_kwargs)
+        if doc_kwargs
+        else get_line_field_spec(field_name)
+    )
 
     # 2. 主体专属来源覆盖（数据驱动，无 if 链）
     spec = _apply_seller_line_override(spec, field_name, seller)

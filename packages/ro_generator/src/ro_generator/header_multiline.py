@@ -69,7 +69,9 @@ def _split_address_like_text(value: str) -> list[str]:
 
 def _split_visual_whitespace_lines(value: str) -> list[str]:
     """Split text copied from Excel cells where visual line breaks became wide spaces."""
-    segments = [segment.strip() for segment in re.split(r"[ \t\u3000]{3,}", value) if segment.strip()]
+    segments = [
+        segment.strip() for segment in re.split(r"[ \t\u3000]{3,}", value) if segment.strip()
+    ]
     return segments if len(segments) > 1 else [value]
 
 

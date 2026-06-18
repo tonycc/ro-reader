@@ -17,17 +17,23 @@ import tempfile
 import threading
 import time
 import uuid
+from collections.abc import AsyncGenerator, Iterable, Mapping
 from contextlib import asynccontextmanager, suppress
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from ro_generator.generator import generate, preview_from_snapshot
-from ro_generator.models import DocumentRequest, GenerationResult, ValidationMessage
+from ro_generator.models import (
+    DocumentRequest,
+    DocumentType,
+    GenerationResult,
+    ValidationMessage,
+)
 from ro_generator.source_index import SourceIndex
 from ro_generator.workbench_service import (
     get_customer_po_data,
@@ -44,7 +50,7 @@ _cleanup_stopped = threading.Event()
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI):
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     _cleanup_stopped.clear()
     _schedule_cleanup_timer()
     try:
@@ -72,17 +78,17 @@ if FRONTEND_DIST:
     if dist_path.exists():
 
         @app.get("/")
-        async def serve_index():
+        async def serve_index() -> FileResponse:
             return FileResponse(str(dist_path / "index.html"))
 
         app.mount("/assets", StaticFiles(directory=str(dist_path / "assets")), name="assets")
 
         @app.get("/favicon.svg")
-        async def serve_favicon():
+        async def serve_favicon() -> FileResponse:
             return FileResponse(str(dist_path / "favicon.svg"))
 
         @app.get("/icons.svg")
-        async def serve_icons():
+        async def serve_icons() -> FileResponse:
             return FileResponse(str(dist_path / "icons.svg"))
 
 
@@ -135,8 +141,7 @@ def _cleanup_expired_sessions() -> None:
     now = time.time()
     with _lock:
         expired = [
-            sid for sid, info in _sessions.items()
-            if now - info.last_access > SESSION_TTL_SECONDS
+            sid for sid, info in _sessions.items() if now - info.last_access > SESSION_TTL_SECONDS
         ]
         for sid in expired:
             info = _sessions.pop(sid)
@@ -160,6 +165,7 @@ def _schedule_cleanup_timer() -> None:
 # —————————————————————————————————————
 # Request / Response 模型
 # —————————————————————————————————————
+
 
 class OpenSessionRequest(BaseModel):
     base_file: str
@@ -202,6 +208,7 @@ class SessionCloseRequest(BaseModel):
 # 辅助
 # —————————————————————————————————————
 
+
 def _result_to_dict(result: GenerationResult) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "status": result.status,
@@ -217,7 +224,12 @@ def _result_to_dict(result: GenerationResult) -> dict[str, Any]:
         payload["source_index"] = [
             {
                 "doc_cell": cell,
-                "source": {"sheet": loc.sheet, "row": loc.row, "field": loc.field, "is_computed": loc.is_computed},
+                "source": {
+                    "sheet": loc.sheet,
+                    "row": loc.row,
+                    "field": loc.field,
+                    "is_computed": loc.is_computed,
+                },
             }
             for cell, loc in result.source_index
         ]
@@ -230,9 +242,70 @@ def _msg_to_dict(m: ValidationMessage) -> dict[str, Any]:
     return asdict(m)
 
 
+def _normalize_document(raw: str | None) -> DocumentType:
+    doc = (raw or "INVOICE").upper()
+    if doc not in {"PI", "PO", "INVOICE", "PL"}:
+        raise HTTPException(
+            400,
+            detail={"code": "INVALID_DOCUMENT", "message": f"不支持的单据类型: {doc}"},
+        )
+    return cast(DocumentType, doc)
+
+
+def _normalize_documents(raw_documents: Iterable[str | None]) -> tuple[DocumentType, ...]:
+    documents: list[DocumentType] = []
+    for raw in raw_documents:
+        doc = (raw or "INVOICE").upper()
+        if doc in {"INVOICE_PL", "INVOICE&PL"}:
+            documents.extend(["INVOICE", "PL"])
+            continue
+        documents.append(_normalize_document(doc))
+    return tuple(documents)
+
+
+def _preview_options_to_dict(options: Mapping[str, object]) -> dict[str, list[dict[str, str]]]:
+    payload: dict[str, list[dict[str, str]]] = {}
+    for key, value in options.items():
+        if not isinstance(value, Iterable):
+            continue
+        items: list[dict[str, str]] = []
+        for item in value:
+            if isinstance(item, str):
+                items.append({"value": item, "label": item})
+                continue
+            if not isinstance(item, dict):
+                continue
+            raw_value = item.get("value")
+            raw_label = item.get("label")
+            if isinstance(raw_value, str) and isinstance(raw_label, str):
+                items.append({"value": raw_value, "label": raw_label})
+        payload[key] = items
+    return payload
+
+
+def _build_document_request(
+    *,
+    req: DryRunRequest,
+    po_no: str,
+    output_dir: str,
+    documents: tuple[DocumentType, ...],
+    output_format: Literal["xlsx", "zip"] = "xlsx",
+) -> DocumentRequest:
+    return DocumentRequest(
+        base_file=req.base_file,
+        po_no=po_no,
+        documents=documents,
+        seller=req.seller,
+        invoice_no=req.invoice_no,
+        output_format=output_format,
+        output_dir=output_dir,
+    )
+
+
 # —————————————————————————————————————
 # 端点
 # —————————————————————————————————————
+
 
 @app.get("/api/health")
 def health() -> dict[str, str]:
@@ -258,7 +331,9 @@ def open_session(req: OpenSessionRequest) -> dict[str, Any]:
     inspection = inspect_workbook(req.base_file)
     if not inspection.ok:
         errors = [_msg_to_dict(m) for m in inspection.errors]
-        raise HTTPException(400, detail={"code": "WORKBOOK_INSPECTION_FAILED", "message": str(errors)})
+        raise HTTPException(
+            400, detail={"code": "WORKBOOK_INSPECTION_FAILED", "message": str(errors)}
+        )
 
     session = _get_or_create_session(req.base_file)
     po_list = [
@@ -296,7 +371,10 @@ def get_po_issues_endpoint(
     """返回指定 PO 的阻断原因和警告明细。"""
     session = _get_session(x_session_id)
     if session is None:
-        raise HTTPException(400, detail={"code": "INVALID_SESSION", "message": f"session {x_session_id!r} 无效或已过期"})
+        raise HTTPException(
+            400,
+            detail={"code": "INVALID_SESSION", "message": f"session {x_session_id!r} 无效或已过期"},
+        )
     return get_po_issues(base_file, po_no)
 
 
@@ -313,15 +391,15 @@ def dry_run(
     """
     session = _get_session(x_session_id)
     if session is None:
-        raise HTTPException(400, detail={"code": "INVALID_SESSION", "message": f"session {x_session_id!r} 无效或已过期"})
+        raise HTTPException(
+            400,
+            detail={"code": "INVALID_SESSION", "message": f"session {x_session_id!r} 无效或已过期"},
+        )
 
-    doc = req.document.upper()
-    request = DocumentRequest(
-        base_file=req.base_file,
+    request = _build_document_request(
+        req=req,
         po_no=po_no,
-        documents=(doc,),  # type: ignore[arg-type]
-        seller=req.seller,
-        invoice_no=req.invoice_no,
+        documents=(_normalize_document(req.document),),
         output_dir=session.temp_dir,
     )
     result = generate(request)
@@ -345,15 +423,15 @@ def preview_document(
     """
     session = _get_session(x_session_id)
     if session is None:
-        raise HTTPException(400, detail={"code": "INVALID_SESSION", "message": f"session {x_session_id!r} 无效或已过期"})
+        raise HTTPException(
+            400,
+            detail={"code": "INVALID_SESSION", "message": f"session {x_session_id!r} 无效或已过期"},
+        )
 
-    doc = req.document.upper() if req.document else "INVOICE"
-    request = DocumentRequest(
-        base_file=req.base_file,
+    request = _build_document_request(
+        req=req,
         po_no=po_no,
-        documents=(doc,),  # type: ignore[arg-type]
-        seller=req.seller,
-        invoice_no=req.invoice_no,
+        documents=(_normalize_document(req.document),),
         output_dir=session.temp_dir,
     )
 
@@ -393,7 +471,7 @@ def preview_document(
         "errors": [_msg_to_dict(m) for m in result.errors],
         "warnings": [_msg_to_dict(m) for m in result.warnings],
         "missing_inputs": list(result.missing_inputs),
-        "options": {k: list(v) for k, v in result.options.items()},
+        "options": _preview_options_to_dict(result.options),
     }
 
 
@@ -427,32 +505,26 @@ def export_documents(
     """
     session = _get_session(x_session_id)
     if session is None:
-        raise HTTPException(400, detail={"code": "INVALID_SESSION", "message": f"session {x_session_id!r} 无效或已过期"})
+        raise HTTPException(
+            400,
+            detail={"code": "INVALID_SESSION", "message": f"session {x_session_id!r} 无效或已过期"},
+        )
 
     documents = _export_documents_from_request(req)
-    request = DocumentRequest(
-        base_file=req.base_file,
+    request = _build_document_request(
+        req=req,
         po_no=po_no,
-        documents=documents,  # type: ignore[arg-type]
-        seller=req.seller,
-        invoice_no=req.invoice_no,
-        output_format="zip",
+        documents=documents,
         output_dir=session.temp_dir,
+        output_format="zip",
     )
     result = generate(request)
     return _result_to_dict(result)
 
 
-def _export_documents_from_request(req: DryRunRequest) -> tuple[str, ...]:
+def _export_documents_from_request(req: DryRunRequest) -> tuple[DocumentType, ...]:
     raw_documents = req.documents if req.documents is not None else [req.document]
-    documents: list[str] = []
-    for raw in raw_documents:
-        doc = raw.upper() if raw else "INVOICE"
-        if doc in {"INVOICE_PL", "INVOICE&PL"}:
-            documents.extend(["INVOICE", "PL"])
-        else:
-            documents.append(doc)
-    return tuple(documents)
+    return _normalize_documents(raw_documents)
 
 
 @app.get("/api/download")
@@ -471,7 +543,9 @@ def download_file(
 
     session = _get_session(sid)
     if session is None:
-        raise HTTPException(400, detail={"code": "INVALID_SESSION", "message": f"session {sid!r} 无效或已过期"})
+        raise HTTPException(
+            400, detail={"code": "INVALID_SESSION", "message": f"session {sid!r} 无效或已过期"}
+        )
 
     p = Path(path).resolve()
     allowed = Path(session.temp_dir).resolve()

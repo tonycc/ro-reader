@@ -17,23 +17,59 @@ from ro_generator.models import OrderLine, Product
 
 
 def make_product(sap="21-44640", description="CB2500.B2", category=1, gs_model="Q1", **kw):
-    defaults = {"sap": sap, "description": description, "category": category, "gs_model": gs_model,
-                "carton_qty": Decimal("24"), "net_weight": Decimal("8.5"), "gross_weight": Decimal("10.1"),
-                "length": Decimal("48"), "width": Decimal("31"), "height": Decimal("35"), "cbm": Decimal("0.052"),
-                "inner_case_value": Decimal("2"), **kw}
+    defaults = {
+        "sap": sap,
+        "description": description,
+        "category": category,
+        "gs_model": gs_model,
+        "carton_qty": Decimal("24"),
+        "net_weight": Decimal("8.5"),
+        "gross_weight": Decimal("10.1"),
+        "length": Decimal("48"),
+        "width": Decimal("31"),
+        "height": Decimal("35"),
+        "cbm": Decimal("0.052"),
+        "inner_case_value": Decimal("2"),
+        **kw,
+    }
     return Product(**defaults)
 
 
-def make_order_line(po_no="4500030844", item_line_no="10", sap="21-44640", description="CB2500.B2",
-                    category=1, quantity=Decimal("100"), product=None,
-                    prices=None, subtotals=None, invoice_no="INV-001",
-                    ship_qty=Decimal("100"), carton_count=Decimal("5"), total_cbm=Decimal("0.36"),
-                    net_weight=Decimal("8.5"), gross_weight=Decimal("10.1"), **kw):
+def make_order_line(
+    po_no="4500030844",
+    item_line_no="10",
+    sap="21-44640",
+    description="CB2500.B2",
+    category=1,
+    quantity=Decimal("100"),
+    product=None,
+    prices=None,
+    subtotals=None,
+    invoice_no="INV-001",
+    ship_qty=Decimal("100"),
+    carton_count=Decimal("5"),
+    total_cbm=Decimal("0.36"),
+    net_weight=Decimal("8.5"),
+    gross_weight=Decimal("10.1"),
+    **kw,
+):
     p = product or make_product(sap=sap, description=description, category=category)
-    defaults = {"po_no": po_no, "item_line_no": item_line_no, "sap": sap, "description": description,
-                "category": category, "quantity": quantity, "product": p, "invoice_no": invoice_no,
-                "ship_qty": ship_qty, "carton_count": carton_count, "total_cbm": total_cbm,
-                "net_weight": net_weight, "gross_weight": gross_weight, **kw}
+    defaults = {
+        "po_no": po_no,
+        "item_line_no": item_line_no,
+        "sap": sap,
+        "description": description,
+        "category": category,
+        "quantity": quantity,
+        "product": p,
+        "invoice_no": invoice_no,
+        "ship_qty": ship_qty,
+        "carton_count": carton_count,
+        "total_cbm": total_cbm,
+        "net_weight": net_weight,
+        "gross_weight": gross_weight,
+        **kw,
+    }
     if prices:
         defaults["prices"] = prices
     if subtotals:
@@ -59,8 +95,16 @@ class TestPI:
 class TestInvoice:
     def test_invoice_filters_by_invoice_no_and_uses_ship_qty(self):
         line1 = make_order_line(item_line_no="10", invoice_no="INV-001", ship_qty=Decimal("80"))
-        line2 = make_order_line(item_line_no="20", sap="21-44641", description="X", invoice_no="INV-002", ship_qty=Decimal("100"))
-        result = build_invoice_model((line1, line2), seller="GS PTE", buyer="EMAX PTE", po_no="P", invoice_no="INV-001")
+        line2 = make_order_line(
+            item_line_no="20",
+            sap="21-44641",
+            description="X",
+            invoice_no="INV-002",
+            ship_qty=Decimal("100"),
+        )
+        result = build_invoice_model(
+            (line1, line2), seller="GS PTE", buyer="EMAX PTE", po_no="P", invoice_no="INV-001"
+        )
         assert result.model is not None
         assert result.model.total_quantity == Decimal("80")
         assert len(result.model.lines) == 1
@@ -85,13 +129,14 @@ class TestInvoice:
         result = build_invoice_model((line,), seller="GS PTE", buyer="EMAX PTE", po_no="P")
         assert result.model is not None
         assert any(
-            m.kind == "warning" and m.code == CODE_INVOICE_NO_MISSING
-            for m in result.messages
+            m.kind == "warning" and m.code == CODE_INVOICE_NO_MISSING for m in result.messages
         )
 
     def test_no_shipment_for_invoice_blocks(self):
         line = make_order_line(invoice_no="INV-001", ship_qty=Decimal("0"))
-        result = build_invoice_model((line,), seller="GS PTE", buyer="EMAX PTE", po_no="P", invoice_no="INV-002")
+        result = build_invoice_model(
+            (line,), seller="GS PTE", buyer="EMAX PTE", po_no="P", invoice_no="INV-002"
+        )
         assert result.model is None
         assert any(m.code == CODE_NO_SHIPMENT_FOR_INVOICE for m in result.messages)
 
@@ -99,8 +144,16 @@ class TestInvoice:
 class TestPL:
     def test_pl_filters_by_invoice_no(self):
         line1 = make_order_line(item_line_no="10", invoice_no="INV-001", ship_qty=Decimal("50"))
-        line2 = make_order_line(item_line_no="20", sap="21-44641", description="X", invoice_no="INV-002", ship_qty=Decimal("100"))
-        result = build_pl_model((line1, line2), seller="GS PTE", buyer="EMAX PTE", po_no="P", invoice_no="INV-001")
+        line2 = make_order_line(
+            item_line_no="20",
+            sap="21-44641",
+            description="X",
+            invoice_no="INV-002",
+            ship_qty=Decimal("100"),
+        )
+        result = build_pl_model(
+            (line1, line2), seller="GS PTE", buyer="EMAX PTE", po_no="P", invoice_no="INV-001"
+        )
         assert result.model is not None
         assert result.model.total_quantity == Decimal("50")
 
@@ -115,8 +168,7 @@ class TestPL:
         result = build_pl_model((line,), seller="GS PTE", buyer="EMAX PTE", po_no="P")
         assert result.model is not None
         assert any(
-            m.kind == "warning" and m.code == CODE_INVOICE_NO_MISSING
-            for m in result.messages
+            m.kind == "warning" and m.code == CODE_INVOICE_NO_MISSING for m in result.messages
         )
 
     def test_pl_zero_packing_values_do_not_warn_missing(self):

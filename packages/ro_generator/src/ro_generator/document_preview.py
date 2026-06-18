@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 from ro_generator.document_model import DocumentModel
 from ro_generator.generator import BuildDocumentResult
@@ -124,13 +124,13 @@ def build_preview(build: BuildDocumentResult) -> DocumentPreview:
     """从 BuildDocumentResult 构建预览数据。"""
     model = build.model
     mapping = build.mapping
-    if model is None:
+    if model is None or mapping is None:
         return _error_preview(build)
 
     doc_type = model.document_type
 
     # 从 mapping 对象读取 preview_content（YAML 加载时已解析，不再重复读文件）
-    preview_config: dict[str, Any] = mapping.preview_content if mapping is not None else {}
+    preview_config: dict[str, Any] = mapping.preview_content
 
     # 列标签（同时返回列键顺序，供 _build_lines 使用）
     column_labels, line_columns = _build_column_labels(preview_config)
@@ -141,8 +141,7 @@ def build_preview(build: BuildDocumentResult) -> DocumentPreview:
 
     # 合计
     totals = build_preview_totals(model, unit_label=unit_label)
-    if mapping is not None:
-        _merge_custom_mapping_totals(totals, mapping)
+    _merge_custom_mapping_totals(totals, mapping)
     totals["_footer_items"] = _build_footer_total_items(mapping, totals)
 
     # 布局：YAML 配置覆盖默认值
@@ -226,9 +225,10 @@ def build_preview(build: BuildDocumentResult) -> DocumentPreview:
 def _merge_layout(config_layout: object) -> dict[str, object]:
     """Deep-merge YAML layout config into defaults."""
     import copy
+
     merged = copy.deepcopy(_DEFAULT_LAYOUT)
     if not isinstance(config_layout, dict):
-        return merged  # type: ignore[return-type]
+        return cast(dict[str, object], merged)
     for section in ("top", "info"):
         if section in config_layout:
             cfg_section = config_layout[section]
@@ -236,7 +236,7 @@ def _merge_layout(config_layout: object) -> dict[str, object]:
                 for position in cfg_section:
                     if position in merged[section] and isinstance(cfg_section[position], list):
                         merged[section][position] = list(cfg_section[position])
-    return merged  # type: ignore[return-type]
+    return cast(dict[str, object], merged)
 
 
 def _merge_custom_mapping_totals(
@@ -264,11 +264,7 @@ def _merge_custom_mapping_totals(
             "label": _format_total_label(key),
             "value": value,
             "source_type": "template_content" if mode == "fixed" else "system_generated",
-            "rule": (
-                "mapping.totals 固定值"
-                if mode == "fixed"
-                else "系统生成当前日期"
-            ),
+            "rule": ("mapping.totals 固定值" if mode == "fixed" else "系统生成当前日期"),
         }
         totals[key] = value
         extra_items.append(item)
@@ -297,21 +293,25 @@ def _build_footer_total_items(
             raw_value = totals.get(spec.preview_key)
             if raw_value in (None, ""):
                 continue
-            items.append({
-                "key": key,
-                "label": spec.label,
-                "value": _format_footer_total_value(spec.preview_key, raw_value, totals),
-            })
+            items.append(
+                {
+                    "key": key,
+                    "label": spec.label,
+                    "value": _format_footer_total_value(spec.preview_key, raw_value, totals),
+                }
+            )
             continue
 
         raw_value = totals.get(key)
         if raw_value in (None, ""):
             continue
-        items.append({
-            "key": key,
-            "label": _format_total_label(key),
-            "value": str(raw_value),
-        })
+        items.append(
+            {
+                "key": key,
+                "label": _format_total_label(key),
+                "value": str(raw_value),
+            }
+        )
 
     return items
 
@@ -366,6 +366,7 @@ def _build_column_labels(
     config_labels = preview_config.get("column_labels", {})
     if not isinstance(config_labels, dict) or not config_labels:
         import logging
+
         logging.getLogger("ro_generator").error(
             "preview_content.column_labels 未配置，预览将不展示列。请在模板 YAML 中添加 column_labels。"
         )
@@ -440,7 +441,8 @@ def _build_notes(preview_config: dict[str, Any], model: DocumentModel) -> list[s
 
 
 def _build_terms(
-    preview_config: dict[str, Any], resolved_values: dict[str, str],
+    preview_config: dict[str, Any],
+    resolved_values: dict[str, str],
 ) -> dict[str, str]:
     """构建预览条款。
 
@@ -542,16 +544,18 @@ def _build_source_entries(
                 if resolved_values is not None and field_name in resolved_values:
                     value = resolved_values[field_name]
 
-                entries.append({
-                    "preview_field": field_name,
-                    "label": label,
-                    "source_type": source_type,
-                    "sheet": sheet,
-                    "row": None,
-                    "field": field,
-                    "value": value,
-                    "rule": rule,
-                })
+                entries.append(
+                    {
+                        "preview_field": field_name,
+                        "label": label,
+                        "source_type": source_type,
+                        "sheet": sheet,
+                        "row": None,
+                        "field": field,
+                        "value": value,
+                        "rule": rule,
+                    }
+                )
 
     # 2. 明细行字段：遍历 column_labels（与预览表格列头一致）
     for i, dl in enumerate(model.lines):
@@ -565,7 +569,7 @@ def _build_source_entries(
 
             # row_fixed 列（键为列字母，如 "A"）从映射取值
             row_fixed: dict[str, str] = {}
-            if mapping is not None and hasattr(mapping, 'lines'):
+            if mapping is not None and hasattr(mapping, "lines"):
                 row_fixed = mapping.lines.row_fixed or {}
             line_spec = None
             if key in row_fixed:
@@ -601,16 +605,20 @@ def _build_source_entries(
             if line_spec is not None and isinstance(val, Decimal):
                 display_value = str(line_display_value(val, line_spec))
 
-            entries.append({
-                "preview_field": f"line[{i}].{key}",
-                "label": f"{label} (Row {i + 1})",
-                "source_type": source_type,
-                "sheet": sheet,
-                "row": dl.source_row if line_spec and uses_po_record_row(line_spec) and sheet == "PO record" else None,
-                "field": field,
-                "value": display_value,
-                "rule": rule,
-            })
+            entries.append(
+                {
+                    "preview_field": f"line[{i}].{key}",
+                    "label": f"{label} (Row {i + 1})",
+                    "source_type": source_type,
+                    "sheet": sheet,
+                    "row": dl.source_row
+                    if line_spec and uses_po_record_row(line_spec) and sheet == "PO record"
+                    else None,
+                    "field": field,
+                    "value": display_value,
+                    "rule": rule,
+                }
+            )
 
     # 3. 合计字段（严格跟随 mapping.totals，保证与预览 footer 一致）
     mapping_totals = getattr(mapping, "totals", {}) if mapping is not None else {}
@@ -620,49 +628,63 @@ def _build_source_entries(
                 continue
             mode = getattr(total_cell, "value_mode", "model_total")
             if mode == "model_total":
-                spec = total_spec_for_mapping_key(key)
-                if spec is None:
+                total_spec = total_spec_for_mapping_key(key)
+                if total_spec is None:
                     continue
-                raw_value = totals.get(spec.preview_key)
+                raw_value = totals.get(total_spec.preview_key)
                 if raw_value in (None, ""):
                     continue
-                entries.append({
-                    "preview_field": f"totals.{key}",
-                    "label": spec.label,
-                    "source_type": "computed",
-                    "sheet": None,
-                    "row": None,
-                    "field": None,
-                    "value": _format_footer_total_value(spec.preview_key, raw_value, totals),
-                    "rule": spec.rule,
-                })
+                entries.append(
+                    {
+                        "preview_field": f"totals.{key}",
+                        "label": total_spec.label,
+                        "source_type": "computed",
+                        "sheet": None,
+                        "row": None,
+                        "field": None,
+                        "value": _format_footer_total_value(
+                            total_spec.preview_key, raw_value, totals
+                        ),
+                        "rule": total_spec.rule,
+                    }
+                )
 
     extra_items = totals.get("_extra_items", [])
     if isinstance(extra_items, list):
         for item in extra_items:
             if not isinstance(item, dict):
                 continue
-            key = item.get("key")
-            value = item.get("value")
-            if not isinstance(key, str) or not isinstance(value, str) or not value:
+            extra_key = item.get("key")
+            extra_value = item.get("value")
+            if (
+                not isinstance(extra_key, str)
+                or not isinstance(extra_value, str)
+                or not extra_value
+            ):
                 continue
-            label = item.get("label")
-            source_type = item.get("source_type")
-            rule = item.get("rule")
-            entries.append({
-                "preview_field": f"totals.{key}",
-                "label": str(label) if isinstance(label, str) else _format_total_label(key),
-                "source_type": (
-                    str(source_type)
-                    if isinstance(source_type, str)
-                    else "system_generated"
-                ),
-                "sheet": None,
-                "row": None,
-                "field": None,
-                "value": value,
-                "rule": str(rule) if isinstance(rule, str) else "",
-            })
+            extra_label = item.get("label")
+            extra_source_type = item.get("source_type")
+            extra_rule = item.get("rule")
+            entries.append(
+                {
+                    "preview_field": f"totals.{extra_key}",
+                    "label": (
+                        str(extra_label)
+                        if isinstance(extra_label, str)
+                        else _format_total_label(extra_key)
+                    ),
+                    "source_type": (
+                        str(extra_source_type)
+                        if isinstance(extra_source_type, str)
+                        else "system_generated"
+                    ),
+                    "sheet": None,
+                    "row": None,
+                    "field": None,
+                    "value": extra_value,
+                    "rule": str(extra_rule) if isinstance(extra_rule, str) else "",
+                }
+            )
 
     return entries
 
@@ -671,11 +693,13 @@ def _error_preview(build: BuildDocumentResult) -> DocumentPreview:
     errors: list[dict[str, object]] = []
     for m in build.messages:
         if m.kind == "blocking_error":
-            errors.append({
-                "code": m.code,
-                "message": m.message,
-                "severity": getattr(m, "severity", None),
-            })
+            errors.append(
+                {
+                    "code": m.code,
+                    "message": m.message,
+                    "severity": getattr(m, "severity", None),
+                }
+            )
     return DocumentPreview(
         document_type="",
         title="",

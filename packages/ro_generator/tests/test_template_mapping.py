@@ -302,15 +302,19 @@ totals:
         with pytest.raises(MappingError, match="value_mode=fixed"):
             load_template_mapping(path)
 
-    def test_table_header_row_must_be_positive_int(self, tmp_path: Path, template_file: Path) -> None:
+    def test_table_header_row_must_be_positive_int(
+        self, tmp_path: Path, template_file: Path
+    ) -> None:
         path = write_yaml(
             tmp_path / "mapping.yaml",
             good_yaml_content(str(template_file)).replace(
-                'sheet: Sheet1\n',
-                'sheet: Sheet1\ntable_header_row: 0\n',
+                "sheet: Sheet1\n",
+                "sheet: Sheet1\ntable_header_row: 0\n",
             ),
         )
-        with pytest.raises(MappingError, match=r"table_header_row 必须为正整数|table_header_row\[0\] 必须为正整数"):
+        with pytest.raises(
+            MappingError, match=r"table_header_row 必须为正整数|table_header_row\[0\] 必须为正整数"
+        ):
             load_template_mapping(path)
 
 
@@ -352,8 +356,8 @@ totals:
         self, tmp_path: Path, template_file: Path
     ) -> None:
         content = good_yaml_content(str(template_file)).replace(
-            'sheet: Sheet1\n',
-            'sheet: Sheet1\ntable_header_row: 18\n',
+            "sheet: Sheet1\n",
+            "sheet: Sheet1\ntable_header_row: 18\n",
         )
         path = write_yaml(tmp_path / "mapping.yaml", content)
         with pytest.raises(MappingError, match=r"都必须小于 lines\.start_row"):
@@ -361,26 +365,30 @@ totals:
 
     def test_table_header_row_list_form(self, tmp_path: Path, template_file: Path) -> None:
         content = good_yaml_content(str(template_file)).replace(
-            'sheet: Sheet1\n',
-            'sheet: Sheet1\ntable_header_row:\n  - 16\n  - 17\n',
+            "sheet: Sheet1\n",
+            "sheet: Sheet1\ntable_header_row:\n  - 16\n  - 17\n",
         )
         path = write_yaml(tmp_path / "mapping.yaml", content)
         mapping = load_template_mapping(path)
         assert mapping.table_header_row == [16, 17]
 
-    def test_table_header_row_empty_list_rejected(self, tmp_path: Path, template_file: Path) -> None:
+    def test_table_header_row_empty_list_rejected(
+        self, tmp_path: Path, template_file: Path
+    ) -> None:
         content = good_yaml_content(str(template_file)).replace(
-            'sheet: Sheet1\n',
-            'sheet: Sheet1\ntable_header_row: []\n',
+            "sheet: Sheet1\n",
+            "sheet: Sheet1\ntable_header_row: []\n",
         )
         path = write_yaml(tmp_path / "mapping.yaml", content)
         with pytest.raises(MappingError, match="不能为空列表"):
             load_template_mapping(path)
 
-    def test_table_header_row_list_bad_item_rejected(self, tmp_path: Path, template_file: Path) -> None:
+    def test_table_header_row_list_bad_item_rejected(
+        self, tmp_path: Path, template_file: Path
+    ) -> None:
         content = good_yaml_content(str(template_file)).replace(
-            'sheet: Sheet1\n',
-            'sheet: Sheet1\ntable_header_row:\n  - 17\n  - 0\n',
+            "sheet: Sheet1\n",
+            "sheet: Sheet1\ntable_header_row:\n  - 17\n  - 0\n",
         )
         path = write_yaml(tmp_path / "mapping.yaml", content)
         with pytest.raises(MappingError, match=r"table_header_row\[1\] 必须为正整数"):

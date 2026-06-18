@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -56,7 +57,7 @@ class FieldAliases:
                 return headers[0]
         return header
 
-    def items(self):
+    def items(self) -> Iterator[tuple[str, str]]:
         return ((internal_key, self.get(internal_key)) for internal_key in self._mapping)
 
 
@@ -101,6 +102,7 @@ class BaseSchema:
 # —————————————————————————————————————
 # 加载
 # —————————————————————————————————————
+
 
 def load_base_schema(path: str | Path | None = None) -> BaseSchema:
     """从 YAML 加载 base 文件结构描述。"""
@@ -167,25 +169,26 @@ def load_base_schema(path: str | Path | None = None) -> BaseSchema:
     )
 
 
-def _parse_field_aliases(raw: dict, sheet: str) -> FieldAliases:
+def _parse_field_aliases(raw: dict[str, object], sheet: str) -> FieldAliases:
     sheet_aliases = raw.get(sheet)
     mapping: dict[str, str | tuple[str, ...]] = {}
     if isinstance(sheet_aliases, dict):
         for internal_key, header in sheet_aliases.items():
             if not isinstance(internal_key, str):
                 continue
+            normalized_headers: tuple[str, ...]
             if isinstance(header, str):
                 normalized_headers = (header.strip(),)
             elif isinstance(header, list):
                 normalized_headers = tuple(
-                    item.strip()
-                    for item in header
-                    if isinstance(item, str) and item.strip()
+                    item.strip() for item in header if isinstance(item, str) and item.strip()
                 )
             else:
                 normalized_headers = ()
             if normalized_headers:
-                mapping[internal_key] = normalized_headers if len(normalized_headers) > 1 else normalized_headers[0]
+                mapping[internal_key] = (
+                    normalized_headers if len(normalized_headers) > 1 else normalized_headers[0]
+                )
     return FieldAliases(_mapping=mapping)
 
 
@@ -197,59 +200,63 @@ def _default_schema() -> BaseSchema:
             "PO record": SheetConfig("PO record", 4, 5),
             "客户PO": SheetConfig("客户PO", 1, 2),
         },
-        data_base_fields=FieldAliases({
-            "sap": "SAP",
-            "description": "Material Description",
-            "gs_model": "GS MODEL",
-            "category": "Category",
-            "sub_category": "SUB-CATEGORY",
-            "moq": "MOQ",
-            "fob_lt": "FOB LT",
-            "brand": "品牌",
-            "rfid": "RFID",
-            "packing_type": "包装",
-            "main_part_no": "主件编号",
-            "inner_case_value": "inner case value",
-            "carton_qty": "round value",
-            "net_weight": "N/W",
-            "gross_weight": "G/W",
-            "length": "L",
-            "width": "W",
-            "height": "H",
-            "cbm": "CBM",
-            "reel_sap": "Reel SAP",
-            "reel_description": "Reel Description",
-        }),
-        po_record_fields=FieldAliases({
-            "po_no": "PO NO.",
-            "item_line": "ITEM LINE#",
-            "sap": "SAP Number",
-            "description": "DESCRIPTION",
-            "reel_sap": "Reel SAP",
-            "reel_description": "Reel Description",
-            "quantity": "FINALQTY",
-            "category": "CATEGORY",
-            "brand": "BRAND",
-            "ship_to": "SHIP TO",
-            "inv_no": "INV#",
-            "ship_qty": "SHIP QTY",
-            "balance_qty": "BALANCE QTY",
-            "sk_ym_invoice_no": "SK/YM INVOICE NO.",
-            "net_weight": "N/W",
-            "gross_weight": "G/W",
-            "length": "L",
-            "width": "W",
-            "height": "H",
-            "carton_count": "CTNS",
-            "total_cbm": "TOTAL CBM",
-            "carton_qty_export": "外箱(最终出口装箱率)",
-            "order_date": "ORDER DATE (EMAIL)",
-            "required_ex_factory_date": "PO REQUIRED EX-FACTORYDATE(-60days)",
-            "delivery_date": "PO DELIVERY DATE",
-            "final_ex_factory_date": "FINAL EX-FACTORY DATE",
-            "ex_factory_month": "EX-FACTORY month",
-            "order_month": "ORDER month",
-        }),
+        data_base_fields=FieldAliases(
+            {
+                "sap": "SAP",
+                "description": "Material Description",
+                "gs_model": "GS MODEL",
+                "category": "Category",
+                "sub_category": "SUB-CATEGORY",
+                "moq": "MOQ",
+                "fob_lt": "FOB LT",
+                "brand": "品牌",
+                "rfid": "RFID",
+                "packing_type": "包装",
+                "main_part_no": "主件编号",
+                "inner_case_value": "inner case value",
+                "carton_qty": "round value",
+                "net_weight": "N/W",
+                "gross_weight": "G/W",
+                "length": "L",
+                "width": "W",
+                "height": "H",
+                "cbm": "CBM",
+                "reel_sap": "Reel SAP",
+                "reel_description": "Reel Description",
+            }
+        ),
+        po_record_fields=FieldAliases(
+            {
+                "po_no": "PO NO.",
+                "item_line": "ITEM LINE#",
+                "sap": "SAP Number",
+                "description": "DESCRIPTION",
+                "reel_sap": "Reel SAP",
+                "reel_description": "Reel Description",
+                "quantity": "FINALQTY",
+                "category": "CATEGORY",
+                "brand": "BRAND",
+                "ship_to": "SHIP TO",
+                "inv_no": "INV#",
+                "ship_qty": "SHIP QTY",
+                "balance_qty": "BALANCE QTY",
+                "sk_ym_invoice_no": "SK/YM INVOICE NO.",
+                "net_weight": "N/W",
+                "gross_weight": "G/W",
+                "length": "L",
+                "width": "W",
+                "height": "H",
+                "carton_count": "CTNS",
+                "total_cbm": "TOTAL CBM",
+                "carton_qty_export": "外箱(最终出口装箱率)",
+                "order_date": "ORDER DATE (EMAIL)",
+                "required_ex_factory_date": "PO REQUIRED EX-FACTORYDATE(-60days)",
+                "delivery_date": "PO DELIVERY DATE",
+                "final_ex_factory_date": "FINAL EX-FACTORY DATE",
+                "ex_factory_month": "EX-FACTORY month",
+                "order_month": "ORDER month",
+            }
+        ),
         price_columns={
             "SK": "GS-SK/YM USD FOB",
             "YM": "GS-SK/YM USD FOB",
@@ -275,15 +282,17 @@ def _default_schema() -> BaseSchema:
             "EMAX-GS INV": "EMAX-GS INV",
             "RO-EMAX INV": "RO-EMAX INV",
         },
-        customer_po_fields=FieldAliases({
-            "purchasing_document": "Purchasing Document",
-            "item": "Item",
-            "material": "Material",
-            "order_quantity": "Order Quantity",
-            "ship_date": ("ship DATE", "Ship Date"),
-            "ship_to": "ship to",
-            "final_destination": "final destination",
-        }),
+        customer_po_fields=FieldAliases(
+            {
+                "purchasing_document": "Purchasing Document",
+                "item": "Item",
+                "material": "Material",
+                "order_quantity": "Order Quantity",
+                "ship_date": ("ship DATE", "Ship Date"),
+                "ship_to": "ship to",
+                "final_destination": "final destination",
+            }
+        ),
     )
 
 

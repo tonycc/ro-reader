@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Final
+from typing import Final, cast
 
 import yaml
 from openpyxl import load_workbook
@@ -60,6 +60,7 @@ class LinesSection:
 @dataclass(frozen=True)
 class CellStyles:
     """可选的单元格样式声明（来自 mapping YAML 的 style 节）。"""
+
     bold: tuple[str, ...] = ()
     underline: tuple[str, ...] = ()
 
@@ -240,10 +241,22 @@ def _parse_lines_section(raw: dict[str, object], yaml_path: Path) -> LinesSectio
 
 def _parse_columns(raw: dict[object, object], yaml_path: Path) -> LineColumns:
     required = {"quantity"}
-    known = {"po_no", "item_number", "item_line_no", "description", "gs_model", "unit_label",
-             "sap", "unit_price", "amount",
-             "net_weight", "gross_weight", "carton_count", "cbm",
-             "confirmed_ex_factory_date"}
+    known = {
+        "po_no",
+        "item_number",
+        "item_line_no",
+        "description",
+        "gs_model",
+        "unit_label",
+        "sap",
+        "unit_price",
+        "amount",
+        "net_weight",
+        "gross_weight",
+        "carton_count",
+        "cbm",
+        "confirmed_ex_factory_date",
+    }
 
     parsed: dict[str, str] = {}
     extras: dict[str, str] = {}
@@ -301,7 +314,9 @@ def _parse_totals_section(raw: dict[str, object], yaml_path: Path) -> dict[str, 
         if mode_raw == "fixed":
             value_raw = value.get("value")
             if not isinstance(value_raw, str):
-                raise MappingError(f"totals.{key}.value_mode=fixed 时必须提供字符串 value：{yaml_path}")
+                raise MappingError(
+                    f"totals.{key}.value_mode=fixed 时必须提供字符串 value：{yaml_path}"
+                )
             fixed_value = value_raw
 
         parsed[key] = TotalCell(
@@ -455,9 +470,7 @@ def _optional_positive_int(raw: dict[str, object], key: str, yaml_path: Path) ->
     return value
 
 
-def _parse_table_header_rows(
-    raw: dict[str, object], key: str, yaml_path: Path
-) -> list[int]:
+def _parse_table_header_rows(raw: dict[str, object], key: str, yaml_path: Path) -> list[int]:
     """解析 table_header_row，支持单行 int、多行 list[int] 或省略（返回空列表）。"""
     value = raw.get(key)
     if value is None:
@@ -470,9 +483,7 @@ def _parse_table_header_rows(
         result: list[int] = []
         for i, item in enumerate(value):
             if not isinstance(item, int) or isinstance(item, bool) or item <= 0:
-                raise MappingError(
-                    f"{key}[{i}] 必须为正整数：{yaml_path}"
-                )
+                raise MappingError(f"{key}[{i}] 必须为正整数：{yaml_path}")
             result.append(item)
         if not result:
             raise MappingError(f"{key} 不能为空列表（如有）：{yaml_path}")
@@ -502,7 +513,7 @@ def _parse_preview_content(raw: object, yaml_path: Path) -> dict[str, object]:
         return {}
     if not isinstance(raw, dict):
         raise MappingError(f"preview_content 必须是 dict：{yaml_path}")
-    return raw  # type: ignore[return-value]
+    return cast(dict[str, object], raw)
 
 
 def _parse_style(raw: object, yaml_path: Path) -> CellStyles:

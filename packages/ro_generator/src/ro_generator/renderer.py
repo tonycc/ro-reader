@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from typing import Final
+from typing import Any, Final, cast
 
 from openpyxl import load_workbook
 from openpyxl.cell.cell import Cell
@@ -39,6 +39,7 @@ from ro_generator.header_rules import (
 )
 from ro_generator.line_rules import (
     USD_NUMBER_FORMAT,
+    LineFieldSpec,
     line_excel_number_format,
     resolve_line_field_spec,
     uses_po_record_row,
@@ -153,9 +154,7 @@ def _render_into_workbook(
     builder: SourceIndexBuilder,
 ) -> None:
     if mapping.sheet not in wb.sheetnames:
-        raise TemplateError(
-            f"模板 {mapping.template_path.name} 中找不到 sheet {mapping.sheet!r}"
-        )
+        raise TemplateError(f"模板 {mapping.template_path.name} 中找不到 sheet {mapping.sheet!r}")
     ws: Worksheet = wb[mapping.sheet]
 
     _write_styles(ws, mapping)
@@ -170,11 +169,17 @@ def _render_into_workbook(
 
 # 模板表头中属于固定文案的 key 集合。这类字段保留模板原值，不清除。
 _PRESERVE_HEADER_KEYS: Final[set[str]] = {
-    "payment_terms", "port_of_loading", "final_destination",
-    "manufacturer", "manufacturer_name", "manufacturer_address", "manufacturer_address_2",
+    "payment_terms",
+    "port_of_loading",
+    "final_destination",
+    "manufacturer",
+    "manufacturer_name",
+    "manufacturer_address",
+    "manufacturer_address_2",
     "supplier",
     "bill_to",
-    "bill_to_line2", "bill_to_line3",
+    "bill_to_line2",
+    "bill_to_line3",
     "signature",
 }
 
@@ -188,6 +193,7 @@ _PLACEHOLDER_LABELS: dict[str, str] = {
     "quantity": "需填: 数量",
     "ex_factory_date": "需填: 出厂日期",
 }
+
 
 def _write_styles(ws: Worksheet, mapping: TemplateMapping) -> None:
     """按 mapping.style 声明应用单元格样式。"""
@@ -261,6 +267,7 @@ def _write_header(
         else:
             # 清除模板样本值（如样本日期、注释占位符）
             _safe_set_cell(ws, cell_addr, None)
+
 
 # —————————————————————————————————————
 # Lines + Totals
@@ -396,6 +403,8 @@ def _clear_sample_rows(ws: Worksheet, mapping: TemplateMapping) -> None:
             except ValueError:
                 continue
             ws[f"{col_letter}{row}"].value = None
+
+
 def _write_data_row(
     ws: Worksheet,
     row: int,
@@ -618,16 +627,17 @@ def _copy_row_style(ws: Worksheet, src_row: int, dst_row: int, max_col: int) -> 
 # Helpers
 # —————————————————————————————————————
 
+
 def _safe_set_cell(ws: Worksheet, addr: str, value: object) -> None:
     """安全写单元格，跳过 MergedCell（合并区域非左上角单元格不可写）。"""
     cell = ws[addr]
     if not isinstance(cell, Cell):
         return  # MergedCell 不可写，跳过
-    cell.value = value
+    cell.value = cast(Any, value)
 
 
-def _write_line_cell(cell: Cell, value: object, spec: object) -> None:
-    cell.value = value
+def _write_line_cell(cell: Cell, value: object, spec: LineFieldSpec) -> None:
+    cell.value = cast(Any, value)
     number_format = line_excel_number_format(value, spec)
     if number_format is not None:
         cell.number_format = number_format

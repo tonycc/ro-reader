@@ -4,22 +4,26 @@ from __future__ import annotations
 
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from typing import Any, cast
 
 from openpyxl import Workbook
+from openpyxl.worksheet.worksheet import Worksheet
 from ro_generator.workbook_editor import edit_workbook_cell
 
 
-def _make_temp_xlsx(headers: dict[int, str], data: dict[int, dict[int, object]] | None = None) -> str:
+def _make_temp_xlsx(
+    headers: dict[int, str], data: dict[int, dict[int, object]] | None = None
+) -> str:
     """创建临时 xlsx，表头在第 4 行，返回路径。"""
     wb = Workbook()
-    ws = wb.active
+    ws = cast(Worksheet, wb.active)
     ws.title = "PO record"
     for col, name in headers.items():
         ws.cell(row=4, column=col, value=name)
     if data:
         for row, cols in data.items():
             for col, val in cols.items():
-                ws.cell(row=row, column=col, value=val)
+                ws.cell(row=row, column=col, value=cast(Any, val))
     with NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
         wb.save(tmp.name)
         tmp_path = tmp.name
@@ -105,6 +109,7 @@ def test_edit_preserves_other_data():
         assert result.ok
         # Verify via openpyxl
         from openpyxl import load_workbook
+
         wb = load_workbook(path)
         ws = wb["PO record"]
         assert ws.cell(row=5, column=1).value == "4500088888"
