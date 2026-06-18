@@ -15,6 +15,7 @@ import threading
 import time
 import traceback
 import webbrowser
+from contextlib import suppress
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -160,10 +161,8 @@ def main() -> None:
     port = _find_free_port()
 
     # 将端口写入临时文件，供 Windows launch.bat 的状态监控脚本读取
-    try:
+    with suppress(OSError):
         _port_file().write_text(str(port), encoding="utf-8")
-    except OSError:
-        pass
 
     # 设置前端静态资源路径（在 import app 之前）
     frontend_dist = os.environ.get("RO_WORKBENCH_FRONTEND_DIST", "")
@@ -207,10 +206,8 @@ def main() -> None:
     _run_tray(port)
 
     # 用户从托盘退出后，清理端口文件
-    try:
+    with suppress(OSError):
         _port_file().unlink(missing_ok=True)
-    except OSError:
-        pass
 
 
 if __name__ == "__main__":

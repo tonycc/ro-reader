@@ -9,8 +9,8 @@ from openpyxl import Workbook
 from ro_generator.errors import MappingError, TemplateError
 from ro_generator.template_mapping import (
     LineColumns,
-    TotalCell,
     TemplateMapping,
+    TotalCell,
     load_template_mapping,
 )
 
@@ -45,7 +45,7 @@ class TestRealGsInvoiceMapping:
         assert mapping.document == "INVOICE"
         assert mapping.template_version == "2026.06"
         assert mapping.sheet == "INV"
-        assert mapping.template_path.name == "invoice.xlsx"
+        assert mapping.template_path.name == "invoice&pl.xlsx"
         assert mapping.template_path.exists()
 
     def test_header_section(self) -> None:
@@ -356,7 +356,7 @@ totals:
             'sheet: Sheet1\ntable_header_row: 18\n',
         )
         path = write_yaml(tmp_path / "mapping.yaml", content)
-        with pytest.raises(MappingError, match="都必须小于 lines.start_row"):
+        with pytest.raises(MappingError, match=r"都必须小于 lines\.start_row"):
             load_template_mapping(path)
 
     def test_table_header_row_list_form(self, tmp_path: Path, template_file: Path) -> None:

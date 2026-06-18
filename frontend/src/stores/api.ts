@@ -114,9 +114,37 @@ export interface PreviewResponse {
   options: Record<string, string[]>
 }
 
+export interface PreviewDocumentResult {
+  id: string
+  seller: string
+  document: string
+  label: string
+  preview: PreviewPayload | null
+  errors: unknown[]
+  warnings: unknown[]
+}
+
 export interface SourceIndexEntry {
   doc_cell: string
   source: { sheet: string; row: number | null; field: string; is_computed: boolean }
+}
+
+export interface ValidationIssue {
+  kind: string
+  code: string
+  message: string
+  sheet: string | null
+  row: number | null
+  field: string | null
+  severity?: "high" | "low" | null
+}
+
+export interface PoIssuesResponse {
+  po_no: string
+  blocking_count: number
+  warnings_count: number
+  blocking_errors: ValidationIssue[]
+  warnings: ValidationIssue[]
 }
 
 export interface EditRequest { base_file: string; sheet: string; row: number; field: string; value: unknown }
@@ -142,6 +170,8 @@ export const api = {
     request("POST", "/session/open", { base_file }),
   getDataView: (base_file: string, po_no: string): Promise<{ po_no: string; headers: string[]; rows: Record<string, unknown>[] }> =>
     request("GET", `/po/${po_no}?base_file=${encodeURIComponent(base_file)}`),
+  getPoIssues: (base_file: string, po_no: string): Promise<PoIssuesResponse> =>
+    request("GET", `/po/${po_no}/issues?base_file=${encodeURIComponent(base_file)}`),
   dryRun: (req: DryRunRequest): Promise<DryRunResult> =>
     request("POST", `/po/${req.po_no}/dry-run`, req),
   preview: (req: DryRunRequest): Promise<PreviewResponse> =>

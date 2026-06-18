@@ -14,6 +14,7 @@ from pathlib import Path
 
 from ro_generator.errors import WorkbookOpenError
 from ro_generator.models import ValidationMessage
+from ro_generator.resolver import resolve_po_rows
 from ro_generator.workbook_cache import get_cache_manager
 from ro_generator.workbook_snapshot import BuildSnapshotError, PoInspection
 
@@ -105,12 +106,51 @@ def get_customer_po_data(base_file: str, po_no: str) -> dict[str, object]:
     }
 
 
+def _message_to_dict(message: ValidationMessage) -> dict[str, object]:
+    return {
+        "kind": message.kind,
+        "code": message.code,
+        "message": message.message,
+        "sheet": message.sheet,
+        "row": message.row,
+        "field": message.field,
+        "severity": message.severity,
+    }
+
+
+def get_po_issues(base_file: str, po_no: str) -> dict[str, object]:
+    """返回指定 PO 的阻断和警告明细。
+
+    与 PO 列表状态使用同一条 resolver 路径，避免工作台前端/API 层重复业务判断。
+    """
+    cache = get_cache_manager()
+    snapshot = cache.get_snapshot(base_file)
+    rows = snapshot.po_rows_for_po(po_no)
+    customer_rows = snapshot.customer_po_rows_for_po(po_no)
+    result = resolve_po_rows(
+        rows,
+        snapshot.product_index,
+        po_no=po_no,
+        customer_po_rows=customer_rows,
+    )
+    blocking = [m for m in result.messages if m.kind == "blocking_error"]
+    warnings = [m for m in result.messages if m.kind == "warning"]
+    return {
+        "po_no": po_no,
+        "blocking_count": len(blocking),
+        "warnings_count": len(warnings),
+        "blocking_errors": [_message_to_dict(m) for m in blocking],
+        "warnings": [_message_to_dict(m) for m in warnings],
+    }
+
+
 __all__ = [
     "FileInspectionResult",
     "PoInspection",
     "WorkbookInspectionResult",
     "get_customer_po_data",
     "get_po_data",
+    "get_po_issues",
     "inspect_file_path",
     "inspect_workbook",
 ]

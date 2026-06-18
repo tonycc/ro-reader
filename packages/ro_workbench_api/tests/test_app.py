@@ -118,6 +118,31 @@ def test_export_rejects_invalid_session():
     assert resp.status_code == 400
 
 
+def test_get_po_issues_requires_valid_session():
+    resp = client.get(
+        f"/api/po/4500088888/issues?base_file={FIXTURE}",
+        headers={"X-Session-Id": "nonexistent"},
+    )
+
+    assert resp.status_code == 400
+
+
+def test_get_po_issues_returns_blocking_details():
+    sid = client.post("/api/session/open", json={"base_file": str(FIXTURE)}).json()["session_id"]
+
+    resp = client.get(
+        f"/api/po/4500088888/issues?base_file={FIXTURE}",
+        headers={"X-Session-Id": sid},
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["po_no"] == "4500088888"
+    assert data["blocking_count"] >= 1
+    assert data["blocking_errors"][0]["kind"] == "blocking_error"
+    assert data["blocking_errors"][0]["message"]
+
+
 def test_export_uses_zip_output_format(monkeypatch, tmp_path):
     from ro_generator.models import GenerationResult
 
@@ -150,6 +175,44 @@ def test_export_uses_zip_output_format(monkeypatch, tmp_path):
     assert resp.status_code == 200
     assert captured["output_format"] == "zip"
     assert resp.json()["output_file"].endswith(".zip")
+
+
+def test_export_invoice_pl_requests_combined_documents(monkeypatch, tmp_path):
+    from ro_generator.models import GenerationResult
+
+    captured = {}
+
+    def fake_generate(request):
+        captured["documents"] = request.documents
+        captured["output_format"] = request.output_format
+        output = tmp_path / "SK-RO-INVOICE&PL-4500099999.xlsx"
+        output.write_bytes(b"fake xlsx")
+        return GenerationResult(
+            status="success",
+            files=("SK-RO-INVOICE&PL-4500099999.xlsx",),
+            output_file=str(output),
+        )
+
+    monkeypatch.setattr("ro_workbench_api.app.generate", fake_generate)
+    sid = client.post("/api/session/open", json={"base_file": str(FIXTURE)}).json()["session_id"]
+
+    resp = client.post(
+        "/api/po/4500099999/export",
+        json={
+            "base_file": str(FIXTURE),
+            "po_no": "4500099999",
+            "seller": "SK",
+            "document": "INVOICE_PL",
+        },
+        headers={"X-Session-Id": sid},
+    )
+
+    assert resp.status_code == 200
+    assert captured["documents"] == ("INVOICE", "PL")
+    assert captured["output_format"] == "zip"
+    data = resp.json()
+    assert data["files"] == ["SK-RO-INVOICE&PL-4500099999.xlsx"]
+    assert data["output_file"].endswith(".xlsx")
 
 
 # --- Session expiry ---

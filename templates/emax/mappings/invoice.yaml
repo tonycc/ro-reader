@@ -1,6 +1,6 @@
 document: invoice
 template_version: '2026.06'
-template: templates/emax/invoice.xlsx
+template: templates/emax/invoice&pl.xlsx
 sheet: CI
 header:
   invoice_no: H5

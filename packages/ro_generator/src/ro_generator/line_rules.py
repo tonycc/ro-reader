@@ -12,6 +12,8 @@ from ro_generator.schema import (
     SHEET_PO_RECORD,
 )
 
+USD_NUMBER_FORMAT: Final[str] = '"$"#,##0.00'
+
 
 @dataclass(frozen=True)
 class LineFieldSpec:
@@ -25,6 +27,7 @@ class LineFieldSpec:
     zero_placeholder: str | None = None
     none_placeholder: str | None = None
     display_decimal_places: int | None = None
+    display_prefix: str | None = None
 
 
 LINE_FIELD_SPECS: Final[dict[str, LineFieldSpec]] = {
@@ -61,6 +64,8 @@ LINE_FIELD_SPECS: Final[dict[str, LineFieldSpec]] = {
         source_sheet=SHEET_DATA_BASE,
         source_field="unit_price",
         zero_placeholder="需填: 单价",
+        display_decimal_places=2,
+        display_prefix="$",
     ),
     "quantity": LineFieldSpec(
         rule="PI/PO 使用客户PO 的 Order Quantity；Invoice/PL 使用 PO record 的 SHIP QTY",
@@ -74,6 +79,8 @@ LINE_FIELD_SPECS: Final[dict[str, LineFieldSpec]] = {
         source_field=None,
         source_type="computed",
         computed=True,
+        display_decimal_places=2,
+        display_prefix="$",
     ),
     "unit_label": LineFieldSpec(
         rule="模板固定单位标识",
@@ -104,7 +111,7 @@ LINE_FIELD_SPECS: Final[dict[str, LineFieldSpec]] = {
         display_decimal_places=2,
     ),
     "carton_count": LineFieldSpec(
-        rule="客户PO Order Quantity / 外箱 或 PO record CTNS 列",
+        rule='PL 使用 PO record AD列 "CTNS"',
         source_field="CTNS",
         skip_if_none=True,
     ),
@@ -275,7 +282,12 @@ def line_display_value(value: object, spec: LineFieldSpec) -> object:
         return str(value)
     quantizer = Decimal("1").scaleb(-decimal_places)
     normalized = value.quantize(quantizer)
-    return f"{normalized:.{decimal_places}f}"
+    text = (
+        f"{normalized:,.{decimal_places}f}"
+        if spec.display_prefix
+        else f"{normalized:.{decimal_places}f}"
+    )
+    return f"{spec.display_prefix or ''}{text}"
 
 
 def line_excel_number_format(value: object, spec: LineFieldSpec) -> str | None:
@@ -285,6 +297,8 @@ def line_excel_number_format(value: object, spec: LineFieldSpec) -> str | None:
     decimal_places = _resolved_decimal_places(value, spec)
     if decimal_places is None:
         return None
+    if spec.display_prefix == "$":
+        return USD_NUMBER_FORMAT
     if decimal_places == 0:
         return "0"
     return "0." + ("0" * decimal_places)
@@ -309,6 +323,7 @@ def _decimal_places_from_value(value: Decimal) -> int | None:
 
 __all__ = [
     "LINE_FIELD_SPECS",
+    "USD_NUMBER_FORMAT",
     "LineFieldSpec",
     "get_line_field_spec",
     "line_display_value",

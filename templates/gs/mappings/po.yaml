@@ -19,11 +19,10 @@ header:
 header_fixed:
   incoterm: FOB QINGDAO
   payment_terms: Net 75 days
-  bill_to: E MAX SPORT PTE. LTD.
-  ship_to: E MAX SPORT PTE. LTD.
+  bill_to: GLOBALSINO PTE.LTD.
+  ship_to: GLOBALSINO PTE.LTD.
   port_of_loading: Qingdao, China
   final_destination: USA
-  manufacturer: GLOBALSINO PTE.LTD.
 table_header_row: 19
 lines:
   start_row: 20

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Final
 
 SHIP_TO_HEADER_FIELDS: Final[tuple[str, str, str]] = (
@@ -25,7 +26,10 @@ def split_header_text(value: str | None, max_lines: int) -> tuple[str, ...]:
 
     lines = [part.strip() for part in normalized.split("\n") if part.strip()]
     if len(lines) <= 1:
+        lines = _split_visual_whitespace_lines(normalized)
+    if len(lines) <= 1:
         lines = _split_address_like_text(normalized)
+    lines = _drop_repeated_combined_lines(lines)
 
     if len(lines) > max_lines:
         lines = [*lines[: max_lines - 1], " ".join(lines[max_lines - 1 :]).strip()]
@@ -61,3 +65,23 @@ def _split_address_like_text(value: str) -> list[str]:
     if len(segments) == 3:
         return [segments[0], segments[1], segments[2]]
     return [segments[0], ", ".join(segments[1:-1]), segments[-1]]
+
+
+def _split_visual_whitespace_lines(value: str) -> list[str]:
+    """Split text copied from Excel cells where visual line breaks became wide spaces."""
+    segments = [segment.strip() for segment in re.split(r"[ \t\u3000]{3,}", value) if segment.strip()]
+    return segments if len(segments) > 1 else [value]
+
+
+def _drop_repeated_combined_lines(lines: list[str]) -> list[str]:
+    """Drop a line that repeats the already split address as one combined sentence."""
+    result: list[str] = []
+    for line in lines:
+        if result and _compact_header_text(line) == _compact_header_text(" ".join(result)):
+            continue
+        result.append(line)
+    return result
+
+
+def _compact_header_text(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip()

@@ -25,8 +25,8 @@ from ro_generator.workbench_service import (
     WorkbookInspectionResult,
     inspect_workbook,
 )
-from ro_generator.workbook_snapshot import PoInspection
 from ro_generator.workbook_editor import EditResult, edit_workbook_cell
+from ro_generator.workbook_snapshot import PoInspection
 
 __version__ = "0.0.0"
 

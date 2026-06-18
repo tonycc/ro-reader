@@ -38,6 +38,33 @@ def _blank_rows(n: int) -> list[list[Any]]:
 CUSTOMER_PO_HEADERS = ["Purchasing Document", "Material", "Order Quantity"]
 
 
+class _HeaderData:
+    def __init__(self, sheet_name: str, headers: list[str]) -> None:
+        self.sheet_name = sheet_name
+        self.headers = tuple(headers)
+        self.header_columns = {header: idx for idx, header in enumerate(headers, start=1)}
+
+
+class _HeaderOnlyReader:
+    def __init__(self) -> None:
+        self._headers = {
+            "DATA BASE": ["SAP", "Material Description", "Category"],
+            "PO record": ["PO NO.", "ITEM LINE#", "SAP Number"],
+            "客户PO": CUSTOMER_PO_HEADERS,
+        }
+        self.read_headers_calls: list[tuple[str, int]] = []
+
+    def has_sheet(self, name: str) -> bool:
+        return name in self._headers
+
+    def read_headers(self, sheet_name: str, header_row: int = 4) -> _HeaderData:
+        self.read_headers_calls.append((sheet_name, header_row))
+        return _HeaderData(sheet_name, self._headers[sheet_name])
+
+    def read_sheet(self, *args: object, **kwargs: object) -> object:
+        raise AssertionError("结构校验只应读取表头，不应完整读取数据行")
+
+
 # 完整 fixture：三张必需 sheet 都齐备
 def standard_base(tmp_path: Path) -> Path:
     return make_workbook(
@@ -66,6 +93,18 @@ class TestValidWorkbook:
         with WorkbookReader(path) as reader:
             messages = validate_workbook_structure(reader)
         assert messages == ()
+
+    def test_validation_reads_only_headers(self) -> None:
+        reader = _HeaderOnlyReader()
+
+        messages = validate_workbook_structure(reader)  # type: ignore[arg-type]
+
+        assert messages == ()
+        assert reader.read_headers_calls == [
+            ("DATA BASE", 4),
+            ("PO record", 4),
+            ("客户PO", 1),
+        ]
 
     def test_missing_finalqty_header_in_po_record_is_allowed(self, tmp_path: Path) -> None:
         path = make_workbook(

@@ -33,6 +33,9 @@ HEADER_DATE_KEYS: Final[frozenset[str]] = frozenset(
 )
 HEADER_MANUAL_KEYS: Final[frozenset[str]] = frozenset()
 HEADER_MANUAL_PLACEHOLDERS: Final[dict[str, str]] = {}
+_SPLIT_CONTINUATION_FIELDS: Final[frozenset[str]] = frozenset(
+    (*SHIP_TO_HEADER_FIELDS[1:], "manufacturer_address_2")
+)
 
 HEADER_FIELD_SPECS: Final[dict[str, HeaderFieldSpec]] = {
     "invoice_no": HeaderFieldSpec(
@@ -347,21 +350,22 @@ def build_header_resolved_values(
     requested_fields = field_names if field_names is not None else header_key_list
 
     for field_name in requested_fields:
+        if field_name in resolved_values:
+            continue
+
         spec = resolve_header_field_spec(
             field_name,
             seller=model.seller,
             document_type=model.document_type,
         )
         model_attr = spec.model_attr if spec is not None else None
-        can_override_fixed = spec is not None and spec.source_type == "base_field" and model_attr is not None
-
-        if field_name in resolved_values and not can_override_fixed:
-            continue
         if field_name in ship_to_values:
             resolved_values[field_name] = ship_to_values[field_name]
             continue
         if field_name in mfr_addr_values:
             resolved_values[field_name] = mfr_addr_values[field_name]
+            continue
+        if field_name in _SPLIT_CONTINUATION_FIELDS:
             continue
 
         if model_attr:

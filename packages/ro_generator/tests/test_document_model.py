@@ -84,7 +84,10 @@ class TestInvoice:
         line = make_order_line(invoice_no=None)
         result = build_invoice_model((line,), seller="GS PTE", buyer="EMAX PTE", po_no="P")
         assert result.model is not None
-        assert any(m.code == CODE_INVOICE_NO_MISSING for m in result.messages)
+        assert any(
+            m.kind == "warning" and m.code == CODE_INVOICE_NO_MISSING
+            for m in result.messages
+        )
 
     def test_no_shipment_for_invoice_blocks(self):
         line = make_order_line(invoice_no="INV-001", ship_qty=Decimal("0"))
@@ -111,7 +114,10 @@ class TestPL:
         line = make_order_line(invoice_no=None)
         result = build_pl_model((line,), seller="GS PTE", buyer="EMAX PTE", po_no="P")
         assert result.model is not None
-        assert any(m.code == CODE_INVOICE_NO_MISSING for m in result.messages)
+        assert any(
+            m.kind == "warning" and m.code == CODE_INVOICE_NO_MISSING
+            for m in result.messages
+        )
 
     def test_pl_zero_packing_values_do_not_warn_missing(self):
         line = make_order_line(

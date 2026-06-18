@@ -221,13 +221,22 @@ class TestErrorPath:
         assert result.status == "error"
         assert any(m.code == "PO_NOT_FOUND" for m in result.errors)
 
-    def test_missing_invoice_no_warns_but_generates(self, tmp_path):
+    def test_missing_invoice_no_blocks_generation(self, tmp_path):
         path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT],
                               po_record_rows=[basic_po_row(**{"INV#": None})])
         request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("INVOICE",),
                                   seller="GS PTE", invoice_no="INV-001", output_dir=str(tmp_path / "out"))
         result = generate(request)
         assert result.status == "error"
+
+    def test_empty_invoice_no_without_selection_warns_and_generates(self, tmp_path):
+        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT],
+                              po_record_rows=[basic_po_row(**{"INV#": None})])
+        request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("INVOICE",),
+                                  seller="GS PTE", output_dir=str(tmp_path / "out"))
+        result = generate(request)
+        assert result.status == "success"
+        assert any(m.code == "INVOICE_NO_MISSING" for m in result.warnings)
 
     def test_multi_doc_generates_both(self, tmp_path):
         path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
@@ -236,6 +245,30 @@ class TestErrorPath:
         result = generate(request)
         assert result.status == "success", result.errors
         assert len(result.files) == 2
+
+    @pytest.mark.parametrize(
+        ("seller", "invoice_no", "expected_file", "invoice_sheet"),
+        [
+            ("GS PTE", "INV-001", "GS_PTE-RO-INVOICE&PL-4500030844-INV-001.xlsx", "INV"),
+            ("EMAX PTE", "INV-001-P", "EMAX_PTE-RO-INVOICE&PL-4500030844-INV-001-P.xlsx", "CI"),
+        ],
+    )
+    def test_non_factory_invoice_pl_generates_single_workbook_with_two_sheets(
+        self, tmp_path, seller, invoice_no, expected_file, invoice_sheet,
+    ):
+        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
+        request = DocumentRequest(base_file=str(path), po_no="4500030844", documents=("INVOICE", "PL"),
+                                  seller=seller, invoice_no=invoice_no, output_dir=str(tmp_path / "out"))
+        result = generate(request)
+
+        assert result.status == "success", result.errors
+        assert result.files == (expected_file,)
+        assert result.output_file is not None
+        assert result.output_file.endswith(".xlsx")
+
+        wb = load_workbook(result.output_file)
+        assert invoice_sheet in wb.sheetnames
+        assert "PL" in wb.sheetnames
 
     def test_sk_ym_po_blocked(self, tmp_path):
         path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
@@ -560,7 +593,7 @@ class TestPreviewFunction:
         assert ex_factory_entry["value"] == "2026-03-15"
         assert "FINAL EX-FACTORY DATE" in ex_factory_entry["rule"]
 
-    def test_preview_ship_to_source_entry_comes_from_customer_po(self, tmp_path):
+    def test_gs_pi_ship_to_uses_header_fixed_over_customer_po(self, tmp_path):
         path = make_base_file(
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
@@ -581,6 +614,9 @@ class TestPreviewFunction:
         assert result.status == "success"
 
         p = result.preview
+        resolved_values = getattr(p, "resolved_values", {})
+        assert resolved_values["ship_to"] == "E MAX SPORT PTE. LTD."
+
         # pi_no comes from customer PO Purchasing Document, not header_fixed
         entries = getattr(p, "source_entries", [])
         pi_no_entry = next(e for e in entries if e["preview_field"] == "pi_no")
@@ -588,6 +624,12 @@ class TestPreviewFunction:
         assert pi_no_entry["sheet"] == "客户PO"
         assert pi_no_entry["field"] == "Purchasing Document"
         assert pi_no_entry["value"] == "4500030844"
+
+        ship_to_entry = next(e for e in entries if e["preview_field"] == "ship_to")
+        assert ship_to_entry["source_type"] == "template_content"
+        assert ship_to_entry["sheet"] is None
+        assert ship_to_entry["field"] is None
+        assert ship_to_entry["value"] == "E MAX SPORT PTE. LTD."
 
     def test_emax_pi_preview_ship_to_uses_yaml_multiline_fields(self, tmp_path):
         path = make_base_file(
@@ -629,6 +671,48 @@ class TestPreviewFunction:
         assert ship_to_line3["sheet"] == "客户PO"
         assert ship_to_line3["field"] == "ship to"
         assert ship_to_line3["value"] == "United States"
+
+    def test_emax_pi_preview_ship_to_does_not_repeat_compact_company_address(self, tmp_path):
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[basic_po_row()],
+            customer_po_rows=[{
+                "Purchasing Document": "4500030844",
+                "Material": "21-44640",
+                "ship to": (
+                    "Rather Outdoors Corporation,\n"
+                    "40 Industrial Road,Dauphin, MB R7N 2V2\n"
+                    "Rather Outdoors Corporation, 40 Industrial Road,Dauphin, MB R7N 2V2"
+                ),
+                "Order Quantity": 100,
+            }],
+        )
+        request = DocumentRequest(
+            base_file=str(path), po_no="4500030844", documents=("PI",),
+            seller="EMAX PTE", output_dir=str(tmp_path / "out"),
+        )
+        result = preview(request)
+        assert result.status == "success"
+
+        p = result.preview
+        assert p is not None
+        resolved_values = getattr(p, "resolved_values", {})
+        assert resolved_values["ship_to"] == "Rather Outdoors Corporation,"
+        assert resolved_values["ship_to_line2"] == "40 Industrial Road,Dauphin, MB R7N 2V2"
+        assert "ship_to_line3" not in resolved_values
+
+        export_request = DocumentRequest(
+            base_file=str(path), po_no="4500030844", documents=("PI",),
+            seller="EMAX PTE", output_dir=str(tmp_path / "out"),
+        )
+        export_result = generate(export_request)
+        assert export_result.status == "success", export_result.errors
+        wb = load_workbook(export_result.output_file)
+        ws = wb["Standard Invoice format"]
+        assert ws["G9"].value == "Rather Outdoors Corporation,"
+        assert ws["G10"].value == "40 Industrial Road,Dauphin, MB R7N 2V2"
+        assert ws["G11"].value is None
 
     @pytest.mark.parametrize("doc_type", ["PI", "PO"])
     def test_gs_pi_po_manufacturer_fields_use_customer_po_y(self, tmp_path, doc_type):
@@ -685,7 +769,7 @@ class TestPreviewFunction:
             customer_po_rows=[{
                 "Purchasing Document": "4500030844",
                 "Item": "CP-ITEM-001",
-                "Material": "CP-MATERIAL-001",
+                "Material": "21-44640",
                 "ship to": "Customer PO Warehouse",
                 "Order Quantity": 100,
             }],
@@ -707,14 +791,14 @@ class TestPreviewFunction:
         assert item_no_entry["row"] is None
         assert item_no_entry["value"] == "CP-ITEM-001"
 
-    def test_gs_po_item_number_uses_formal_preview_key(self, tmp_path):
+    def test_gs_po_item_number_uses_matching_customer_po_material(self, tmp_path):
         path = make_base_file(
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
             po_record_rows=[basic_po_row(**{"ITEM LINE#": "10"})],
             customer_po_rows=[{
                 "Purchasing Document": "4500030844",
-                "Material": "CP-MATERIAL-001",
+                "Material": "21-44640",
                 "ship to": "Customer PO Warehouse",
                 "Order Quantity": 100,
                 "ship DATE": date(2026, 3, 15),
@@ -728,14 +812,14 @@ class TestPreviewFunction:
         assert result.status == "success"
         p = result.preview
         assert p is not None
-        assert p.lines[0]["item_number"] == "CP-MATERIAL-001"
+        assert p.lines[0]["item_number"] == "21-44640"
 
         entries = getattr(p, "source_entries", [])
         item_number_entry = next(e for e in entries if e["preview_field"] == "line[0].item_number")
         assert item_number_entry["sheet"] == "客户PO"
         assert item_number_entry["field"] == "material"
         assert item_number_entry["row"] is None
-        assert item_number_entry["value"] == "CP-MATERIAL-001"
+        assert item_number_entry["value"] == "21-44640"
 
     def test_emax_pi_line_sources_follow_data_base_and_customer_po_rules(self, tmp_path):
         path = make_base_file(
@@ -768,7 +852,7 @@ class TestPreviewFunction:
         assert p is not None
         first_line = p.lines[0]
         assert first_line["description"] == "DB Description"
-        assert first_line["unit_price"] == "88.8"
+        assert first_line["unit_price"] == "$88.80"
         assert first_line["quantity"] == "240"
         assert first_line["confirmed_ex_factory_date"] == date(2026, 3, 15)
 
@@ -786,6 +870,41 @@ class TestPreviewFunction:
         assert quantity_entry["value"] == "240"
         assert ex_factory_entry["sheet"] == "PO record"
         assert ex_factory_entry["field"] == "FINAL EX-FACTORY DATE"
+
+    def test_emax_pi_preview_formats_usd_unit_price_and_amount_with_dollar(self, tmp_path):
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[{
+                **COMBO_PRODUCT,
+                "EMAX PTE COMBO FOB 2026": Decimal("88.8"),
+            }],
+            po_record_rows=[basic_po_row()],
+            customer_po_rows=[{
+                "Purchasing Document": "4500030844",
+                "Material": "21-44640",
+                "ship to": "Customer PO Warehouse",
+                "Order Quantity": 240,
+            }],
+        )
+        request = DocumentRequest(
+            base_file=str(path), po_no="4500030844", documents=("PI",),
+            seller="EMAX PTE", output_dir=str(tmp_path / "out"),
+        )
+        result = preview(request)
+        assert result.status == "success"
+
+        p = result.preview
+        assert p is not None
+        first_line = p.lines[0]
+        assert first_line["unit_price"] == "$88.80"
+        assert first_line["amount"] == "$21,312.00"
+        assert p.totals["total_amount"] == "$21,312.00"
+
+        entries = getattr(p, "source_entries", [])
+        unit_price_entry = next(e for e in entries if e["preview_field"] == "line[0].unit_price")
+        amount_entry = next(e for e in entries if e["preview_field"] == "line[0].amount")
+        assert unit_price_entry["value"] == "$88.80"
+        assert amount_entry["value"] == "$21,312.00"
 
     def test_emax_po_unit_price_uses_emax_pte_fob_column(self, tmp_path):
         path = make_base_file(
@@ -813,7 +932,7 @@ class TestPreviewFunction:
         p = result.preview
         assert p is not None
         first_line = p.lines[0]
-        assert first_line["unit_price"] == "88.8"
+        assert first_line["unit_price"] == "$88.80"
 
         entries = getattr(p, "source_entries", [])
         unit_price_entry = next(e for e in entries if e["preview_field"] == "line[0].unit_price")
@@ -846,7 +965,7 @@ class TestPreviewFunction:
         p = result.preview
         assert p is not None
         first_line = p.lines[0]
-        assert first_line["unit_price"] == "28"
+        assert first_line["unit_price"] == "$28.00"
 
         entries = getattr(p, "source_entries", [])
         unit_price_entry = next(e for e in entries if e["preview_field"] == "line[0].unit_price")
@@ -890,7 +1009,7 @@ class TestPreviewFunction:
         p = result.preview
         assert p is not None
         first_line = p.lines[0]
-        assert first_line["unit_price"] == "28"
+        assert first_line["unit_price"] == "$28.00"
 
         entries = getattr(p, "source_entries", [])
         unit_price_entry = next(e for e in entries if e["preview_field"] == "line[0].unit_price")
@@ -1231,6 +1350,7 @@ class TestPreviewFunction:
         assert labels["total_net_weight"] == "Total N/W (KGS)"
         assert labels["total_gross_weight"] == "Total G/W (KGS)"
         assert labels["total_cbm"] == "Total CBM"
+        assert labels["total_carton_count"] == "Total CTNS"
 
         footer_items = totals.get("_footer_items", [])
         assert footer_items == [
@@ -1238,6 +1358,7 @@ class TestPreviewFunction:
             {"key": "net_weight", "label": "Total N/W (KGS)", "value": "8.5"},
             {"key": "gross_weight", "label": "Total G/W (KGS)", "value": "10.1"},
             {"key": "cbm", "label": "Total CBM", "value": "0.36 CBM"},
+            {"key": "carton_count", "label": "Total CTNS", "value": "5"},
         ]
         layout = getattr(p, "layout", {})
         info = layout.get("info", {}) if isinstance(layout, dict) else {}
@@ -1245,6 +1366,65 @@ class TestPreviewFunction:
         assert info.get("left", []) == ["shipping_mark", "shipping_mark_2"]
         assert info.get("right", []) == ["invoice_no"]
         assert top.get("left", []) == ["seller_info"]
+
+    @pytest.mark.parametrize(
+        ("seller", "invoice_no"),
+        [
+            ("GS PTE", "INV-001"),
+            ("EMAX PTE", "INV-001-P"),
+        ],
+    )
+    def test_preview_gs_emax_pl_includes_ctns_column(self, tmp_path, seller, invoice_no):
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[basic_po_row(**{"CTNS": Decimal("7")})],
+        )
+        request = DocumentRequest(
+            base_file=str(path), po_no="4500030844", documents=("PL",),
+            seller=seller, invoice_no=invoice_no,
+        )
+        result = preview(request)
+        assert result.status == "success", result.errors
+
+        p = result.preview
+        assert p is not None
+        labels = {c["key"]: c["label"] for c in p.column_labels}
+        assert labels["carton_count"] == "CTNS"
+        assert p.lines[0]["carton_count"] == "7"
+
+        entries = getattr(p, "source_entries", [])
+        ctns_entry = next(e for e in entries if e["preview_field"] == "line[0].carton_count")
+        assert ctns_entry["sheet"] == "PO record"
+        assert ctns_entry["field"] == "CTNS"
+        assert 'PO record AD列 "CTNS"' in ctns_entry["rule"]
+
+    @pytest.mark.parametrize(
+        ("seller", "invoice_no", "sheet", "line_cell", "total_cell"),
+        [
+            ("GS PTE", "INV-001", "PL", "M9", "M15"),
+            ("EMAX PTE", "INV-001-P", "PL", "M10", "M16"),
+        ],
+    )
+    def test_export_gs_emax_pl_writes_ctns_column(
+        self, tmp_path, seller, invoice_no, sheet, line_cell, total_cell,
+    ):
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[basic_po_row(**{"CTNS": Decimal("7")})],
+        )
+        request = DocumentRequest(
+            base_file=str(path), po_no="4500030844", documents=("PL",),
+            seller=seller, invoice_no=invoice_no, output_dir=str(tmp_path / "out"),
+        )
+        result = generate(request)
+        assert result.status == "success", result.errors
+
+        wb = load_workbook(result.output_file)
+        ws = wb[sheet]
+        assert ws[line_cell].value == 7
+        assert ws[total_cell].value == 7
 
     def test_preview_emax_pl_includes_shipping_mark_headers(self, tmp_path):
         path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()])
@@ -1307,18 +1487,20 @@ class TestPreviewFunction:
         assert p is not None
         assert [c["key"] for c in p.column_labels] == [
             "po_no", "description", "sap", "quantity", "F",
-            "net_weight", "H", "gross_weight", "J", "cbm", "L",
+            "net_weight", "H", "gross_weight", "J", "cbm", "L", "carton_count",
         ]
         labels = {c["key"]: c["label"] for c in p.column_labels}
         assert labels["F"] == ""
         assert labels["H"] == ""
         assert labels["J"] == ""
         assert labels["L"] == ""
+        assert labels["carton_count"] == "CTNS"
         first_line = p.lines[0]
         assert first_line["F"] == "PCS"
         assert first_line["H"] == "KGS"
         assert first_line["J"] == "KGS"
         assert first_line["L"] == "CBM"
+        assert first_line["carton_count"] == "5"
 
     def test_preview_emax_pl_uses_po_record_total_cbm_rule(self, tmp_path):
         path = make_base_file(
@@ -1423,7 +1605,7 @@ class TestPreviewFunction:
 
         footer_items = totals.get("_footer_items", [])
         assert footer_items == [
-            {"key": "amount", "label": "Total Amount", "value": "USD 3800.00"},
+            {"key": "amount", "label": "Total Amount", "value": "$3,800.00"},
             {"key": "signature", "label": "Signature", "value": "Joyce"},
             {"key": "Date", "label": "Date", "value": date.today().strftime("%Y-%m-%d")},
         ]
@@ -1432,7 +1614,7 @@ class TestPreviewFunction:
         amount_entry = next(e for e in entries if e["preview_field"] == "totals.amount")
         signature_entry = next(e for e in entries if e["preview_field"] == "totals.signature")
         date_entry = next(e for e in entries if e["preview_field"] == "totals.Date")
-        assert amount_entry["value"] == "USD 3800.00"
+        assert amount_entry["value"] == "$3,800.00"
         assert amount_entry["source_type"] == "computed"
         assert signature_entry["value"] == "Joyce"
         assert signature_entry["source_type"] == "template_content"

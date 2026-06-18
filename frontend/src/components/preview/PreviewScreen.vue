@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick } from "vue";
 import { useWorkbench } from "../../stores/workbench";
-import LayoutTopZone from "./LayoutTopZone.vue";
+import PreviewDocumentPanel from "./PreviewDocumentPanel.vue";
 import type {
-  PreviewFooterItem,
   PreviewSourceEntry,
+  ValidationIssue,
 } from "../../stores/api";
 
 const wb = useWorkbench();
@@ -14,60 +14,72 @@ const popoverVisible = ref(false);
 const popoverEntry = ref<PreviewSourceEntry | null>(null);
 const popoverStyle = ref<Record<string, string>>({});
 const activeFieldEl = ref<HTMLElement | null>(null);
+const issuePanelOpen = ref(false);
 
 const sellers = ["SK", "YM", "GS PTE", "EMAX PTE"] as const;
 const docTypes = [
   { key: "PI" as const, label: "PI" },
   { key: "PO" as const, label: "PO" },
-  { key: "INVOICE" as const, label: "Invoice" },
-  { key: "PL" as const, label: "PL" },
+  { key: "INVOICE" as const, label: "Invoice / PL" },
 ];
 const docTypeLabelMap: Record<string, string> = {
   PI: "PI",
   PO: "PO",
-  INVOICE: "Invoice",
+  INVOICE: "Invoice / PL",
   PL: "PL",
 };
 
 const pd = computed(() => wb.previewData);
-const hasData = computed(() => pd.value && pd.value.lines && pd.value.lines.length > 0);
+const isInvoicePlMode = computed(() => wb.previewDocType === "INVOICE" || wb.previewDocType === "PL");
+const previewDocs = computed(() => {
+  if (wb.previewDocuments.length) return wb.previewDocuments;
+  if (!pd.value) return [];
+  const docLabel = docTypeLabelMap[wb.previewDocType] || wb.previewDocType || "当前单据";
+  return [{
+    id: `${wb.selectedSeller}-${wb.previewDocType}`,
+    seller: wb.selectedSeller,
+    document: wb.previewDocType,
+    label: `${wb.selectedSeller} · ${docLabel}`,
+    preview: pd.value,
+    errors: wb.blockingErrors,
+    warnings: wb.warnings,
+  }];
+});
+const hasData = computed(() => previewDocs.value.some((doc) => doc.preview?.lines?.length));
 const errors = computed(() => wb.blockingErrors as { code?: string; message?: string }[]);
-const warnings = computed(() => wb.warnings as { code?: string; message?: string; severity?: string }[]);
-const currentDocLabel = computed(() => docTypeLabelMap[wb.previewDocType] || wb.previewDocType || "当前单据");
-
-const DEFAULT_LAYOUT = {
-  top: { left: [] as string[], center: [] as string[], right: [] as string[] },
-  info: { left: [] as string[], right: [] as string[] },
-};
-
-const layout = computed(() => {
-  return pd.value?.layout || DEFAULT_LAYOUT;
-});
-
-const footerTotalItems = computed<PreviewFooterItem[]>(() => {
-  const raw = pd.value?.totals?.["_footer_items"];
-  if (!Array.isArray(raw)) return [];
-  return raw.filter((item): item is PreviewFooterItem => {
-    if (!item || typeof item !== "object") return false;
-    const key = (item as Record<string, unknown>).key;
-    const label = (item as Record<string, unknown>).label;
-    const value = (item as Record<string, unknown>).value;
-    return typeof key === "string" && typeof label === "string" && typeof value === "string";
-  });
-});
-
-function formatTermKey(key: string): string {
-  return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-}
+const currentDocLabel = computed(() => (
+  isInvoicePlMode.value ? "Invoice / PL" : docTypeLabelMap[wb.previewDocType] || wb.previewDocType || "当前单据"
+));
+const issueErrors = computed<ValidationIssue[]>(() => wb.poIssues?.blocking_errors ?? []);
+const issueCount = computed(() => wb.poIssues?.blocking_count ?? wb.poEntry?.blocking_count ?? errors.value.length);
 
 async function exportCurrentDocument() {
   await wb.doExport();
 }
 
-function onFieldClick(fieldRef: string, event: MouseEvent) {
+async function toggleIssuePanel() {
+  issuePanelOpen.value = !issuePanelOpen.value;
+  if (issuePanelOpen.value && !wb.poIssues && !wb.issuesLoading) {
+    await wb.refreshPoIssues();
+  }
+}
+
+function closeIssuePanel() {
+  issuePanelOpen.value = false;
+}
+
+function formatIssueLocation(issue: ValidationIssue): string {
+  const parts = [];
+  if (issue.sheet) parts.push(issue.sheet);
+  if (issue.row !== null && issue.row !== undefined) parts.push(`row ${issue.row}`);
+  if (issue.field) parts.push(issue.field);
+  return parts.join(" / ") || "未定位到具体单元格";
+}
+
+function onFieldClick(fieldRef: string, event: MouseEvent, entries?: PreviewSourceEntry[]) {
   const target = event.currentTarget as HTMLElement;
-  const entries = wb.previewSourceEntries;
-  const match = entries.find((e) => e.preview_field === fieldRef);
+  const sourceEntries = entries ?? wb.previewSourceEntries;
+  const match = sourceEntries.find((e) => e.preview_field === fieldRef);
 
   // Toggle off if clicking the same field
   if (popoverVisible.value && activeFieldEl.value === target) {
@@ -134,9 +146,12 @@ function closePopover() {
 }
 
 function onDocumentClick(e: MouseEvent) {
+  const target = e.target as HTMLElement;
+  if (issuePanelOpen.value && !target.closest(".issue-panel-root")) {
+    closeIssuePanel();
+  }
   if (!popoverVisible.value) return;
   const popover = document.querySelector(".source-popover");
-  const target = e.target as HTMLElement;
   // Close if click is outside popover and outside any clickable field
   if (popover && !popover.contains(target) && !target.closest(".clickable")) {
     closePopover();
@@ -144,7 +159,8 @@ function onDocumentClick(e: MouseEvent) {
 }
 
 function onKeydown(e: KeyboardEvent) {
-  if (e.key === "Escape" && popoverVisible.value) {
+  if (e.key === "Escape") {
+    closeIssuePanel();
     closePopover();
   }
 }
@@ -159,40 +175,6 @@ onUnmounted(() => {
   document.removeEventListener("keydown", onKeydown);
 });
 
-function isNumericCol(key: string) {
-  return ["unit_price", "quantity", "amount", "net_weight", "gross_weight", "cbm", "carton_count"].includes(key);
-}
-
-// 通用字段取值：pd 顶级属性 → terms → resolved_values
-function getFieldValue(field: string): string {
-  if (!pd.value) return "";
-  const extra = (pd.value as any).resolved_values;
-  if (extra && extra[field] !== undefined) return String(extra[field]);
-  const top = (pd.value as any)[field];
-  if (top !== null && top !== undefined && top !== "") return String(top);
-  const terms = pd.value.terms;
-  if (terms && (terms as any)[field] !== undefined) return String((terms as any)[field]);
-  return "";
-}
-
-const CONTINUATION_FIELDS = new Set([
-  "bill_to_line2",
-  "bill_to_line3",
-  "ship_to_line2",
-  "ship_to_line3",
-  "manufacturer_address_2",
-  "shipping_mark_2",
-  "shipping_mark_3",
-]);
-
-function isContinuationField(field: string): boolean {
-  return CONTINUATION_FIELDS.has(field);
-}
-
-function formatFieldLabel(field: string): string {
-  if (field === "shipping_mark") return "SHIPPING MARK";
-  return field.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
 </script>
 
 <template>
@@ -220,7 +202,7 @@ function formatFieldLabel(field: string): string {
             <button
               v-for="d in docTypes" :key="d.key"
               class="filter-pill"
-              :class="{ active: wb.previewDocType === d.key }"
+              :class="{ active: wb.previewDocType === d.key || (isInvoicePlMode && d.key === 'INVOICE') }"
               :disabled="(wb.selectedSeller === 'SK' || wb.selectedSeller === 'YM') && d.key === 'PO'"
               @click="wb.refreshPreview(d.key)"
             >
@@ -229,13 +211,49 @@ function formatFieldLabel(field: string): string {
           </div>
         </div>
         <div class="filter-right">
+          <div v-if="wb.poStatus === 'blocked' || issueCount > 0" class="issue-panel-root">
+            <button
+              class="issue-badge-btn"
+              :class="{ active: issuePanelOpen }"
+              type="button"
+              @click.stop="toggleIssuePanel"
+            >
+              阻断 {{ issueCount }} 项
+            </button>
+            <div v-if="issuePanelOpen" class="issue-panel">
+              <div class="issue-panel-head">
+                <strong>阻断原因</strong>
+                <div class="issue-panel-head-right">
+                  <span>{{ wb.selectedPo }}</span>
+                  <button
+                    class="issue-close-btn"
+                    type="button"
+                    aria-label="关闭阻断原因"
+                    @click.stop="closeIssuePanel"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+              <div v-if="wb.issuesLoading" class="issue-panel-empty">正在读取原因…</div>
+              <div v-else-if="wb.issuesError" class="issue-panel-empty error">{{ wb.issuesError }}</div>
+              <div v-else-if="!issueErrors.length" class="issue-panel-empty">暂无阻断明细</div>
+              <div v-else class="issue-list">
+                <div v-for="(issue, index) in issueErrors" :key="`${issue.code}-${index}`" class="issue-row">
+                  <div class="issue-title">{{ issue.message || issue.code }}</div>
+                  <div class="issue-meta">{{ formatIssueLocation(issue) }}</div>
+                  <div class="issue-code">{{ issue.code }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
           <button
             class="ghost-btn export-btn"
             :disabled="!hasData || wb.exporting || wb.previewLoading"
             @click="exportCurrentDocument"
             v-if="hasData"
           >
-            {{ wb.exporting ? "导出中…" : `导出当前单据（${currentDocLabel}）` }}
+            {{ wb.exporting ? "导出中…" : `导出 ${currentDocLabel}` }}
           </button>
           <button
             class="ghost-btn"
@@ -250,27 +268,11 @@ function formatFieldLabel(field: string): string {
 
       <!-- Body -->
       <div class="preview-body">
-        <!-- Errors / Warnings -->
-        <div v-if="errors.length" class="alert alert-err">
-          <div v-for="(e, i) in errors" :key="'e'+i" class="alert-item">
-            <span class="alert-dot err"></span>
-            {{ (e as any).message || e.code }}
-          </div>
-        </div>
-        <div v-if="warnings.length" class="alert alert-warn">
-          <div v-for="(w, i) in warnings" :key="'w'+i" class="alert-item">
-            <span class="alert-dot warn"></span>
-            <span :class="{ 'severity-high': (w as any).severity === 'high' }">
-              {{ (w as any).message || w.code }}
-            </span>
-          </div>
-        </div>
-
         <div v-if="wb.previewError && !wb.previewLoading" class="alert alert-err">
           <div class="alert-item"><span class="alert-dot err"></span>{{ wb.previewError }}</div>
         </div>
         <div v-else-if="!hasData && !errors.length" class="status-msg">
-          {{ pd ? '单据无数据' : '正在加载预览…' }}
+          {{ previewDocs.length ? '单据无数据' : '正在加载预览…' }}
         </div>
 
         <!-- Loading overlay -->
@@ -279,172 +281,36 @@ function formatFieldLabel(field: string): string {
           <span>加载中…</span>
         </div>
 
-        <!-- Document Card -->
-        <div v-if="hasData && pd" class="document-card">
-          <!-- Top line: layout-driven left / center / right -->
-          <div class="doc-topline">
-            <div class="top-left" v-if="layout.top.left.length">
-              <LayoutTopZone :fields="layout.top.left" :pd="pd" @field-click="onFieldClick" />
+        <div v-if="previewDocs.length" class="preview-doc-list">
+          <section
+            v-for="doc in previewDocs"
+            :key="doc.id"
+            class="preview-doc-section"
+          >
+            <div class="preview-doc-head">
+              <h2 class="preview-doc-title">{{ doc.label }}</h2>
             </div>
-            <div class="top-center" v-if="layout.top.center.length">
-              <LayoutTopZone :fields="layout.top.center" :pd="pd" @field-click="onFieldClick" />
-            </div>
-            <div class="top-right" v-if="layout.top.right.length">
-              <LayoutTopZone :fields="layout.top.right" :pd="pd" @field-click="onFieldClick" />
-            </div>
-          </div>
-
-          <!-- Info section: layout-driven left / right -->
-          <div class="doc-info">
-            <div class="info-left" v-if="layout.info.left.length">
-              <table class="kv-table">
-                <template v-for="field in layout.info.left" :key="field">
-                  <template v-if="field === 'seller_info'">
-                    <tr v-if="pd.seller_info.length">
-                      <td colspan="2">
-                        <strong>{{ pd.seller_info[0] }}</strong>
-                        <template v-for="(line, i) in pd.seller_info.slice(1)" :key="'ci'+i">
-                          <br />{{ line }}
-                        </template>
-                      </td>
-                    </tr>
-                  </template>
-                  <tr v-else-if="field === 'invoice_no' && pd.invoice_no">
-                    <td>Invoice #</td>
-                    <td>
-                      <span class="clickable" @click="onFieldClick('invoice_no', $event)">{{ pd.invoice_no }}</span>
-                    </td>
-                  </tr>
-                  <tr v-else-if="field === 'pi_no' && pd.pi_no && pd.document_type === 'PI'">
-                    <td>PI #</td>
-                    <td>
-                      <span class="clickable" @click="onFieldClick('pi_no', $event)">{{ pd.pi_no }}</span>
-                    </td>
-                  </tr>
-                  <template v-else-if="field === 'terms'">
-                    <tr v-for="(val, key) in pd.terms" :key="'t_'+key">
-                      <td>{{ formatTermKey(key) }}</td>
-                      <td>{{ val }}</td>
-                    </tr>
-                  </template>
-                  <tr v-else-if="getFieldValue(field)">
-                    <td :class="{ 'continuation-label': isContinuationField(field) }">
-                      {{ isContinuationField(field) ? "" : formatFieldLabel(field) }}
-                    </td>
-                    <td :class="{ 'continuation-value': isContinuationField(field) }">
-                      <span class="clickable" @click="onFieldClick(field, $event)">{{ getFieldValue(field) }}</span>
-                    </td>
-                  </tr>
-                </template>
-              </table>
-            </div>
-            <div class="info-right" v-if="layout.info.right.length">
-              <table class="kv-table">
-                <template v-for="field in layout.info.right" :key="field">
-                  <tr v-if="field === 'invoice_no' && pd.invoice_no">
-                    <td>Invoice No.</td>
-                    <td>
-                      <span class="clickable" @click="onFieldClick('invoice_no', $event)">{{ pd.invoice_no }}</span>
-                    </td>
-                  </tr>
-                  <tr v-else-if="field === 'pi_no' && pd.pi_no && pd.document_type === 'PI'">
-                    <td>PI #</td>
-                    <td>
-                      <span class="clickable" @click="onFieldClick('pi_no', $event)">{{ pd.pi_no }}</span>
-                    </td>
-                  </tr>
-                  <template v-else-if="field === 'terms'">
-                    <tr v-for="(val, key) in pd.terms" :key="'t_'+key">
-                      <td>{{ formatTermKey(key) }}</td>
-                      <td>{{ val }}</td>
-                    </tr>
-                  </template>
-                  <tr v-else-if="field === 'seller'">
-                    <td>Seller</td>
-                    <td>{{ pd.seller }}</td>
-                  </tr>
-                  <tr v-else-if="field === 'buyer'">
-                    <td>Buyer</td>
-                    <td>{{ pd.buyer }}</td>
-                  </tr>
-                  <!-- 通用回退：未识别的字段名从 pd 或 pd.terms 取值 -->
-                  <tr v-else-if="getFieldValue(field)">
-                    <td :class="{ 'continuation-label': isContinuationField(field) }">
-                      {{ isContinuationField(field) ? "" : formatFieldLabel(field) }}
-                    </td>
-                    <td :class="{ 'continuation-value': isContinuationField(field) }">
-                      <span class="clickable" @click="onFieldClick(field, $event)">{{ getFieldValue(field) }}</span>
-                    </td>
-                  </tr>
-                  <tr v-else-if="field === 'po_no'">
-                    <td>PO</td>
-                    <td>{{ pd.po_no }}</td>
-                  </tr>
-                  <tr v-else-if="field === 'ship_to' && pd.ship_to">
-                    <td>Ship To</td>
-                    <td>{{ pd.ship_to }}</td>
-                  </tr>
-                </template>
-              </table>
-            </div>
-          </div>
-
-          <!-- Lines table -->
-          <table class="lines-table">
-            <colgroup>
-              <col v-for="(col, ci) in pd.column_labels" :key="'cg'+ci"
-                :style="{ width: isNumericCol(col.key) ? '10%' : 'auto' }" />
-            </colgroup>
-            <thead>
-              <tr>
-                <th v-for="col in pd.column_labels" :key="'h_'+col.key"
-                  :class="{ num: isNumericCol(col.key) }"
-                >{{ col.label }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(line, li) in pd.lines" :key="'l'+li">
-                <td v-for="col in pd.column_labels" :key="col.key"
-                  :class="{ num: isNumericCol(col.key) }"
-                >
-                  <span
-                    v-if="line[col.key] !== '' && line[col.key] !== null && line[col.key] !== undefined"
-                    class="clickable"
-                    @click="onFieldClick(`line[${li}].${col.key}`, $event)"
-                  >{{ line[col.key] }}</span>
-                  <template v-else>{{ line[col.key] }}</template>
-                </td>
-              </tr>
-            </tbody>
-            <tfoot>
-              <tr class="total-row">
-                <td v-for="col in pd.column_labels" :key="'t_'+col.key" :class="{ num: isNumericCol(col.key) }">
-                  <template v-if="col.key === 'po_no' || col.key === 'description' || col.key === 'sap'">
-                    <span v-if="col.key === 'po_no'">TOTAL</span>
-                  </template>
-                  <template v-else-if="col.key === 'quantity'">{{ pd.totals.total_quantity }}</template>
-                  <template v-else-if="col.key === 'amount'">{{ pd.totals.total_amount }}</template>
-                  <template v-else-if="col.key === 'net_weight'">{{ pd.totals.total_net_weight }}</template>
-                  <template v-else-if="col.key === 'gross_weight'">{{ pd.totals.total_gross_weight }}</template>
-                  <template v-else-if="col.key === 'cbm'">{{ pd.totals.total_cbm }}</template>
-                  <template v-else-if="col.key === 'carton_count'">{{ pd.totals.total_carton_count }}</template>
-                  <template v-else-if="col.key === 'unit_label'">{{ pd.totals.unit_label }}</template>
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-
-          <!-- Footer notes + Total box -->
-          <div class="doc-footer-notes" v-if="pd.notes.length || pd.totals">
-            <div class="note-lines">
-              <p v-for="(note, ni) in pd.notes" :key="'n'+ni">{{ note }}</p>
-            </div>
-            <div class="total-box">
-              <div v-for="item in footerTotalItems" :key="'footer-' + item.key">
-                <span>{{ item.label }}</span><strong>{{ item.value }}</strong>
+            <div v-if="doc.errors.length" class="alert alert-err">
+              <div v-for="(e, i) in doc.errors" :key="doc.id + '-e' + i" class="alert-item">
+                <span class="alert-dot err"></span>
+                {{ (e as any).message || (e as any).code }}
               </div>
             </div>
-          </div>
+            <div v-if="doc.warnings.length" class="alert alert-warn">
+              <div v-for="(w, i) in doc.warnings" :key="doc.id + '-w' + i" class="alert-item">
+                <span class="alert-dot warn"></span>
+                <span :class="{ 'severity-high': (w as any).severity === 'high' }">
+                  {{ (w as any).message || (w as any).code }}
+                </span>
+              </div>
+            </div>
+            <PreviewDocumentPanel
+              v-if="doc.preview && doc.preview.lines.length"
+              :pd="doc.preview"
+              @field-click="(fieldRef, event) => onFieldClick(fieldRef, event, doc.preview?.source_entries ?? [])"
+            />
+            <div v-else class="status-msg">当前单据无数据</div>
+          </section>
         </div>
 
         <!-- Field Source Summary panel -->
@@ -572,6 +438,49 @@ function formatFieldLabel(field: string): string {
   background: var(--blue-weak); box-shadow: inset 0 0 0 1px #c7d9ff;
 }
 .filter-pill:disabled { opacity: 0.45; cursor: not-allowed; background: #f2f4f7; }
+.issue-panel-root { position: relative; flex-shrink: 0; }
+.issue-badge-btn {
+  height: 30px; padding: 0 10px;
+  border: 1px solid #fecaca; border-radius: 999px;
+  background: #fff5f5; color: var(--red);
+  font-size: 12px; font-weight: 900; cursor: pointer;
+}
+.issue-badge-btn:hover,
+.issue-badge-btn.active {
+  border-color: #fca5a5;
+  background: #fee2e2;
+}
+.issue-panel {
+  position: absolute; top: 36px; right: 0; z-index: 70;
+  width: min(420px, calc(100vw - 32px));
+  max-height: 360px; overflow: auto;
+  border: 1px solid #fecaca; border-radius: 8px;
+  background: white; box-shadow: 0 16px 40px rgba(15, 23, 42, 0.16);
+}
+.issue-panel-head {
+  position: sticky; top: 0; z-index: 1;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 12px; border-bottom: 1px solid #fee2e2;
+  background: #fff7f7; color: var(--red); font-size: 12px;
+}
+.issue-panel-head-right { display: inline-flex; align-items: center; gap: 8px; }
+.issue-panel-head span { color: var(--muted); font-family: var(--mono); font-weight: 700; }
+.issue-close-btn {
+  width: 22px; height: 22px;
+  display: grid; place-items: center;
+  border: 1px solid #fecaca; border-radius: 6px;
+  background: white; color: var(--red);
+  font-size: 16px; line-height: 1; cursor: pointer;
+}
+.issue-close-btn:hover { background: #fee2e2; border-color: #fca5a5; }
+.issue-list { padding: 6px; }
+.issue-row { padding: 9px 10px; border-radius: 7px; }
+.issue-row + .issue-row { border-top: 1px solid var(--line); }
+.issue-title { color: var(--text); font-size: 12px; font-weight: 800; line-height: 1.45; }
+.issue-meta { margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.35; }
+.issue-code { margin-top: 4px; color: var(--subtle); font-family: var(--mono); font-size: 11px; }
+.issue-panel-empty { padding: 14px 12px; color: var(--muted); font-size: 12px; }
+.issue-panel-empty.error { color: var(--red); }
 .ghost-btn {
   height: 30px; padding: 0 10px;
   border: 1px solid var(--line); border-radius: 6px;
@@ -607,74 +516,29 @@ function formatFieldLabel(field: string): string {
 .severity-high { font-weight: 700; }
 .status-msg { padding: var(--space-3); color: var(--muted); }
 
-/* Document card */
-.document-card {
-  background: white; border: 1px solid var(--line);
-  border-radius: 8px; padding: 32px 40px 24px; overflow-x: auto;
+.preview-doc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
 }
-
-.doc-topline {
-  display: flex; align-items: flex-start;
-  gap: 24px; padding-bottom: 12px; border-bottom: 2px solid #223047;
+.preview-doc-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
-.top-left { flex: 1; min-width: 0; }
-.top-center { flex: 0 0 auto; text-align: center; }
-.top-right { flex: 1; min-width: 0; text-align: right; }
-.top-right h1 { margin: 0 0 8px; font-size: 22px; line-height: 1.1; color: #223047; }
-.top-field-line { margin: 0; color: var(--muted); font-family: var(--mono); font-size: 12px; line-height: 1.5; }
-.top-field-line + .top-field-line { margin-top: 2px; }
-.company-block { max-width: 560px; line-height: 1.55; font-size: 12px; }
-.company-block strong { display: block; font-size: 13px; margin-bottom: 4px; }
-.to-line { display: block; margin-top: 6px; font-weight: 700; color: #233047; }
-.top-clickable { display: block; font-size: 12px; line-height: 1.55; }
-.top-clickable + .top-clickable { margin-top: 2px; }
-.terms-block { font-size: 12px; line-height: 1.55; }
-.term-line { display: flex; gap: 8px; }
-.term-line + .term-line { margin-top: 3px; }
-.term-key { color: var(--muted); font-weight: 800; min-width: 100px; }
-.term-val { color: var(--text); }
-
-.doc-info { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 20px; padding: 14px 0 12px; font-size: 12px; line-height: 1.55; }
-.info-left { min-width: 0; }
-.info-right { min-width: 0; }
-.info-title { color: var(--muted); font-size: 11px; font-weight: 900; margin-bottom: 4px; text-transform: uppercase; }
-.info-ship p { margin: 0; white-space: pre-line; }
-.kv-table { width: 100%; border-collapse: collapse; }
-.kv-table td { padding: 2px 0 4px 10px; vertical-align: top; }
-.kv-table td:first-child { color: var(--muted); font-weight: 800; white-space: nowrap; width: 94px; padding-left: 0; }
-.kv-table td.continuation-label { color: transparent; user-select: none; }
-.kv-table td.continuation-value { padding-top: 0; }
-
-/* Clickable fields */
-.clickable {
-  cursor: pointer; border-bottom: 1px dashed var(--blue-weak);
-  transition: background 0.15s;
+.preview-doc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 2px 0;
 }
-.clickable:hover { background: var(--blue-weak); }
-.clickable.field-active {
-  background: var(--blue-weak); border-radius: 2px;
-  outline: 2px solid var(--blue); outline-offset: 1px;
+.preview-doc-title {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text);
+  font-weight: 900;
 }
-
-/* Lines table */
-.lines-table {
-  width: 100%; border-collapse: collapse; table-layout: auto;
-  font-size: 12px; border: 1px solid var(--line);
-}
-.lines-table th, .lines-table td { border: 1px solid var(--line); padding: 7px 8px; vertical-align: top; overflow-wrap: anywhere; }
-.lines-table th { color: #2b3a51; background: #eef3f9; font-size: 11px; font-weight: 900; text-align: left; }
-.lines-table td.num, .lines-table th.num { text-align: right; font-family: var(--mono); white-space: nowrap; }
-.lines-table .total-row td { font-weight: 900; background: #f8fafc; }
-
-/* Footer */
-.doc-footer-notes { display: grid; grid-template-columns: 1fr 260px; gap: 18px; padding-top: 12px; font-size: 12px; line-height: 1.55; }
-.note-lines p { margin: 0; color: #233047; }
-.note-lines p + p { margin-top: 4px; }
-.total-box { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; align-self: start; }
-.total-box div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
-.total-box div:last-child { border-bottom: 0; }
-.total-box span { color: var(--muted); font-weight: 800; }
-.total-box strong { font-family: var(--mono); }
 
 /* Source summary */
 .source-summary { margin-top: 14px; background: white; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
@@ -752,8 +616,6 @@ function formatFieldLabel(field: string): string {
 .mono { font-family: var(--mono); font-size: 0.92em; }
 
 @media (max-width: 1180px) {
-  .document-card { padding: 18px 20px; }
-  .doc-footer-notes { grid-template-columns: 1fr; }
-  .doc-info { grid-template-columns: 1fr; }
+  .preview-body { padding: 12px; }
 }
 </style>

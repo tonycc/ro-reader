@@ -35,6 +35,16 @@ _BASE_SCHEMA = base_schema()
 
 
 @dataclass(frozen=True)
+class SheetHeaders:
+    """单个 sheet 的表头解析结果，不读取数据行。"""
+
+    sheet_name: str
+    headers: tuple[str, ...]
+    header_columns: dict[str, int]
+    max_data_col: int
+
+
+@dataclass(frozen=True)
 class SheetData:
     """单个 sheet 的解析结果。
 
@@ -111,6 +121,24 @@ class WorkbookReader:
     # 主接口
     # —————————————————————————————————————
 
+    def read_headers(
+        self,
+        sheet_name: str,
+        header_row: int = HEADER_ROW,
+    ) -> SheetHeaders:
+        """只读取一个 sheet 的表头，不消费数据行。"""
+        if sheet_name not in self._wb.sheetnames:
+            raise WorkbookOpenError(f"workbook 中找不到 sheet：{sheet_name!r}")
+
+        ws: Worksheet = self._wb[sheet_name]
+        headers, header_columns, max_data_col = self._read_headers(ws, sheet_name, header_row)
+        return SheetHeaders(
+            sheet_name=sheet_name,
+            headers=headers,
+            header_columns=header_columns,
+            max_data_col=max_data_col,
+        )
+
     def read_sheet(
         self,
         sheet_name: str,
@@ -123,17 +151,21 @@ class WorkbookReader:
         - sheet 不存在抛 `WorkbookOpenError`（结构性问题，validator 不必再处理）。
         - 完全空白的数据行被跳过；只要任意一列非空就视为有效行。
         """
-        if sheet_name not in self._wb.sheetnames:
-            raise WorkbookOpenError(f"workbook 中找不到 sheet：{sheet_name!r}")
-
+        header_data = self.read_headers(sheet_name, header_row=header_row)
         ws: Worksheet = self._wb[sheet_name]
-        headers, header_columns, max_data_col = self._read_headers(ws, sheet_name, header_row)
-        rows = tuple(self._read_data_rows(ws, header_columns, first_data_row, max_data_col))
+        rows = tuple(
+            self._read_data_rows(
+                ws,
+                header_data.header_columns,
+                first_data_row,
+                header_data.max_data_col,
+            )
+        )
 
         return SheetData(
             sheet_name=sheet_name,
-            headers=headers,
-            header_columns=header_columns,
+            headers=header_data.headers,
+            header_columns=header_data.header_columns,
             rows=rows,
         )
 
@@ -253,9 +285,7 @@ def _primary_number_format_section(number_format: str) -> str:
 
 def _looks_like_date_format(number_format: str) -> bool:
     lowered = number_format.lower()
-    if any(token in lowered for token in ("yy", "dd", "mm", "hh", "ss")):
-        return True
-    return False
+    return any(token in lowered for token in ("yy", "dd", "mm", "hh", "ss"))
 
 
 def _cell_value(cell: object) -> object:
@@ -271,6 +301,7 @@ __all__ = [
     "CELL_NUMBER_FORMATS_KEY",
     "ROW_NUMBER_KEY",
     "SheetData",
+    "SheetHeaders",
     "WorkbookReader",
     "number_format_decimal_places",
     "row_cell_number_format",

@@ -19,7 +19,7 @@ from pathlib import Path
 from ro_generator.base_schema import base_schema
 from ro_generator.errors import WorkbookOpenError
 from ro_generator.models import Product
-from ro_generator.resolver import build_product_index, resolve_po_rows
+from ro_generator.resolver import build_product_index_from_rows, resolve_po_rows
 from ro_generator.schema import SELLERS, SHEET_CUSTOMER_PO, SHEET_DATA_BASE, SHEET_PO_RECORD
 from ro_generator.validator import validate_workbook_structure
 from ro_generator.workbook_reader import WorkbookReader
@@ -130,9 +130,6 @@ def build_workbook_snapshot(base_file: str) -> WorkbookSnapshot:
                 f"base 文件结构校验失败: {struct[0].message if struct else '未知错误'}"
             )
 
-        # 文件签名
-        signature = FileSignature.from_file(base_file)
-
         # 读取 sheet 头
         db_sheet = reader.read_sheet(SHEET_DATA_BASE)
         po_sheet = reader.read_sheet(SHEET_PO_RECORD)
@@ -147,7 +144,7 @@ def build_workbook_snapshot(base_file: str) -> WorkbookSnapshot:
         headers_cp = cp_sheet.headers
 
         # 构建 product_index
-        product_index = build_product_index(reader)
+        product_index = build_product_index_from_rows(db_sheet.rows)
 
         # 构建 po_rows 和 po_index
         po_field_name = _bs.field("PO record", "po_no")

@@ -600,7 +600,7 @@ def _generate_one(
 
 
 def _should_combine_invoice_pl(seller: str, documents: tuple[str, ...]) -> bool:
-    return seller in {"SK", "YM"} and "INVOICE" in documents and "PL" in documents
+    return "INVOICE" in documents and "PL" in documents
 
 
 def _build_generation_plan(

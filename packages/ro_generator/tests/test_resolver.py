@@ -19,6 +19,7 @@ from ro_generator.resolver import (
     CODE_SAP_NOT_IN_DATA_BASE,
     PO_PRICE_COLUMNS,
     ResolveResult,
+    build_product_index_from_rows,
     resolve_po_lines,
 )
 from ro_generator.schema import (
@@ -162,6 +163,17 @@ COMBO_PRODUCT = {
 }
 
 
+class TestProductIndex:
+    def test_build_product_index_from_loaded_rows(self) -> None:
+        products = build_product_index_from_rows((COMBO_PRODUCT,))
+
+        product = products["21-44640"]
+        assert product.sap == "21-44640"
+        assert product.description == "CB2500.B2"
+        assert product.category == 1
+        assert product.prices[("GS PTE/combo")] == Decimal("32.8")
+
+
 def basic_po_row(**overrides: Any) -> dict[str, Any]:
     """生成一条具备所有必需字段的 PO record 行。"""
     base: dict[str, Any] = {
@@ -256,21 +268,21 @@ class TestPoLookup:
             result = resolve_po_lines(reader, "4500030844")
         assert result.lines[0].ship_to == "Customer PO Ship To"
 
-    def test_item_line_no_reads_from_customer_po_material(self, tmp_path: Path) -> None:
+    def test_item_line_no_reads_from_matching_customer_po_material(self, tmp_path: Path) -> None:
         path = make_base_file(
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
             po_record_rows=[basic_po_row(**{"ITEM LINE#": "10"})],
             customer_po_rows=[{
                 "Purchasing Document": "4500030844",
-                "Material": "CP-MATERIAL-001",
+                "Material": "21-44640",
                 "ship to": "Customer PO Ship To",
                 "Order Quantity": 100,
             }],
         )
         with WorkbookReader(path) as reader:
             result = resolve_po_lines(reader, "4500030844")
-        assert result.lines[0].item_line_no == "CP-MATERIAL-001"
+        assert result.lines[0].item_line_no == "21-44640"
 
     def test_description_reads_from_data_base_material_description(self, tmp_path: Path) -> None:
         path = make_base_file(
@@ -317,29 +329,21 @@ class TestPoLookup:
         assert line.prices[(ENTITY_GS_PTE, ENTITY_EMAX_PTE)] == Decimal("66.6")
         assert line.prices[(ENTITY_EMAX_PTE, ENTITY_PF)] == Decimal("88.8")
 
-    def test_ship_to_falls_back_to_same_po_first_non_empty_customer_po_value(self, tmp_path: Path) -> None:
+    def test_ship_to_reads_from_matching_customer_po_material(self, tmp_path: Path) -> None:
         path = make_base_file(
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
             po_record_rows=[basic_po_row(**{"SHIP TO": "PO Record Ship To"})],
-            customer_po_rows=[
-                {
-                    "Purchasing Document": "4500030844",
-                    "Material": "OTHER-MATERIAL",
-                    "ship to": None,
-                    "Order Quantity": None,
-                },
-                {
-                    "Purchasing Document": "4500030844",
-                    "Material": "DIFFERENT-MATERIAL",
-                    "ship to": "Fallback Customer Ship To",
-                    "Order Quantity": 100,
-                },
-            ],
+            customer_po_rows=[{
+                "Purchasing Document": "4500030844",
+                "Material": "21-44640",
+                "ship to": "Matching Customer Ship To",
+                "Order Quantity": 100,
+            }],
         )
         with WorkbookReader(path) as reader:
             result = resolve_po_lines(reader, "4500030844")
-        assert result.lines[0].ship_to == "Fallback Customer Ship To"
+        assert result.lines[0].ship_to == "Matching Customer Ship To"
 
 
 # ————————————————————————————————————————
@@ -401,6 +405,43 @@ class TestSapJoin:
 
 
 class TestQty:
+    def test_missing_customer_po_rows_reports_po_missing(self, tmp_path: Path) -> None:
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[basic_po_row(FINALQTY=100)],
+            customer_po_rows=[],
+        )
+        with WorkbookReader(path) as reader:
+            result = resolve_po_lines(reader, "4500030844")
+
+        assert result.lines == ()
+        msg = next(m for m in result.messages if m.code == CODE_QTY_MISSING)
+        assert msg.field == "Purchasing Document"
+        assert "客户PO中没有 PO 4500030844 的记录" in msg.message
+        assert "SAP 21-44640" in msg.message
+
+    def test_missing_customer_po_material_reports_material_missing(self, tmp_path: Path) -> None:
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[basic_po_row(FINALQTY=100)],
+            customer_po_rows=[{
+                "Purchasing Document": "4500030844",
+                "Material": "OTHER-MATERIAL",
+                "ship to": "Customer PO Ship To",
+                "Order Quantity": 100,
+            }],
+        )
+        with WorkbookReader(path) as reader:
+            result = resolve_po_lines(reader, "4500030844")
+
+        assert result.lines == ()
+        msg = next(m for m in result.messages if m.code == CODE_QTY_MISSING)
+        assert msg.field == "Material"
+        assert "客户PO中有 PO 4500030844" in msg.message
+        assert "没有 Material = 21-44640 的行" in msg.message
+
     def test_missing_qty_blocks_row(self, tmp_path: Path) -> None:
         path = make_base_file(
             tmp_path,
@@ -417,6 +458,12 @@ class TestQty:
             result = resolve_po_lines(reader, "4500030844")
         codes = [m.code for m in result.messages]
         assert CODE_QTY_MISSING in codes
+        msg = next(m for m in result.messages if m.code == CODE_QTY_MISSING)
+        assert msg.field == "Order Quantity"
+        assert msg.row == 2
+        assert "客户PO row 2" in msg.message
+        assert "Material 21-44640" in msg.message
+        assert "Order Quantity 为空" in msg.message
         assert result.lines == ()
 
     def test_invalid_qty_blocks_row(self, tmp_path: Path) -> None:
@@ -435,6 +482,10 @@ class TestQty:
             result = resolve_po_lines(reader, "4500030844")
         codes = [m.code for m in result.messages]
         assert CODE_QTY_INVALID in codes
+        msg = next(m for m in result.messages if m.code == CODE_QTY_INVALID)
+        assert msg.row == 2
+        assert "客户PO row 2" in msg.message
+        assert "Material 21-44640" in msg.message
 
 
 # ————————————————————————————————————————

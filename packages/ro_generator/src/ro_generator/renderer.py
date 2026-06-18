@@ -38,6 +38,7 @@ from ro_generator.header_rules import (
     resolve_header_field_spec,
 )
 from ro_generator.line_rules import (
+    USD_NUMBER_FORMAT,
     line_excel_number_format,
     resolve_line_field_spec,
     uses_po_record_row,
@@ -172,7 +173,7 @@ _PRESERVE_HEADER_KEYS: Final[set[str]] = {
     "manufacturer", "manufacturer_name", "manufacturer_address", "manufacturer_address_2",
     "supplier",
     "bill_to",
-    "bill_to_line2", "bill_to_line3", "ship_to_line2", "ship_to_line3",
+    "bill_to_line2", "bill_to_line3",
     "signature",
 }
 
@@ -237,7 +238,11 @@ def _write_header(
                 seller=model.seller,
                 document_type=model.document_type,
             )
-            if spec is not None and spec.source_type == "base_field":
+            if (
+                mkey not in mapping.header_fixed
+                and spec is not None
+                and spec.source_type == "base_field"
+            ):
                 sheet = spec.source_sheet if spec and spec.source_sheet else "PO record"
                 field = spec.source_field if spec and spec.source_field else mkey
                 builder.add(
@@ -495,6 +500,8 @@ def _write_totals(
         total_value = total_value_for_mapping_key(model, field_name)
         if total_value is not None:
             ws[cell_addr] = total_value
+            if field_name == "amount":
+                ws[cell_addr].number_format = USD_NUMBER_FORMAT
             # 合计是工作台计算得出，不指向某一行
             builder.add_computed(cell_addr, total_spec.preview_key)
 

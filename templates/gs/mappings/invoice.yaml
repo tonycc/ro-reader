@@ -1,6 +1,6 @@
 document: invoice
 template_version: '2026.06'
-template: templates/gs/invoice.xlsx
+template: templates/gs/invoice&pl.xlsx
 sheet: INV
 header:
   invoice_no: H6
@@ -42,7 +42,7 @@ style:
   - E13
   - F13
   - H13
-  - A19
+  - A20
   - F20
   - H20
   underline:

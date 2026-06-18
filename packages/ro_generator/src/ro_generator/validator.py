@@ -63,7 +63,7 @@ def validate_workbook_structure(
         cp_cfg = _schema.sheet("客户PO")
         messages.extend(_check_headers(
             reader, SHEET_CUSTOMER_PO, CUSTOMER_PO_REQUIRED_HEADERS,
-            header_row=cp_cfg.header_row, first_data_row=cp_cfg.first_data_row,
+            header_row=cp_cfg.header_row,
         ))
 
     return tuple(messages)
@@ -74,15 +74,12 @@ def _check_headers(
     sheet_name: str,
     required_headers: tuple[str, ...],
     header_row: int | None = None,
-    first_data_row: int | None = None,
 ) -> list[ValidationMessage]:
     kwargs: dict[str, int] = {}
     if header_row is not None:
         kwargs["header_row"] = header_row
-    if first_data_row is not None:
-        kwargs["first_data_row"] = first_data_row
-    sheet_data = reader.read_sheet(sheet_name, **kwargs)
-    present = set(sheet_data.header_columns)
+    sheet_headers = reader.read_headers(sheet_name, **kwargs)
+    present = set(sheet_headers.header_columns)
     missing = [h for h in required_headers if h not in present]
     return [
         ValidationMessage(

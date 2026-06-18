@@ -254,10 +254,10 @@ def _parse_columns(raw: dict[object, object], yaml_path: Path) -> LineColumns:
         letter = value.strip().upper()
         try:
             column_index_from_string(letter)
-        except (ValueError, KeyError):
+        except (ValueError, KeyError) as exc:
             raise MappingError(
                 f"lines.columns.{key} {letter!r} 不是合法列字母：{yaml_path}"
-            )
+            ) from exc
         if key in known or key in required:
             parsed[key] = letter
         else:
@@ -549,7 +549,7 @@ __all__ = [
     "VALID_DOCUMENT_TYPES",
     "LineColumns",
     "LinesSection",
-    "TotalCell",
     "TemplateMapping",
+    "TotalCell",
     "load_template_mapping",
 ]

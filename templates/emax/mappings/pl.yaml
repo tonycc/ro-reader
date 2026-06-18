@@ -1,6 +1,6 @@
 document: pl
 template_version: '2026.06'
-template: templates/emax/pl.xlsx
+template: templates/emax/invoice&pl.xlsx
 sheet: PL
 header:
   invoice_no: K5
@@ -28,11 +28,13 @@ lines:
     net_weight: G
     gross_weight: I
     cbm: K
+    carton_count: M
 totals:
   quantity: E16
   net_weight: G16
   gross_weight: I16
   cbm: K16
+  carton_count: M16
 style:
   bold:
   - A1
@@ -51,6 +53,7 @@ style:
   - J9
   - K9
   - L9
+  - M9
   - A16
   - E16
   - F16
@@ -60,6 +63,7 @@ style:
   - J16
   - K16
   - L16
+  - M16
 preview_content:
   title: PACKING LIST
   static_terms: {}
@@ -76,6 +80,7 @@ preview_content:
     J: ''
     cbm: Measurement
     L: ''
+    carton_count: CTNS
   source_overrides:
     po_no:
       sheet: 客户PO

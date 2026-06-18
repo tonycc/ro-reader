@@ -1,7 +1,7 @@
 document: pl
 template_version: '2026.06'
-template: templates/gs/pl.xlsx
-sheet: 'PL '
+template: templates/gs/invoice&pl.xlsx
+sheet: PL
 header:
   invoice_no: K5
   shipping_mark: C5
@@ -26,11 +26,13 @@ lines:
     net_weight: G
     gross_weight: I
     cbm: K
+    carton_count: M
 totals:
   quantity: E15
   net_weight: G15
   gross_weight: I15
   cbm: K15
+  carton_count: M15
 style:
   bold:
   - A1
@@ -47,6 +49,7 @@ style:
   - J8
   - K8
   - L8
+  - M8
   - A15
   - E15
   - F15
@@ -56,6 +59,7 @@ style:
   - J15
   - K15
   - L15
+  - M15
 preview_content:
   title: PACKING LIST
   static_terms: {}
@@ -73,6 +77,7 @@ preview_content:
     J: ''
     cbm: Measurement
     L: ''
+    carton_count: CTNS
   seller_info:
   - GLOBALSINO PTE.LTD.
   - '10 KAKI BUKIT ROAD 2, #01-37, FIRST EAST CENTRE, SINGAPORE 417868'

@@ -149,8 +149,13 @@ def resolve_po_rows(
 def build_product_index(reader: WorkbookReader) -> dict[str, Product]:
     """从 DATA BASE sheet 建立 SAP 到产品主数据的索引。"""
     sheet = reader.read_sheet(SHEET_DATA_BASE)
+    return build_product_index_from_rows(tuple(sheet.rows))
+
+
+def build_product_index_from_rows(rows: tuple[dict[str, object], ...]) -> dict[str, Product]:
+    """从已读取的 DATA BASE 行建立 SAP 到产品主数据的索引。"""
     index: dict[str, Product] = {}
-    for row in sheet.rows:
+    for row in rows:
         sap = _str_or_none(row.get(_db("sap")))
         if not sap:
             continue
@@ -265,19 +270,14 @@ def _resolve_row(
         )
         return None, messages
 
-    qty_row, qty_raw = _resolve_customer_po_raw_entry(
+    po_no = _str_or_none(row.get(_po("po_no"))) or ""
+    qty_row, qty_raw, qty_msg = _resolve_customer_po_quantity_entry(
         sap=sap,
+        po_no=po_no,
         customer_po_lookup=customer_po_lookup,
-        field_name=_cp("order_quantity"),
     )
-    if qty_raw is None:
-        messages.append(
-            ValidationMessage(
-                kind="blocking_error", code=CODE_QTY_MISSING,
-                message="行缺少客户PO Order Quantity", sheet=SHEET_CUSTOMER_PO,
-                row=None, field=_cp("order_quantity"),
-            )
-        )
+    if qty_msg is not None:
+        messages.append(qty_msg)
         return None, messages
     quantity = qty_raw
     if not isinstance(quantity, Decimal):
@@ -291,8 +291,13 @@ def _resolve_row(
             messages.append(
                 ValidationMessage(
                     kind="blocking_error", code=CODE_QTY_INVALID,
-                    message=f"客户PO Order Quantity 不是有效数字：{qty_raw!r}",
-                    sheet=SHEET_CUSTOMER_PO, row=None, field=_cp("order_quantity"),
+                    message=(
+                        f"客户PO row {_row_label(qty_row)}（Material {sap}）的 "
+                        f"Order Quantity 不是有效数字：{qty_raw!r}"
+                    ),
+                    sheet=SHEET_CUSTOMER_PO,
+                    row=_row_number(qty_row),
+                    field=_cp("order_quantity"),
                 )
             )
             return None, messages
@@ -486,6 +491,61 @@ def _resolve_customer_po_raw_entry(
     return None, None
 
 
+def _resolve_customer_po_quantity_entry(
+    *,
+    sap: str,
+    po_no: str,
+    customer_po_lookup: CustomerPoLookup,
+) -> tuple[dict[str, object] | None, object | None, ValidationMessage | None]:
+    """按当前 SAP 精确匹配客户PO Material 后读取 Order Quantity。"""
+    by_material, all_rows = customer_po_lookup
+    if not all_rows:
+        return None, None, ValidationMessage(
+            kind="blocking_error",
+            code=CODE_QTY_MISSING,
+            message=(
+                f"客户PO中没有 PO {po_no} 的记录，无法按 SAP {sap} "
+                "匹配 Material 并读取 Order Quantity"
+            ),
+            sheet=SHEET_CUSTOMER_PO,
+            row=None,
+            field=_cp("purchasing_document"),
+        )
+
+    rows = by_material.get(sap, ())
+    if not rows:
+        return None, None, ValidationMessage(
+            kind="blocking_error",
+            code=CODE_QTY_MISSING,
+            message=(
+                f"客户PO中有 PO {po_no}，但没有 Material = {sap} 的行，"
+                "无法读取 Order Quantity"
+            ),
+            sheet=SHEET_CUSTOMER_PO,
+            row=None,
+            field=_cp("material"),
+        )
+
+    field_name = _cp("order_quantity")
+    for row in rows:
+        raw = row.get(field_name)
+        if raw is not None and raw != "":
+            return row, raw, None
+
+    first_row = rows[0]
+    return first_row, None, ValidationMessage(
+        kind="blocking_error",
+        code=CODE_QTY_MISSING,
+        message=(
+            f"客户PO row {_row_label(first_row)}（Material {sap}）的 "
+            "Order Quantity 为空，请补齐后再生成"
+        ),
+        sheet=SHEET_CUSTOMER_PO,
+        row=_row_number(first_row),
+        field=field_name,
+    )
+
+
 def _matched_customer_po_rows(
     *,
     sap: str,
@@ -494,6 +554,17 @@ def _matched_customer_po_rows(
     by_material, all_rows = customer_po_lookup
     material_matches = by_material.get(sap, ())
     return material_matches or all_rows
+
+
+def _row_number(row: dict[str, object] | None) -> int | None:
+    if row is None:
+        return None
+    return _int_or_none(row.get(ROW_NUMBER_KEY))
+
+
+def _row_label(row: dict[str, object] | None) -> str:
+    row_number = _row_number(row)
+    return str(row_number) if row_number is not None else "?"
 
 
 def _resolve_customer_po_field(
@@ -669,6 +740,7 @@ __all__ = [
     "PO_PRICE_COLUMNS",
     "ResolveResult",
     "build_product_index",
+    "build_product_index_from_rows",
     "resolve_po_lines",
     "resolve_po_rows",
 ]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ro_generator.workbench_service import inspect_workbook
+from ro_generator.workbench_service import get_po_issues, inspect_workbook
 
 FIXTURE = Path(__file__).parents[3] / "tests" / "fixtures" / "synthetic_base.xlsx"
 
@@ -28,8 +28,7 @@ def test_inspect_workbook_ready_po():
     result = inspect_workbook(str(FIXTURE))
     ready = [p for p in result.po_list if p.status == "ready"]
     assert len(ready) >= 1
-    # 黄金回归 PO 应该是 ready
-    assert any(p.po_no == "4500030844" for p in ready)
+    assert any(p.po_no == "4500099999" for p in ready)
 
 
 def test_inspect_workbook_has_sellers():
@@ -52,3 +51,26 @@ def test_missing_file_returns_error():
     result = inspect_workbook("/nonexistent/file.xlsx")
     assert not result.ok
     assert len(result.errors) >= 1
+
+
+def test_get_po_issues_returns_blocking_details():
+    issues = get_po_issues(str(FIXTURE), "4500088888")
+
+    assert issues["po_no"] == "4500088888"
+    assert issues["blocking_count"] >= 1
+    assert issues["warnings_count"] >= 0
+    assert issues["blocking_errors"]
+    first = issues["blocking_errors"][0]
+    assert first["kind"] == "blocking_error"
+    assert first["code"]
+    assert first["message"]
+    assert "sheet" in first
+    assert "field" in first
+
+
+def test_get_po_issues_returns_empty_for_ready_po():
+    issues = get_po_issues(str(FIXTURE), "4500099999")
+
+    assert issues["po_no"] == "4500099999"
+    assert issues["blocking_count"] == 0
+    assert issues["blocking_errors"] == []

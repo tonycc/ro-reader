@@ -5,7 +5,7 @@ export default defineConfig({
   timeout: 30_000,
   expect: { timeout: 10_000 },
   use: {
-    baseURL: "http://127.0.0.1:5173",
+    baseURL: "http://localhost:6173",
     headless: true,
     viewport: { width: 1440, height: 900 },
   },
@@ -18,8 +18,8 @@ export default defineConfig({
       reuseExistingServer: true,
     },
     {
-      command: "npx vite --host 127.0.0.1 --port 5173",
-      port: 5173,
+      command: "npx vite --host 127.0.0.1 --port 6173",
+      port: 6173,
       timeout: 10_000,
       reuseExistingServer: true,
     },

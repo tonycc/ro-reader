@@ -12,6 +12,14 @@ async function openBaseFile(page: import("@playwright/test").Page) {
   await page.waitForTimeout(2000);
 }
 
+async function selectGsSeller(page: import("@playwright/test").Page) {
+  await page.locator(".filter-pill").filter({ hasText: "GS PTE" }).click();
+}
+
+async function selectPiDocument(page: import("@playwright/test").Page) {
+  await page.locator(".filter-pill").filter({ hasText: "PI" }).click();
+}
+
 test.describe("RO Workbench E2E", () => {
   test("open base file and see PO list", async ({ page }) => {
     await openBaseFile(page);
@@ -33,6 +41,8 @@ test.describe("RO Workbench E2E", () => {
 
     // Switch to preview tab
     await page.locator(".tab").filter({ hasText: "单据预览" }).click();
+    await selectGsSeller(page);
+    await selectPiDocument(page);
     await page.waitForTimeout(2000);
 
     // Document card with lines should be visible
@@ -51,6 +61,8 @@ test.describe("RO Workbench E2E", () => {
 
     // Switch to preview tab
     await page.locator(".tab").filter({ hasText: "单据预览" }).click();
+    await selectGsSeller(page);
+    await selectPiDocument(page);
     await page.waitForTimeout(3000);
 
     // Should show a document title
@@ -58,8 +70,7 @@ test.describe("RO Workbench E2E", () => {
     await expect(title).toBeVisible({ timeout: 5000 });
 
     // Should show seller/buyer/PO info
-    const docMeta = page.locator(".top-field-line");
-    await expect(docMeta).toContainText("PO:");
+    await expect(page.getByRole("row", { name: /PI # 4500099999/ })).toBeVisible();
   });
 
   test("field source summary toggles", async ({ page }) => {
@@ -69,6 +80,8 @@ test.describe("RO Workbench E2E", () => {
 
     // Switch to preview tab
     await page.locator(".tab").filter({ hasText: "单据预览" }).click();
+    await selectGsSeller(page);
+    await selectPiDocument(page);
     await page.waitForTimeout(3000);
 
     // Click "字段来源" button to show source summary
@@ -91,24 +104,29 @@ test.describe("RO Workbench E2E", () => {
     await page.locator(".po-card").filter({ hasText: "4500099999" }).click();
     await page.waitForTimeout(2000);
 
-    // Double-click to start editing on a cell containing "100"
-    const qtyCell = page.getByRole("cell", { name: "100" }).first();
+    // Double-click FINALQTY in the first data row.
+    const qtyCell = page.locator(".data-table tbody tr").first().locator("td").nth(7);
     await qtyCell.dblclick();
 
     const input = page.locator('[data-testid="cell-edit-input"]');
     await expect(input).toBeVisible({ timeout: 3000 });
-    await input.fill("150");
+    await input.fill("175");
     await page.keyboard.press("Enter");
     await page.waitForTimeout(1500);
 
     // After edit + refresh, the cell should show the new value.
-    await expect(page.getByRole("cell", { name: "150" }).first()).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole("cell", { name: "175" }).first()).toBeVisible({ timeout: 5000 });
   });
 
   test("export generates file", async ({ page }) => {
     await openBaseFile(page);
     await page.locator(".po-card").filter({ hasText: "4500099999" }).click();
     await page.waitForTimeout(2000);
+
+    // Choose a stable exportable preview first
+    await page.locator(".tab").filter({ hasText: "单据预览" }).click();
+    await selectGsSeller(page);
+    await selectPiDocument(page);
 
     // Switch to export tab
     await page.locator(".tab").filter({ hasText: "导出确认" }).click();
@@ -129,5 +147,105 @@ test.describe("RO Workbench E2E", () => {
     const blockedCard = page.locator(".po-card").filter({ hasText: "4500088888" });
     await expect(blockedCard).toHaveCount(1);
     await expect(blockedCard).toContainText("阻断");
+  });
+
+  test("blocked badge in data check opens issue panel", async ({ page }) => {
+    await openBaseFile(page);
+    await page.locator(".po-card").filter({ hasText: "4500088888" }).click();
+
+    const issueBadge = page.locator(".issue-badge.blocked");
+    await expect(issueBadge).toBeVisible({ timeout: 5000 });
+    await issueBadge.click();
+
+    const issuePanel = page.locator(".data-issue-panel");
+    await expect(issuePanel).toBeVisible();
+    await expect(issuePanel).toContainText("阻断原因");
+    await expect(issuePanel).toContainText("SAP");
+
+    await page.locator(".data-issue-close-btn").click();
+    await expect(issuePanel).toBeHidden();
+
+    await issueBadge.click();
+    await expect(issuePanel).toBeVisible();
+    await page.mouse.click(1000, 760);
+    await expect(issuePanel).toBeHidden();
+  });
+
+  test("warning badge in data check opens warning panel", async ({ page }) => {
+    await openBaseFile(page);
+    await page.locator(".po-card").filter({ hasText: "4500099999" }).click();
+
+    const warningBadge = page.locator(".issue-badge.fix");
+    await expect(warningBadge).toBeVisible({ timeout: 5000 });
+    await warningBadge.click();
+
+    const warningPanel = page.locator(".data-warning-panel");
+    await expect(warningPanel).toBeVisible();
+    await expect(warningPanel).toContainText("预警详情");
+    await expect(warningPanel).toContainText("NO_PRICES");
+
+    await page.locator(".data-warning-close-btn").click();
+    await expect(warningPanel).toBeHidden();
+
+    await warningBadge.click();
+    await expect(warningPanel).toBeVisible();
+    await page.mouse.click(1000, 760);
+    await expect(warningPanel).toBeHidden();
+  });
+
+  test("invoice and PL previews for selected seller share one page", async ({ page }) => {
+    await openBaseFile(page);
+    await page.evaluate(() => (window as any).__workbench__?.selectPo("4500099999"));
+    await page.evaluate(() => (window as any).__workbench__?.selectInvoice(null));
+    await page.locator(".tab").filter({ hasText: "单据预览" }).click();
+
+    await expect(page.getByRole("button", { name: "Invoice / PL", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Invoice", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "PL", exact: true })).toHaveCount(0);
+
+    await expect(page.locator(".preview-doc-section")).toHaveCount(2, { timeout: 8000 });
+    await expect(page.locator(".preview-body > .alert")).toHaveCount(0);
+    await expect(page.locator(".preview-doc-title").filter({ hasText: "SK · COMMERCIAL INVOICE" })).toBeVisible();
+    await expect(page.locator(".preview-doc-title").filter({ hasText: "SK · PACKING LIST" })).toBeVisible();
+    await expect(page.getByRole("row", { name: "Invoice No." })).toHaveCount(2);
+    const previewExportBtn = page.locator(".export-btn");
+    await expect(previewExportBtn).toBeVisible();
+    await expect(previewExportBtn).toContainText("Invoice / PL");
+    await previewExportBtn.click();
+    await expect(page.locator("footer")).toContainText("INVOICE&PL", { timeout: 8000 });
+    await expect(page.locator("footer")).toContainText(".xlsx");
+
+    await page.locator(".filter-pill").filter({ hasText: "GS PTE" }).click();
+    await expect(page.locator(".preview-doc-section")).toHaveCount(2, { timeout: 8000 });
+    await expect(page.locator(".preview-doc-title").filter({ hasText: "GS PTE · Invoice" })).toBeVisible();
+    await expect(page.locator(".preview-doc-title").filter({ hasText: "GS PTE · PL" })).toBeVisible();
+  });
+
+  test("preview blocking issues contribute to data check badge", async ({ page }) => {
+    await openBaseFile(page);
+    await page.locator(".po-card").filter({ hasText: "4500099999" }).click();
+
+    const issueBadge = page.locator(".issue-badge.blocked");
+    await expect(issueBadge).toBeVisible({ timeout: 5000 });
+    await issueBadge.click();
+
+    const issuePanel = page.locator(".data-issue-panel");
+    await expect(issuePanel).toBeVisible();
+    await expect(issuePanel).toContainText("INVOICE#");
+  });
+
+  test("blocked badge in preview opens issue panel", async ({ page }) => {
+    await openBaseFile(page);
+    await page.locator(".po-card").filter({ hasText: "4500088888" }).click();
+    await page.locator(".tab").filter({ hasText: "单据预览" }).click();
+
+    const issueBadge = page.locator(".issue-badge-btn");
+    await expect(issueBadge).toBeVisible({ timeout: 5000 });
+    await issueBadge.click();
+
+    const issuePanel = page.locator(".issue-panel");
+    await expect(issuePanel).toBeVisible();
+    await expect(issuePanel).toContainText("阻断原因");
+    await expect(issuePanel).toContainText("SAP");
   });
 });

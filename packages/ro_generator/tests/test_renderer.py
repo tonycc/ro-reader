@@ -32,7 +32,7 @@ from ro_generator.template_mapping import load_template_mapping
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 GS_INVOICE_MAPPING = REPO_ROOT / "templates" / "gs" / "mappings" / "invoice.yaml"
-GS_INVOICE_TEMPLATE = REPO_ROOT / "templates" / "gs" / "invoice.xlsx"
+GS_INVOICE_TEMPLATE = REPO_ROOT / "templates" / "gs" / "invoice&pl.xlsx"
 EMAX_PI_MAPPING = REPO_ROOT / "templates" / "emax" / "mappings" / "pi.yaml"
 EMAX_PO_MAPPING = REPO_ROOT / "templates" / "emax" / "mappings" / "po.yaml"
 EMAX_PL_MAPPING = REPO_ROOT / "templates" / "emax" / "mappings" / "pl.yaml"
@@ -331,6 +331,19 @@ class TestRenderBasic:
         assert loc.sheet == "PO record"
         assert loc.field == "FINAL EX-FACTORY DATE"
 
+    def test_emax_pi_usd_price_and_amount_use_dollar_number_format(self, tmp_path: Path) -> None:
+        mapping = load_template_mapping(EMAX_PI_MAPPING)
+        result = render_document(build_emax_pi(), mapping, tmp_path / "emax-pi.xlsx")
+        wb = load_workbook(result.output_path)
+        ws = wb["Standard Invoice format"]
+
+        assert ws["E18"].value == pytest.approx(32.8)
+        assert ws["G18"].value == pytest.approx(3280.0)
+        assert ws["G21"].value == pytest.approx(3280.0)
+        assert ws["E18"].number_format == '"$"#,##0.00'
+        assert ws["G18"].number_format == '"$"#,##0.00'
+        assert ws["G21"].number_format == '"$"#,##0.00'
+
     def test_emax_pi_number_traces_to_customer_po(self, tmp_path: Path) -> None:
         mapping = load_template_mapping(EMAX_PI_MAPPING)
         result = render_document(build_emax_pi(), mapping, tmp_path / "emax-pi.xlsx")
@@ -476,6 +489,17 @@ class TestRenderOverflow:
         assert ws["F25"].value is not None
         assert ws["H25"].value is not None
         # 10 行总数: 50+51+...+59 = 545
+        assert ws["F25"].value == 545
+
+    def test_total_label_shifts_with_totals_row(self, tmp_path: Path) -> None:
+        mapping = load_template_mapping(GS_INVOICE_MAPPING)
+        model = build_overflowing_invoice()
+        result = render_document(model, mapping, tmp_path / "out.xlsx")
+        wb = load_workbook(result.output_path)
+        ws = wb["INV"]
+
+        assert ws["A19"].value is None
+        assert ws["A25"].value == "Total"
         assert ws["F25"].value == 545
 
     def test_inserted_rows_have_styles(self, tmp_path: Path) -> None:
@@ -628,7 +652,7 @@ class TestSourceIndex:
         assert loc.sheet == "PO record"
         assert loc.field == "INV#"
 
-    def test_ship_to_header_traces_to_customer_po(self, tmp_path: Path) -> None:
+    def test_gs_pi_fixed_ship_to_header_has_no_base_source_trace(self, tmp_path: Path) -> None:
         from ro_generator.template_mapping import load_template_mapping as ltm
         gs_pi_mapping = REPO_ROOT / "templates" / "gs" / "mappings" / "pi.yaml"
         mapping = ltm(gs_pi_mapping)
@@ -641,10 +665,12 @@ class TestSourceIndex:
         )
         assert model.model is not None, model.messages
         result = render_document(model.model, mapping, tmp_path / "out.xlsx")
+        wb = load_workbook(result.output_path)
+        ws = wb[mapping.sheet]
+        assert ws["G10"].value == "E MAX SPORT PTE. LTD."
+
         loc = result.source_index.lookup_source("G10")
-        assert loc is not None
-        assert loc.sheet == "客户PO"
-        assert loc.field == "ship to"
+        assert loc is None
 
     def test_emax_pi_ship_to_continuation_headers_trace_to_customer_po(self, tmp_path: Path) -> None:
         mapping = load_template_mapping(EMAX_PI_MAPPING)

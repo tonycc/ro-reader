@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 from openpyxl import Workbook
-
+from ro_generator.workbook_reader import SheetData, WorkbookReader
 from ro_generator.workbook_snapshot import (
     FileSignature,
-    PoInspection,
-    WorkbookSnapshot,
     build_workbook_snapshot,
 )
 
@@ -246,3 +242,36 @@ class TestWorkbookSnapshot:
         sig = FileSignature.from_file(str(path))
         assert sig.size > 0
         assert sig.mtime_ns > 0
+
+    def test_build_reads_each_sheet_once(self, tmp_path, monkeypatch):
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[basic_po_row()],
+            customer_po_rows=[{
+                "Purchasing Document": "4500030844",
+                "Item": "10",
+                "Material": "21-44640",
+                "Order Quantity": 100,
+            }],
+        )
+        calls: list[str] = []
+        original_read_sheet = WorkbookReader.read_sheet
+
+        def counting_read_sheet(
+            self: WorkbookReader,
+            sheet_name: str,
+            *args: object,
+            **kwargs: object,
+        ) -> SheetData:
+            calls.append(sheet_name)
+            return original_read_sheet(self, sheet_name, *args, **kwargs)
+
+        monkeypatch.setattr(WorkbookReader, "read_sheet", counting_read_sheet)
+
+        snap = build_workbook_snapshot(path)
+
+        assert len(snap.po_summary) == 1
+        assert calls.count("DATA BASE") == 1
+        assert calls.count("PO record") == 1
+        assert calls.count("客户PO") == 1

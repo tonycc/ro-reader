@@ -38,7 +38,10 @@ function formatTermKey(key: string): string {
       <div class="info-title">Ship To</div>
       <p class="clickable" @click="onFieldClick('ship_to', $event)">{{ pd.ship_to }}</p>
     </div>
-    <span v-else-if="field === 'invoice_no' && pd.invoice_no" class="top-clickable clickable" @click="onFieldClick('invoice_no', $event)">Invoice #: {{ pd.invoice_no }}</span>
+    <span v-else-if="field === 'invoice_no'" class="top-clickable">
+      Invoice #:
+      <span v-if="pd.invoice_no" class="clickable" @click="onFieldClick('invoice_no', $event)">{{ pd.invoice_no }}</span>
+    </span>
     <span v-else-if="field === 'pi_no' && pd.pi_no && pd.document_type === 'PI'" class="top-clickable clickable" @click="onFieldClick('pi_no', $event)">PI #: {{ pd.pi_no }}</span>
     <div v-else-if="field === 'terms' && Object.keys(pd.terms).length" class="terms-block">
       <div v-for="(val, key) in pd.terms" :key="'t_' + key" class="term-line">

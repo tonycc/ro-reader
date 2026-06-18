@@ -32,6 +32,7 @@ from ro_generator.source_index import SourceIndex
 from ro_generator.workbench_service import (
     get_customer_po_data,
     get_po_data,
+    get_po_issues,
     inspect_file_path,
     inspect_workbook,
 )
@@ -285,6 +286,19 @@ def get_customer_po_endpoint(po_no: str, base_file: str = Query(...)) -> dict[st
     return get_customer_po_data(base_file, po_no)
 
 
+@app.get("/api/po/{po_no}/issues")
+def get_po_issues_endpoint(
+    po_no: str,
+    base_file: str = Query(...),
+    x_session_id: str = Header(..., alias="X-Session-Id"),
+) -> dict[str, Any]:
+    """返回指定 PO 的阻断原因和警告明细。"""
+    session = _get_session(x_session_id)
+    if session is None:
+        raise HTTPException(400, detail={"code": "INVALID_SESSION", "message": f"session {x_session_id!r} 无效或已过期"})
+    return get_po_issues(base_file, po_no)
+
+
 @app.post("/api/po/{po_no}/dry-run")
 def dry_run(
     po_no: str,
@@ -415,10 +429,11 @@ def export_documents(
         raise HTTPException(400, detail={"code": "INVALID_SESSION", "message": f"session {x_session_id!r} 无效或已过期"})
 
     doc = req.document.upper() if req.document else "INVOICE"
+    documents = ("INVOICE", "PL") if doc in {"INVOICE_PL", "INVOICE&PL"} else (doc,)
     request = DocumentRequest(
         base_file=req.base_file,
         po_no=po_no,
-        documents=(doc,),  # type: ignore[arg-type]
+        documents=documents,  # type: ignore[arg-type]
         seller=req.seller,
         invoice_no=req.invoice_no,
         output_format="zip",

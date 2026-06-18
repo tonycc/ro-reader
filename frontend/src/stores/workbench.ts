@@ -1,6 +1,15 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
-import type { PoListItem, DryRunResult, SourceIndexEntry, PreviewPayload, PreviewSourceEntry } from "./api";
+import type {
+  PoListItem,
+  DryRunResult,
+  SourceIndexEntry,
+  PreviewPayload,
+  PreviewSourceEntry,
+  PreviewDocumentResult,
+  PoIssuesResponse,
+  PreviewResponse,
+} from "./api";
 import { api, setSessionId, getSessionId, ApiError } from "./api";
 
 export const useWorkbench = defineStore("workbench", () => {
@@ -19,6 +28,7 @@ export const useWorkbench = defineStore("workbench", () => {
 
   const preview = ref<DryRunResult | null>(null);
   const previewData = ref<PreviewPayload | null>(null);
+  const previewDocuments = ref<PreviewDocumentResult[]>([]);
   const previewDocType = ref("INVOICE");
   const previewLoading = ref(false);
   const sourceIndex = ref<SourceIndexEntry[]>([]);
@@ -29,6 +39,9 @@ export const useWorkbench = defineStore("workbench", () => {
 
   const blockingErrors = ref<unknown[]>([]);
   const warnings = ref<unknown[]>([]);
+  const poIssues = ref<PoIssuesResponse | null>(null);
+  const issuesLoading = ref(false);
+  const issuesError = ref("");
 
   const previewError = ref("");
   const exportError = ref("");
@@ -39,7 +52,9 @@ export const useWorkbench = defineStore("workbench", () => {
   async function openSession(file: string) {
     loading.value = true; error.value = "";
     selectedPo.value = ""; preview.value = null;
+    previewData.value = null; previewDocuments.value = [];
     blockingErrors.value = []; warnings.value = []; sourceIndex.value = [];
+    poIssues.value = null; issuesError.value = "";
     try {
       baseFile.value = file;
       const data = await api.openSession(file);
@@ -53,30 +68,60 @@ export const useWorkbench = defineStore("workbench", () => {
   async function selectPo(po_no: string) {
     selectedPo.value = po_no;
     preview.value = null; blockingErrors.value = []; warnings.value = []; sourceIndex.value = [];
+    previewData.value = null; previewDocuments.value = [];
+    poIssues.value = null; issuesError.value = "";
     if (!baseFile.value) return;
     const data = await api.getDataView(baseFile.value, po_no);
     dataRows.value = data.rows; dataHeaders.value = data.headers;
     const po = poList.value.find((p) => p.po_no === po_no);
     if (po?.sellers.length) selectedSeller.value = po.sellers[0];
     if (po?.invoice_nos.length) selectedInvoiceNo.value = po.invoice_nos[0];
+    await refreshPoIssues();
     await refreshPreview();
+  }
+
+  async function refreshPoIssues() {
+    if (!baseFile.value || !selectedPo.value) return;
+    issuesLoading.value = true;
+    issuesError.value = "";
+    try {
+      poIssues.value = await api.getPoIssues(baseFile.value, selectedPo.value);
+    } catch (e) {
+      issuesError.value = e instanceof ApiError ? e.message : `读取阻断原因失败：${e}`;
+      poIssues.value = null;
+    } finally { issuesLoading.value = false; }
   }
 
   async function refreshPreview(docType?: string) {
     if (!baseFile.value || !selectedPo.value || !selectedSeller.value) return;
     const dt = docType || previewDocType.value || "INVOICE";
+    const requestSeller = selectedSeller.value;
     previewLoading.value = true;
     previewError.value = "";
+    previewData.value = null;
+    previewDocuments.value = [];
+    previewSourceEntries.value = [];
+    blockingErrors.value = [];
+    warnings.value = [];
     try {
-      const result = await api.preview({
-        base_file: baseFile.value, po_no: selectedPo.value,
-        seller: selectedSeller.value, invoice_no: selectedInvoiceNo.value, document: dt,
-      });
       previewDocType.value = dt;
-      previewData.value = result.preview;
-      previewSourceEntries.value = result.preview?.source_entries ?? [];
-      warnings.value = result.warnings;
-      blockingErrors.value = result.errors;
+      const docs = isInvoicePlDocument(dt) ? ["INVOICE", "PL"] : [dt];
+      const results = await Promise.all(docs.map(async (document) => {
+        try {
+          const result = await api.preview({
+            base_file: baseFile.value, po_no: selectedPo.value,
+            seller: requestSeller, invoice_no: selectedInvoiceNo.value, document,
+          });
+          return toPreviewDocument(document, result, requestSeller);
+        } catch (e) {
+          return toFailedPreviewDocument(document, requestSeller, e);
+        }
+      }));
+      previewDocuments.value = results;
+      previewData.value = results.find((doc) => doc.preview)?.preview ?? null;
+      previewSourceEntries.value = results.flatMap((doc) => doc.preview?.source_entries ?? []);
+      blockingErrors.value = results.flatMap((doc) => doc.errors);
+      warnings.value = results.flatMap((doc) => doc.warnings);
     } catch (e) {
       previewError.value = e instanceof ApiError ? e.message : `预览失败：${e}`;
     } finally { previewLoading.value = false; }
@@ -95,10 +140,11 @@ export const useWorkbench = defineStore("workbench", () => {
     exporting.value = true;
     exportError.value = "";
     try {
+      const exportDocument = isInvoicePlDocument(previewDocType.value) ? "INVOICE_PL" : previewDocType.value;
       const result = await api.exportDocuments({
         base_file: baseFile.value, po_no: selectedPo.value,
         seller: selectedSeller.value, invoice_no: selectedInvoiceNo.value,
-        document: previewDocType.value,
+        document: exportDocument,
       });
       lastExportFile.value = result.output_file ?? "";
       // Trigger browser download
@@ -115,19 +161,77 @@ export const useWorkbench = defineStore("workbench", () => {
     } finally { exporting.value = false; }
   }
 
-  function selectSeller(seller: string) { selectedSeller.value = seller; refreshPreview(); }
-  function selectInvoice(inv: string | null) { selectedInvoiceNo.value = inv; refreshPreview(); }
+  function selectSeller(seller: string) { selectedSeller.value = seller; return refreshPreview(); }
+  function selectInvoice(inv: string | null) { selectedInvoiceNo.value = inv; return refreshPreview(); }
+
+  function isInvoicePlDocument(document: string): boolean {
+    return document === "INVOICE" || document === "PL";
+  }
+
+  function documentLabel(document: string): string {
+    if (document === "INVOICE") return "Invoice";
+    if (document === "PL") return "PL";
+    return document;
+  }
+
+  function toPreviewDocument(document: string, result: PreviewResponse, seller: string): PreviewDocumentResult {
+    const softPreviewIssues = result.errors.filter(isSoftPreviewIssue).map(asPreviewWarning);
+    const errors = result.errors.filter((issue) => !isSoftPreviewIssue(issue));
+    const title = result.preview?.title || documentLabel(document);
+    return {
+      id: `${seller}-${document}`,
+      seller,
+      document,
+      label: `${seller} · ${title}`,
+      preview: result.preview,
+      errors,
+      warnings: [...result.warnings, ...softPreviewIssues],
+    };
+  }
+
+  function toFailedPreviewDocument(document: string, seller: string, error: unknown): PreviewDocumentResult {
+    const message = error instanceof ApiError ? error.message : `预览失败：${error}`;
+    return {
+      id: `${seller}-${document}`,
+      seller,
+      document,
+      label: `${seller} · ${documentLabel(document)}`,
+      preview: null,
+      errors: [{ kind: "blocking_error", code: "PREVIEW_REQUEST_FAILED", message }],
+      warnings: [],
+    };
+  }
+
+  function isSoftPreviewIssue(issue: unknown): boolean {
+    return getIssueCode(issue) === "NO_LINES_FOR_SELLER";
+  }
+
+  function getIssueCode(issue: unknown): string {
+    if (!issue || typeof issue !== "object") return "";
+    const code = (issue as Record<string, unknown>).code;
+    return typeof code === "string" ? code : "";
+  }
+
+  function asPreviewWarning(issue: unknown): unknown {
+    if (!issue || typeof issue !== "object") return issue;
+    return {
+      ...(issue as Record<string, unknown>),
+      kind: "warning",
+      severity: "low",
+    };
+  }
 
   return {
     baseFile, poList, loading, error,
     selectedPo, dataRows, dataHeaders,
     selectedSeller, selectedInvoiceNo,
-    preview, previewData, previewDocType, previewLoading, sourceIndex, previewSourceEntries,
+    preview, previewData, previewDocuments, previewDocType, previewLoading, sourceIndex, previewSourceEntries,
     exporting, lastExportFile,
     blockingErrors, warnings,
+    poIssues, issuesLoading, issuesError,
     previewError, exportError,
     poEntry, poStatus,
     openSession, selectPo, refreshPreview, editCell, doExport,
-    selectSeller, selectInvoice,
+    selectSeller, selectInvoice, refreshPoIssues,
   };
 });

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Final, TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
     from ro_generator.document_model import DocumentModel
@@ -105,12 +105,12 @@ def build_preview_totals(
         value = getattr(model, spec.model_attr, None)
         if value is None:
             continue
-        totals[spec.preview_key] = str(value)
+        totals[spec.preview_key] = _format_total_preview_value(spec.preview_key, value)
 
     if "total_quantity" not in totals:
         totals["total_quantity"] = "0"
     if model.document_type != "PL":
-        totals.setdefault("total_amount", "0")
+        totals.setdefault("total_amount", "$0.00")
         totals["currency"] = "USD"
 
     totals["_labels"] = {
@@ -130,6 +130,13 @@ def iter_present_preview_totals(
         if value is not None:
             entries.append((spec, str(value)))
     return tuple(entries)
+
+
+def _format_total_preview_value(preview_key: str, value: Decimal) -> str:
+    if preview_key == "total_amount":
+        normalized = value.quantize(Decimal("0.01"))
+        return f"${normalized:,.2f}"
+    return str(value)
 
 
 __all__ = [

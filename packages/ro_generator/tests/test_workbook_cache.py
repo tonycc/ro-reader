@@ -4,11 +4,8 @@ from __future__ import annotations
 
 import threading
 import time
-from pathlib import Path
 
-import pytest
 from openpyxl import Workbook
-
 from ro_generator.workbook_cache import WorkbookCacheManager
 
 # —————————————————————————————————————
@@ -181,8 +178,6 @@ class TestConcurrency:
             po_record_rows=[basic_po_row()],
         )
         cache = WorkbookCacheManager(ttl_seconds=3600)
-        build_count = 0
-        original_build = cache.get_snapshot
 
         # We can't easily patch the internal build, so we verify by
         # checking that concurrent access returns the same object

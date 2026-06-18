@@ -13,5 +13,7 @@ if (import.meta.env.DEV || import.meta.env.MODE === "test") {
   // Expose for E2E tests (bypass prompt() dialog which is unreliable in headless browsers).
   (window as any).__workbench__ = {
     openSession: (path: string) => useWorkbench(pinia).openSession(path),
+    selectPo: (poNo: string) => useWorkbench(pinia).selectPo(poNo),
+    selectInvoice: (invoiceNo: string | null) => useWorkbench(pinia).selectInvoice(invoiceNo),
   };
 }

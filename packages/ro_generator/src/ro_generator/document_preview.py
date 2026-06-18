@@ -329,6 +329,8 @@ def _format_footer_total_value(
         return text
     if preview_key == "total_amount":
         currency = totals.get("currency")
+        if text.startswith("$"):
+            return text
         if isinstance(currency, str) and currency:
             return f"{currency} {text}"
         return text
@@ -373,10 +375,7 @@ def _build_column_labels(
     result: list[dict[str, str]] = []
     for key in columns:
         raw_label = config_labels.get(key)
-        if isinstance(raw_label, str):
-            label = raw_label
-        else:
-            label = _COLUMN_LABEL_DEFAULTS.get(key, key)
+        label = raw_label if isinstance(raw_label, str) else _COLUMN_LABEL_DEFAULTS.get(key, key)
         result.append({"key": key, "label": str(label)})
     return result, columns
 
@@ -506,7 +505,11 @@ def _build_source_entries(
                     field_name, seller=model.seller, document_type=model.document_type
                 )
                 label = spec.label if spec is not None else field_name
-                if field_name in HEADER_DATE_KEYS:
+                header_fixed = mapping.header_fixed if mapping is not None else {}
+                if field_name in header_fixed:
+                    source_type, sheet, field = ("template_content", None, None)
+                    rule = "YAML header_fixed 固定值"
+                elif field_name in HEADER_DATE_KEYS:
                     source_type, sheet, field = ("system_generated", None, None)
                     rule = "预览时自动填入程序运行当天日期"
                 elif field_name in HEADER_MANUAL_KEYS:
