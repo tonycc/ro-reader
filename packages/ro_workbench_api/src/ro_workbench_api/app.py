@@ -178,6 +178,7 @@ class DryRunRequest(BaseModel):
     seller: str
     invoice_no: str | None = None
     document: str = "INVOICE"
+    documents: list[str] | None = None
 
 
 class EditFieldRequest(BaseModel):
@@ -428,8 +429,7 @@ def export_documents(
     if session is None:
         raise HTTPException(400, detail={"code": "INVALID_SESSION", "message": f"session {x_session_id!r} 无效或已过期"})
 
-    doc = req.document.upper() if req.document else "INVOICE"
-    documents = ("INVOICE", "PL") if doc in {"INVOICE_PL", "INVOICE&PL"} else (doc,)
+    documents = _export_documents_from_request(req)
     request = DocumentRequest(
         base_file=req.base_file,
         po_no=po_no,
@@ -441,6 +441,18 @@ def export_documents(
     )
     result = generate(request)
     return _result_to_dict(result)
+
+
+def _export_documents_from_request(req: DryRunRequest) -> tuple[str, ...]:
+    raw_documents = req.documents if req.documents is not None else [req.document]
+    documents: list[str] = []
+    for raw in raw_documents:
+        doc = raw.upper() if raw else "INVOICE"
+        if doc in {"INVOICE_PL", "INVOICE&PL"}:
+            documents.extend(["INVOICE", "PL"])
+        else:
+            documents.append(doc)
+    return tuple(documents)
 
 
 @app.get("/api/download")

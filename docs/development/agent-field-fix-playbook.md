@@ -80,6 +80,8 @@
 | 明细固定列 | `PCS`、`KGS`、`China` | mapping YAML `lines.row_fixed` |
 | 明细动态列 | `quantity`、`amount` | mapping YAML `lines.columns` |
 | 明细样式参考行 | `style_source_row` | mapping YAML `lines.style_source_row` |
+| 合计字段 | `total_quantity`、`total_carton_count` | mapping YAML `totals` |
+| 底部动态说明 | `PACKED IN <总 CTNS> CTNS` | mapping YAML `notes` + `renderer.py` |
 | 表格表头保护行 | `table_header_row` | mapping YAML `table_header_row` |
 | 纯预览条款 | `incoterm`、`term`、`from`、`to` | `preview_content.static_terms` |
 | 预览条款顺序 | `payment_terms`、`port_of_loading` 顺序 | `preview_content.terms_fields` |
@@ -131,6 +133,7 @@
 - 单据口径错了：先看 `document_model.py`
 - 格子写错了：先看 mapping YAML
 - 每行固定值错了：先看 `lines.row_fixed`
+- 底部说明没随合计更新：先看 mapping YAML 的 `notes`，再看 `renderer.py`
 - 预览条款错了：先看 `header_fixed` / `terms_fields` / `static_terms`
 - 预览值对不上 YAML：再看 `document_preview.py`
 - Excel 导出不对但预览对：再看 `renderer.py`

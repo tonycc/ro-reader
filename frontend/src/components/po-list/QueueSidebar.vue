@@ -143,7 +143,7 @@ watch(() => wb.poList.length, (n) => {
             <span class="b-dot" />{{ statusLabel[po.status] }}
           </span>
         </div>
-        <div class="po-meta">{{ po.line_count }} 条数据</div>
+        <div class="po-meta">PO record {{ po.line_count }} 行</div>
       </article>
       <div v-if="!filtered.length && !wb.loading" class="empty-msg">没有匹配的 PO</div>
       <div v-if="wb.loading" class="empty-msg">解析中…</div>

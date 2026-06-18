@@ -160,7 +160,8 @@ def _render_into_workbook(
 
     _write_styles(ws, mapping)
     _write_header(ws, model, mapping, builder)
-    _write_lines_and_totals(ws, model, mapping, builder)
+    row_offset = _write_lines_and_totals(ws, model, mapping, builder)
+    _write_notes(ws, model, mapping, row_offset, builder)
 
 
 # —————————————————————————————————————
@@ -271,14 +272,14 @@ def _write_lines_and_totals(
     model: DocumentModel,
     mapping: TemplateMapping,
     builder: SourceIndexBuilder,
-) -> None:
+) -> int:
     """把订单行写到模板，超出预留空间则插入新行并复制样式。"""
     line_count = len(model.lines)
     if line_count == 0:
         # 没有行数据时只清理样板，写合计为 0
         _clear_sample_rows(ws, mapping)
         _write_totals(ws, model, mapping, totals_row_offset=0, builder=builder)
-        return
+        return 0
 
     start_row = mapping.lines.start_row
     style_source_row = mapping.lines.style_source_row
@@ -320,6 +321,7 @@ def _write_lines_and_totals(
 
     # 4. 写合计（位置已被 openpyxl 自动平移）
     _write_totals(ws, model, mapping, totals_row_offset=insertion_count, builder=builder)
+    return insertion_count
 
 
 def _reserved_row_count(mapping: TemplateMapping) -> int:
@@ -504,6 +506,41 @@ def _write_totals(
                 ws[cell_addr].number_format = USD_NUMBER_FORMAT
             # 合计是工作台计算得出，不指向某一行
             builder.add_computed(cell_addr, total_spec.preview_key)
+
+
+def _write_notes(
+    ws: Worksheet,
+    model: DocumentModel,
+    mapping: TemplateMapping,
+    row_offset: int,
+    builder: SourceIndexBuilder,
+) -> None:
+    """写模板底部说明字段，例如 PL 的 PACKED IN {CTNS}。"""
+    for field_name, cell in mapping.notes.items():
+        value = _note_value_for_mapping_key(model, field_name)
+        if value is None:
+            continue
+        try:
+            col_letter, row = coordinate_from_string(cell.strip())
+        except ValueError as exc:
+            raise InternalError(f"mapping notes 的单元格地址 {cell!r} 无法解析") from exc
+        cell_addr = f"{col_letter}{row + row_offset}"
+        ws[cell_addr] = value
+        builder.add_computed(cell_addr, f"notes.{field_name}")
+
+
+def _note_value_for_mapping_key(model: DocumentModel, field_name: str) -> str | None:
+    if field_name in {"packed_in", "packed_in_ctns"}:
+        if model.total_carton_count is None:
+            return None
+        return f"PACKED IN {_format_decimal_for_note(model.total_carton_count)} CTNS"
+    return None
+
+
+def _format_decimal_for_note(value: Decimal) -> str:
+    if value == value.to_integral_value():
+        return str(value.quantize(Decimal("1")))
+    return format(value.normalize(), "f")
 
 
 # —————————————————————————————————————

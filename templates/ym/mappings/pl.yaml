@@ -26,11 +26,15 @@ lines:
     net_weight: G
     gross_weight: I
     cbm: K
+    carton_count: M
 totals:
   quantity: E12
   net_weight: G12
   gross_weight: I12
   cbm: K12
+  carton_count: M12
+notes:
+  packed_in_ctns: A16
 style:
   bold:
   - F1
@@ -49,6 +53,7 @@ style:
   - J8
   - K8
   - L8
+  - M8
   - A12
   - E12
   - F12
@@ -58,6 +63,7 @@ style:
   - J12
   - K12
   - L12
+  - M12
 preview_content:
   title: PACKING LIST
   static_terms: {}
@@ -74,6 +80,7 @@ preview_content:
     J: ''
     cbm: Measurement
     L: ''
+    carton_count: CTNS
   seller_info:
   - WEIHAI E-MAX SPORT APPARATUS CO.,LTD
   - NO.25 TONGYI NORTH ROAD,HUANCUI DISTRICT, WEIHAI, SHANDONG, CHINA.

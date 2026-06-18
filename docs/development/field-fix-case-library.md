@@ -29,6 +29,7 @@
 | 案例 7 | 预览条款顺序错误 | `preview_content.terms_fields` |
 | 案例 8 | 预览对、导出错 | `renderer.py` / mapping YAML |
 | 案例 9 | 导出最后一行格式错误 | `lines.style_source_row` / `renderer.py` |
+| 案例 10 | 底部动态说明未随合计更新 | mapping YAML `notes` / `renderer.py` |
 
 ## 3. 案例详情
 
@@ -313,6 +314,48 @@
 - 导出 Excel 中异常行与正常行的 `number_format` 是否一致
 - 异常列的值是否仍为数值，而不是被格式化成日期文本
 - 至少覆盖一条会写入到预留区末尾的回归测试
+
+### 案例 10：`PACKED IN 88 CTNS` 没有随 PL 合计更新
+
+现象：
+
+- PL 明细和合计中的 `CTNS` 已经正确
+- 底部说明仍保留模板样板值，例如 `PACKED IN 88 CTNS`
+- 预览或数据模型中的 `total_carton_count` 正确，但导出 Excel 底部文本不正确
+
+判断：
+
+- 这是底部动态说明字段，不是 CTNS 明细来源问题
+- 如果 `M` 列明细和合计正确，根因通常不在 `resolver.py` 或 `document_model.py`
+- 需要检查 mapping 是否声明了 `notes`，以及 renderer 是否根据模型合计写入该单元格
+
+根因层级：
+
+- mapping YAML `notes`
+- `renderer.py` 的 notes 写入逻辑
+
+修改位置：
+
+- 对应 PL mapping 中声明：
+
+```yaml
+notes:
+  packed_in_ctns: A16
+```
+
+- renderer 根据 `DocumentModel.total_carton_count` 写入 `PACKED IN <总 CTNS> CTNS`
+
+不要这样改：
+
+- 不要直接把 Excel 模板中的 `88` 改成另一个固定数字
+- 不要在 `resolver.py` 里改 CTNS 口径来迁就底部说明
+- 不要只改预览 `notes`，因为导出 Excel 仍会保留模板样板值
+
+验证：
+
+- 导出 Excel 中 CTNS 合计单元格正确
+- 底部 `PACKED IN <总 CTNS> CTNS` 与合计一致
+- 覆盖一条 SK/YM PL 导出回归测试
 
 ## 4. 案例复用规则
 

@@ -20,6 +20,10 @@ async function selectPiDocument(page: import("@playwright/test").Page) {
   await page.locator(".filter-pill").filter({ hasText: "PI" }).click();
 }
 
+async function toggleExportDoc(page: import("@playwright/test").Page, label: string) {
+  await page.locator(".check-line").filter({ hasText: label }).locator(".checkbox").click();
+}
+
 test.describe("RO Workbench E2E", () => {
   test("open base file and see PO list", async ({ page }) => {
     await openBaseFile(page);
@@ -71,6 +75,22 @@ test.describe("RO Workbench E2E", () => {
 
     // Should show seller/buyer/PO info
     await expect(page.getByRole("row", { name: /PI # 4500099999/ })).toBeVisible();
+  });
+
+  test("preview explains line count scope and selected invoice", async ({ page }) => {
+    await openBaseFile(page);
+    const poCard = page.locator(".po-card").filter({ hasText: "4500099999" });
+    await expect(poCard).toContainText("PO record 1 行");
+    await poCard.click();
+
+    await page.locator(".tab").filter({ hasText: "单据预览" }).click();
+    await selectGsSeller(page);
+    await selectPiDocument(page);
+    await expect(page.locator(".preview-scope")).toContainText("当前预览 1 行 / PO record 1 行");
+
+    await page.locator(".filter-pill").filter({ hasText: "Invoice / PL" }).click();
+    await expect(page.locator(".preview-scope")).toContainText("INV# INV-2603-001");
+    await expect(page.locator(".invoice-filter")).toContainText("INV-2603-001");
   });
 
   test("field source summary toggles", async ({ page }) => {
@@ -140,6 +160,38 @@ test.describe("RO Workbench E2E", () => {
     const statusBar = page.locator("footer");
     await expect(statusBar).toContainText("已导出");
     await expect(statusBar).toContainText(".xlsx");
+  });
+
+  test("export screen sends selected PI document", async ({ page }) => {
+    await openBaseFile(page);
+    await page.locator(".po-card").filter({ hasText: "4500099999" }).click();
+    await page.waitForTimeout(2000);
+
+    await page.locator(".tab").filter({ hasText: "导出确认" }).click();
+    await toggleExportDoc(page, "形式发票（PI）");
+    await toggleExportDoc(page, "商业发票（CI）");
+    await toggleExportDoc(page, "装箱单（PL）");
+
+    await page.locator("button").filter({ hasText: "确认导出" }).click();
+    await expect(page.locator(".export-err")).toContainText("PI_NO_MISSING");
+  });
+
+  test("export surfaces core blocking error for SK PI", async ({ page }) => {
+    await openBaseFile(page);
+    await page.locator(".po-card").filter({ hasText: "4500030844" }).click();
+    await page.waitForTimeout(2000);
+
+    await page.locator(".tab").filter({ hasText: "单据预览" }).click();
+    await page.locator(".filter-pill").filter({ hasText: "SK" }).click();
+    await selectPiDocument(page);
+
+    await page.locator(".tab").filter({ hasText: "导出确认" }).click();
+    const exportBtn = page.locator("button").filter({ hasText: "确认导出" });
+    await expect(exportBtn).toBeEnabled();
+    await exportBtn.click();
+
+    await expect(page.locator(".export-err")).toContainText("QTY_MISSING");
+    await expect(page.locator(".export-err")).toContainText("Material = 21-44642");
   });
 
   test("blocked PO shows correct status", async ({ page }) => {

@@ -47,7 +47,7 @@ export interface PoListItem {
 
 export interface DryRunRequest {
   base_file: string; po_no: string; seller: string
-  invoice_no?: string | null; document?: string
+  invoice_no?: string | null; document?: string; documents?: string[]
 }
 
 export interface DryRunResult {

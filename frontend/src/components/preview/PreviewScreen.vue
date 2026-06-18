@@ -52,6 +52,13 @@ const currentDocLabel = computed(() => (
 ));
 const issueErrors = computed<ValidationIssue[]>(() => wb.poIssues?.blocking_errors ?? []);
 const issueCount = computed(() => wb.poIssues?.blocking_count ?? wb.poEntry?.blocking_count ?? errors.value.length);
+const totalPoLineCount = computed(() => wb.poEntry?.line_count ?? 0);
+const invoiceOptions = computed(() => wb.poEntry?.invoice_nos ?? []);
+const showInvoiceFilter = computed(() => isInvoicePlMode.value && invoiceOptions.value.length > 0);
+const currentPreviewLineCount = computed(() => {
+  const counts = previewDocs.value.map((doc) => doc.preview?.lines?.length ?? 0);
+  return counts.length ? Math.max(...counts) : 0;
+});
 
 async function exportCurrentDocument() {
   await wb.doExport();
@@ -208,6 +215,22 @@ onUnmounted(() => {
             >
               {{ d.label }}
             </button>
+          </div>
+          <div v-if="showInvoiceFilter" class="filter-group invoice-filter">
+            <span class="filter-label">INV#</span>
+            <button
+              v-for="inv in invoiceOptions"
+              :key="inv"
+              class="filter-pill"
+              :class="{ active: wb.selectedInvoiceNo === inv }"
+              @click="wb.selectInvoice(inv)"
+            >
+              {{ inv }}
+            </button>
+          </div>
+          <div class="preview-scope">
+            当前预览 {{ currentPreviewLineCount }} 行 / PO record {{ totalPoLineCount }} 行
+            <span v-if="isInvoicePlMode && wb.selectedInvoiceNo"> · INV# {{ wb.selectedInvoiceNo }}</span>
           </div>
         </div>
         <div class="filter-right">
@@ -427,6 +450,12 @@ onUnmounted(() => {
 .filter-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .filter-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .filter-label { color: var(--muted); font-size: 12px; font-weight: 800; white-space: nowrap; }
+.preview-scope {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
 .filter-pill {
   height: 30px; padding: 0 10px;
   border: 1px solid var(--line); border-radius: 999px;

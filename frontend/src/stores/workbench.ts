@@ -135,17 +135,25 @@ export const useWorkbench = defineStore("workbench", () => {
     await refreshPreview();
   }
 
-  async function doExport() {
+  async function doExport(documents?: string[]) {
     if (!baseFile.value || !selectedPo.value || !selectedSeller.value) return;
     exporting.value = true;
     exportError.value = "";
     try {
-      const exportDocument = isInvoicePlDocument(previewDocType.value) ? "INVOICE_PL" : previewDocType.value;
-      const result = await api.exportDocuments({
+      const exportDocuments = documents?.length
+        ? documents
+        : [isInvoicePlDocument(previewDocType.value) ? "INVOICE_PL" : previewDocType.value];
+      const payload = {
         base_file: baseFile.value, po_no: selectedPo.value,
         seller: selectedSeller.value, invoice_no: selectedInvoiceNo.value,
-        document: exportDocument,
-      });
+        document: exportDocuments[0], documents: exportDocuments,
+      };
+      const result = await api.exportDocuments(payload);
+      if (result.status !== "success") {
+        exportError.value = formatExportFailure(result);
+        lastExportFile.value = "";
+        return result;
+      }
       lastExportFile.value = result.output_file ?? "";
       // Trigger browser download
       if (result.output_file) {
@@ -166,6 +174,24 @@ export const useWorkbench = defineStore("workbench", () => {
 
   function isInvoicePlDocument(document: string): boolean {
     return document === "INVOICE" || document === "PL";
+  }
+
+  function formatExportFailure(result: DryRunResult): string {
+    const messages = result.errors.map(formatIssueMessage).filter(Boolean);
+    if (messages.length) return `导出失败：${messages.join("；")}`;
+    if (result.missing_inputs.length) {
+      return `导出失败：缺少 ${result.missing_inputs.join(", ")}`;
+    }
+    return `导出失败：${result.status}`;
+  }
+
+  function formatIssueMessage(issue: unknown): string {
+    if (!issue || typeof issue !== "object") return "";
+    const record = issue as Record<string, unknown>;
+    const code = typeof record.code === "string" ? record.code : "";
+    const message = typeof record.message === "string" ? record.message : "";
+    if (code && message) return `${code}: ${message}`;
+    return message || code;
   }
 
   function documentLabel(document: string): string {

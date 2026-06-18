@@ -184,6 +184,55 @@ class TestSuccessPath:
         assert result.preview is not None
         assert result.preview.pi_no == expected
 
+    def test_sk_pi_export_ignores_unselected_factory_rows_missing_customer_po(self, tmp_path):
+        reel_product = {
+            **COMBO_PRODUCT,
+            "SAP": "21-REEL",
+            "Material Description": "REEL ITEM",
+            "Category": 3,
+            "GS-SK/YM SK REEL FOB 2026": Decimal("33.0"),
+        }
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT, reel_product],
+            po_record_rows=[
+                basic_po_row(**{
+                    "ITEM LINE#": "10",
+                    "SAP Number": "21-44640",
+                    "DESCRIPTION": "YM ITEM",
+                    "CATEGORY": 1,
+                    "YM PO": "YM-PI-001",
+                }),
+                basic_po_row(**{
+                    "ITEM LINE#": "20",
+                    "SAP Number": "21-REEL",
+                    "DESCRIPTION": "SK ITEM",
+                    "CATEGORY": 3,
+                    "E10 PO": "SK-PI-001",
+                }),
+            ],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Item": "20",
+                    "Material": "21-REEL",
+                    "Order Quantity": 30,
+                },
+            ],
+        )
+        request = DocumentRequest(
+            base_file=str(path), po_no="4500030844", documents=("PI",),
+            seller="SK", output_dir=str(tmp_path / "out"),
+        )
+
+        result = generate(request)
+
+        assert result.status == "success", result.errors
+        wb = load_workbook(result.output_file)
+        ws = wb["Standard Invoice format"]
+        assert ws["B6"].value == "SK-PI-001"
+        assert ws["D20"].value == "21-REEL"
+
 
 class TestNeedsInput:
     def test_multiple_invoices_needs_input(self, tmp_path):
@@ -1093,6 +1142,7 @@ class TestPreviewFunction:
                 "SK/YM INVOICE NO.": "SKYM-GS-001",
                 "SHIP QTY": 40,
                 "YM PO": "YM-PI-001",
+                "CATEGORY": 3 if seller == "SK" else 1,
             })],
         )
         request = DocumentRequest(
@@ -1113,7 +1163,13 @@ class TestPreviewFunction:
         assert wb["PL"]["K5"].value == "SKYM-GS-001"
         assert wb["PL"]["E9"].value == Decimal("40")
 
-    def test_sk_ym_invoice_and_pl_export_split_by_po_record_category(self, tmp_path):
+    @pytest.mark.parametrize(
+        ("seller", "expected_sap", "unexpected_sap"),
+        [("YM", "21-44640", "21-REEL"), ("SK", "21-REEL", "21-44640")],
+    )
+    def test_sk_ym_invoice_and_pl_export_uses_selected_seller_workbook(
+        self, tmp_path, seller, expected_sap, unexpected_sap,
+    ):
         reel_product = {
             **COMBO_PRODUCT,
             "SAP": "21-REEL",
@@ -1159,24 +1215,21 @@ class TestPreviewFunction:
         )
         request = DocumentRequest(
             base_file=str(path), po_no="4500030844", documents=("INVOICE", "PL"),
-            seller="YM", invoice_no="SKYM-GS-001", output_dir=str(tmp_path / "out"),
+            seller=seller, invoice_no="SKYM-GS-001", output_dir=str(tmp_path / "out"),
         )
 
         result = generate(request)
 
         assert result.status == "success", result.errors
-        assert len(result.files) == 2
-        assert any(name.startswith("YM-RO-INVOICE&PL-") for name in result.files)
-        assert any(name.startswith("SK-RO-INVOICE&PL-") for name in result.files)
-        output_dir = Path(result.output_file or "")
-        ym_file = output_dir / next(name for name in result.files if name.startswith("YM-"))
-        sk_file = output_dir / next(name for name in result.files if name.startswith("SK-"))
-        ym_wb = load_workbook(ym_file)
-        sk_wb = load_workbook(sk_file)
-        assert ym_wb["Standard Invoice format"]["D15"].value == "21-44640"
-        assert ym_wb["Standard Invoice format"]["F15"].value == Decimal("40")
-        assert sk_wb["Standard Invoice format"]["D15"].value == "21-REEL"
-        assert sk_wb["Standard Invoice format"]["F15"].value == Decimal("30")
+        assert len(result.files) == 1
+        assert result.output_file is not None
+        assert result.output_file.endswith(".xlsx")
+        assert result.files[0].startswith(f"{seller}-RO-INVOICE&PL-")
+        wb = load_workbook(result.output_file)
+        assert wb.sheetnames == ["Standard Invoice format", "PL"]
+        assert wb["Standard Invoice format"]["D15"].value == expected_sap
+        assert wb["PL"]["D9"].value == expected_sap
+        assert wb["Standard Invoice format"]["D16"].value != unexpected_sap
 
     @pytest.mark.parametrize(
         ("seller", "expected_sap"),
@@ -1398,6 +1451,78 @@ class TestPreviewFunction:
         assert ctns_entry["sheet"] == "PO record"
         assert ctns_entry["field"] == "CTNS"
         assert 'PO record AD列 "CTNS"' in ctns_entry["rule"]
+
+    @pytest.mark.parametrize(
+        ("seller", "category", "sap"),
+        [("YM", 1, "21-44640"), ("SK", 3, "21-REEL")],
+    )
+    def test_preview_sk_ym_pl_includes_ctns_column(self, tmp_path, seller, category, sap):
+        reel_product = {
+            **COMBO_PRODUCT,
+            "SAP": "21-REEL",
+            "Material Description": "REEL ITEM",
+            "Category": 3,
+            "GS-SK/YM SK REEL FOB 2026": Decimal("33.0"),
+        }
+        product = reel_product if seller == "SK" else COMBO_PRODUCT
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[product],
+            po_record_rows=[basic_po_row(**{
+                "SAP Number": sap,
+                "CATEGORY": category,
+                "SK/YM INVOICE NO.": "SKYM-GS-001",
+                "CTNS": Decimal("7"),
+            })],
+        )
+        request = DocumentRequest(
+            base_file=str(path), po_no="4500030844", documents=("PL",),
+            seller=seller, invoice_no="SKYM-GS-001",
+        )
+        result = preview(request)
+        assert result.status == "success", result.errors
+
+        p = result.preview
+        assert p is not None
+        labels = {c["key"]: c["label"] for c in p.column_labels}
+        assert labels["carton_count"] == "CTNS"
+        assert p.lines[0]["carton_count"] == "7"
+
+    @pytest.mark.parametrize(
+        ("seller", "category", "sap"),
+        [("YM", 1, "21-44640"), ("SK", 3, "21-REEL")],
+    )
+    def test_export_sk_ym_pl_writes_ctns_column(self, tmp_path, seller, category, sap):
+        reel_product = {
+            **COMBO_PRODUCT,
+            "SAP": "21-REEL",
+            "Material Description": "REEL ITEM",
+            "Category": 3,
+            "GS-SK/YM SK REEL FOB 2026": Decimal("33.0"),
+        }
+        product = reel_product if seller == "SK" else COMBO_PRODUCT
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[product],
+            po_record_rows=[basic_po_row(**{
+                "SAP Number": sap,
+                "CATEGORY": category,
+                "SK/YM INVOICE NO.": "SKYM-GS-001",
+                "CTNS": Decimal("7"),
+            })],
+        )
+        request = DocumentRequest(
+            base_file=str(path), po_no="4500030844", documents=("PL",),
+            seller=seller, invoice_no="SKYM-GS-001", output_dir=str(tmp_path / "out"),
+        )
+        result = generate(request)
+        assert result.status == "success", result.errors
+
+        wb = load_workbook(result.output_file)
+        ws = wb["PL"]
+        assert ws["M9"].value == 7
+        assert ws["M12"].value == 7
+        assert ws["A16"].value == "PACKED IN 7 CTNS"
 
     @pytest.mark.parametrize(
         ("seller", "invoice_no", "sheet", "line_cell", "total_cell"),

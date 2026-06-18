@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { useWorkbench } from "../../stores/workbench";
 
 const wb = useWorkbench();
-const selectedDocs = ref<Set<string>>(new Set(["PI", "PO", "INVOICE", "PL"]));
 
 const docLabels: Record<string, string> = {
   PI: "形式发票（PI）",
@@ -12,6 +11,25 @@ const docLabels: Record<string, string> = {
   PL: "装箱单（PL）",
 };
 
+function defaultExportDocs(): string[] {
+  if (wb.previewDocType === "INVOICE" || wb.previewDocType === "PL") return ["INVOICE", "PL"];
+  return [wb.previewDocType || "INVOICE"];
+}
+
+const selectedDocs = ref<Set<string>>(new Set(defaultExportDocs()));
+
+const exportableDocEntries = computed(() => (
+  Object.entries(docLabels).filter(([key]) => (
+    key !== "PO" || (wb.selectedSeller !== "SK" && wb.selectedSeller !== "YM")
+  ))
+));
+
+const selectedExportDocs = computed(() => (
+  exportableDocEntries.value
+    .map(([key]) => key)
+    .filter((key) => selectedDocs.value.has(key))
+));
+
 function toggleDoc(key: string) {
   const next = new Set(selectedDocs.value);
   if (next.has(key)) next.delete(key); else next.add(key);
@@ -19,7 +37,7 @@ function toggleDoc(key: string) {
 }
 
 async function handleExport() {
-  await wb.doExport();
+  await wb.doExport(selectedExportDocs.value);
 }
 </script>
 
@@ -29,7 +47,7 @@ async function handleExport() {
     <div v-else class="export-grid">
       <div class="export-card">
         <h3>导出内容确认</h3>
-        <div class="check-line" v-for="(label, key) in docLabels" :key="key">
+        <div class="check-line" v-for="[key, label] in exportableDocEntries" :key="key">
           <div>
             <b>{{ label }}</b><br>
             <span class="fname">{{ (wb.selectedSeller || 'SELLER').replace(/[/\s]+/g, '-') }}-RO-{{ key }}-{{ wb.selectedPo }}{{ (key === 'INVOICE' || key === 'PL') && wb.selectedInvoiceNo ? '-' + wb.selectedInvoiceNo : '' }}.xlsx</span>
@@ -52,7 +70,7 @@ async function handleExport() {
           <label>输出目录</label>
           <div class="value">~/Documents/RO Outputs</div>
         </div>
-        <button class="primary-btn" :disabled="!selectedDocs.size || wb.exporting" @click="handleExport">
+        <button class="primary-btn" :disabled="!selectedExportDocs.length || wb.exporting" @click="handleExport">
           {{ wb.exporting ? "导出中…" : "确认导出" }}
         </button>
         <div v-if="wb.exportError" class="export-err">{{ wb.exportError }}</div>

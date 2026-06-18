@@ -49,7 +49,6 @@ ro-reader/
 │   └── tests/
 ├── templates/                        # 受控 .xlsx 模板资产
 │   ├── gs/  emax/  sk/  ym/
-│   └── _legacy_xls/                  # 原 .xls 留底
 ├── tests/
 │   ├── fixtures/                     # 合成 base 文件
 │   └── e2e/                          # Playwright 端到端
@@ -92,7 +91,6 @@ ro-generator = { workspace = true }
 
 - `templates/<entity>/*.xlsx`：受控装配模板。
 - `templates/<entity>/mappings/*.yaml`：每模板一份字段映射。
-- `templates/_legacy_xls/`：原始 `.xls` 留底，不参与构建。
 
 模板文件随 git 跟踪（体积小，~ 20–80 KB / 个）。Mapping 必须含 `template_version` 字段（产品方案 §13.2）。
 
@@ -175,7 +173,7 @@ GitHub Actions，三个独立 job 并行：
 
 **输入**：
 
-- 模板：`templates/gs/invoice.xlsx`（先把 `GS PTE-RO INVOICE template.xlsx` 转换并放入对应目录）
+- 模板：`templates/gs/invoice&pl.xlsx`（Invoice 与 PL 共用 workbook）
 - 数据：3 行虚拟 PO 数据（手工构造，包含 SAP、数量、单价、金额）
 
 **操作步骤**：
@@ -294,14 +292,13 @@ GitHub Actions，三个独立 job 并行：
 - [x] 配置 ruff（Python lint + format）和 prettier（前端 format）
 - [x] 配置 mypy（Python 类型检查，strict 模式）
 - [x] 配置 commitlint 强制提交信息格式（参见 §3.2）
-- [ ] 把 `templates/` 下原有 `.xls` 模板转成 `.xlsx`，原文件移到 `_legacy_xls/`
-  - 已完成：原 12 个 `.xlsx` 模板已按主体重组到 `templates/<entity>/{pi,po,invoice,pl}.xlsx`，2 个原 `.xls` 模板（EMAX INVOICE / EMAX PL）移入 `templates/_legacy_xls/` 留底。
-  - 未完成：EMAX INVOICE / EMAX PL 的 `.xls` → `.xlsx` 转换尚未做，本机无 LibreOffice。**推迟到 Phase 2 EMAX 模板接入时再处理**——Phase 0 spike A 与 Phase 1 都使用 GS Invoice，不依赖 EMAX 模板。
+- [x] 把 `templates/` 下原有 `.xls` 模板转成 `.xlsx`
+  - 已完成：EMAX Invoice / PL 已以 `templates/emax/invoice&pl.xlsx` 接入，原 `.xls` 不参与构建。
 
 ### 5.2 Spike A：模板样式保留 ✅
 
 - [x] 创建 `spike/template-style-preservation` 分支
-- [x] 把 `GS PTE-RO INVOICE template.xlsx` 复制到 `templates/gs/invoice.xlsx`
+- [x] 把 GS Invoice/PL 模板接入为 `templates/gs/invoice&pl.xlsx`
 - [x] 写最小 spike 脚本完成 §4.1 操作步骤（`tests/spike/test_template_style_preservation.py`，10 个断言全过）
 - [x] 写自动化断言（合并单元格、列宽、行高、打印区域、公式平移等）
 - [ ] LibreOffice 转 PDF 视觉对比（**跳过**：本机未安装 LibreOffice。结构性断言已覆盖关键不变量；视觉对比延后到 Phase 3 工作台 MVP 阶段做端到端验证）
@@ -423,7 +420,7 @@ GitHub Actions，三个独立 job 并行：
 
 - [ ] 黄金 PO `4500030844` 装配的 Invoice 与人工模板逐字段对比，达到 §14.2 一致性
   - 现状：合成 fixture（含 PO `4500030844` 三行跨月数据）端到端装配通过，自动化断言验证了样式保留、合并单元格、列宽、公式平移、数据正确写入。逐字段视觉对比依赖真实 `RO DATA BASE.xlsx`，**Phase 2 真实模板接入时一并验证**。
-- [x] CI 中 Python 包测试覆盖率 ≥ 80%（实测 92%，245 项测试通过）
+- [x] CI 中 Python 包测试覆盖率 ≥ 80%（当前核心包 + API 可收集 420 个 pytest 用例）
 - [x] 在 CLAUDE.md 中标记 Phase 1 完成
 - [x] 把 Phase 2 的细粒度任务清单写入本文档 §7（覆盖当前占位）
 
@@ -443,9 +440,9 @@ GitHub Actions，三个独立 job 并行：
 
 ### 7.1 .xls 模板转换（Phase 0 遗留）
 
-- [ ] 安装 LibreOffice 或等效工具，把 `templates/_legacy_xls/EMAX PTE-RO INVOICE template.xls` 和 `EMAX PTE-RO PL template.xls` 转换为 `.xlsx`
-- [ ] 转换后放入 `templates/emax/invoice.xlsx` 与 `templates/emax/pl.xlsx`
-- [ ] `_legacy_xls/` 目录中的原文件保留，作为业务方今后只在 `.xlsx` 上修改的留底基线
+- [x] 使用 LibreOffice 或等效工具，把 EMAX Invoice/PL 老格式模板转换为 `.xlsx`
+- [x] 转换后放入 `templates/emax/invoice&pl.xlsx` 并接入对应 mapping
+- [x] 原 `.xls` 不参与构建；业务方今后只在 `.xlsx` 模板上修改
 
 ### 7.2 PI / PO / PL document model
 
@@ -457,7 +454,7 @@ GitHub Actions，三个独立 job 并行：
 
 ### 7.3 多 mapping × 多模板
 
-- [x] 为每个 (entity, document) 组合编写 mapping YAML（12 份，模板矩阵已覆盖）
+- [x] 为每个 (entity, document) 组合编写 mapping YAML（14 份，模板矩阵已覆盖）
 - [x] 每份 mapping 都通过 `load_template_mapping` 的引用校验
 - [x] 每份 mapping 含 `template_version`
 
@@ -465,7 +462,9 @@ GitHub Actions，三个独立 job 并行：
 
 - [x] `generator.py` 解除 "Phase 1 仅支持 INVOICE" 限制
 - [x] 一次请求多种单据类型时，对每种调用对应 `build_*_model` + 对应 mapping，输出多个文件
-- [x] 多文件场景按 `output_format`：xlsx 时各自输出，zip 时调用 `package_zip` 打包
+- [x] 多文件场景按 `output_format`：只有一个生成文件时直接返回 `.xlsx`；多个文件且 `output_format=zip` 时调用 `package_zip` 打包
+- [x] SK/YM 的 Invoice + PL 组合导出为同一个 workbook 的两个 sheet
+- [x] SK/YM 明确选择主体时按 `PO record.CATEGORY` 过滤：1/2 属于 YM，3 属于 SK，不再把另一主体自动拆成额外文件
 - [x] SK / YM 主体请求 PO 时返回 `MAPPING_NOT_FOUND` 阻断（产品方案 §13.1）
 - [x] `_builtin_mapping_path` 支持按 `templates/<entity>/mappings/<doc>.yaml` 扫描
 
@@ -485,13 +484,13 @@ GitHub Actions，三个独立 job 并行：
 
 ### 7.7 跨链段一致性回归
 
-- [x] 合成 fixture 覆盖三段链路（SK/YM→GS、GS→EMAX、EMAX→PF，后者无 mapping 因 EMAX Invoice .xls 待转换）
+- [x] 合成 fixture 覆盖三段链路（SK/YM→GS、GS→EMAX、EMAX→PF）
 - [x] 端到端 CLI 验证：SK/YM→GS 段 Invoice + PI 装配成功；GS→EMAX 段 Invoice 装配成功
 - [ ] 真实 `RO DATA BASE.xlsx` 接入决策落地（团队确认是否可入库）
 
 ### 7.8 收尾
 
-- [x] CI 测试覆盖率 ≥ 80%（260 项测试，覆盖率 92%）
+- [x] CI 测试覆盖率 ≥ 80%（当前核心包 + API 可收集 420 个 pytest 用例）
 - [x] CLAUDE.md 标记 Phase 2 完成
 - [x] 把 Phase 3 的细粒度任务清单写入本文档 §8（覆盖当前占位）
 
@@ -526,9 +525,9 @@ GitHub Actions，三个独立 job 并行：
 - [x] `packages/ro_workbench_api/` 实现 FastAPI app
 - [x] `POST /session/open` — 打开 base 文件，返回 session ID + PO 列表（含状态着色）
 - [x] `GET /po/{po_no}` — 返回 PO 行数据视图（grid 数据）
-- [x] `POST /po/{po_no}/dry-run` — 返回装配预览（不写文件）+ source_index
+- [x] `POST /po/{po_no}/dry-run` / `POST /po/{po_no}/preview` — 返回装配预览（不写文件）+ source_index
 - [x] `POST /po/{po_no}/edit` — 接受字段编辑，写回 base 文件
-- [x] `POST /export` — 执行真实导出并返回文件路径
+- [x] `POST /po/{po_no}/export` — 执行真实导出并返回文件路径；请求支持 `documents` 数组，兼容 `INVOICE_PL` / `INVOICE&PL`
 
 ### 8.3 前端核心交互
 
@@ -537,9 +536,10 @@ GitHub Actions，三个独立 job 并行：
 - [x] 数据视图：inline 编辑（双击→填入→Enter 提交→后端回写→预览刷新）
 - [x] 链段选择器（胶囊按钮组）+ 月份选择器（mono 字体按钮）
 - [x] 文档预览栏：SheetJS `sheet_to_html` 渲染 + 悬停溯源 tooltip
-- [x] 导出流程（TopBar 导出按钮 + StatusBar 已导出路径）
+- [x] 导出流程（TopBar 导出按钮 + 导出确认页 + StatusBar 已导出路径）
 - [x] 缺字段高亮（DataCheckScreen 必填字段为空时红色边框 + 粉色背景）
 - [x] 预览 tab 切换按单据类型独立生成（PI/PO/Invoice/PL 各调 dry-run）
+- [x] 导出确认页支持勾选单据；SK/YM 主体隐藏 PO；Invoice/PL 默认组合导出
 - [x] 预览栏布局增宽（flex:1.6）+ 缩放控件（50%-150%）
 - [ ] 公式回退橙色边框标记、模态导出选项、版本历史抽屉（UI 细节延后）
 
@@ -562,7 +562,7 @@ GitHub Actions，三个独立 job 并行：
 
 ### 8.6 收尾
 
-- [ ] Playwright 端到端测试（延后到 Phase 4）
+- [x] Playwright 端到端测试（Phase 4 已接入）
 - [x] 前端 production build + Vite dev server 联调通过
 - [x] 标记 Phase 3 完成
 - [x] 追加 Phase 4 细粒度任务清单
@@ -594,9 +594,9 @@ GitHub Actions，三个独立 job 并行：
 
 ### 9.4 遗留项收尾
 
-- [ ] EMAX Invoice/PL `.xls`→`.xlsx` 转换
+- [x] EMAX Invoice/PL `.xls`→`.xlsx` 转换
 - [ ] 模板预览 CLI
-- [ ] 前端 UI 细节：缺字段高亮、公式回退标记、导出模态、版本历史
+- [ ] 前端 UI 细节：公式回退标记、版本历史
 
 ### 9.5 代码质量改造（已完成）
 

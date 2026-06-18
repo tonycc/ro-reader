@@ -10,13 +10,15 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ```text
 packages/
-  ro_generator/        核心包（Python）：13 模块，261 测试，92% 覆盖
-  ro_workbench_api/    工作台后端（FastAPI）：6 端点
+  ro_generator/        核心包（Python）
+  ro_workbench_api/    工作台后端（FastAPI）：12 端点
   ro_workbench_launcher/  启动器（PyInstaller .app 24 MB）
 frontend/              Vue 3 + TypeScript + Pinia + SheetJS
-templates/             14 个 .xlsx 模板 + 14 份 YAML mapping
+templates/             10 个 .xlsx workbook + 14 份 YAML mapping
 tests/fixtures/        合成 base 文件生成脚本
 ```
+
+当前核心包 + 工作台 API 可收集 **420 个 pytest 用例**（含 1 个已知 skip）。
 
 - `docs/product/ro-document-generator-product-plan.md`：**产品方案**（最权威，所有产品决策以此为准）。
 - `docs/development/ro-document-workbench-ui-design.md`：**前端 UI 与交互设计**。
@@ -146,6 +148,9 @@ MVP 形态为**本地启动器 + 浏览器**：双击 PyInstaller 打包的可�
 - `TOTAL CBM = L * W * H / 1000000 * CTNS`
 - `BALANCE QTY = FINALQTY - 各月出货数量合计`
 - **PI/PO 使用 `客户PO.Order Quantity`；Invoice/PL 按 `invoice_month` 用月度出货数量**。
+- SK/YM 主体按 `PO record.CATEGORY` 过滤：`1/2 -> YM`，`3 -> SK`。工作台或 CLI 已明确选择 `seller=SK/YM` 时，只处理该主体对应行，不自动拆出另一主体文件。
+- SK/YM 的 Invoice + PL 同时导出时生成一个 `.xlsx` workbook，包含 Invoice 与 PL 两个 sheet。
+- PL 底部 `PACKED IN <总 CTNS> CTNS` 由 renderer 根据 `DocumentModel.total_carton_count` 写入，mapping 通过 `notes.packed_in_ctns` 指定单元格。
 - **MVP 仅支持 USD**。
 - 缺失关键字段（INV#、FACTORY DOC NO.、SAP、价格等）必须报阻断错误，**绝不自动编造**。
 - SK / YM 主体没有 PO 模板，请求生成 PO 时返回阻断错误。
@@ -194,7 +199,7 @@ zip：`RO-<PO>-<MONTH>.zip`。`<MONTH>` 已含年份信息（`2601` = 2026-01）
 ```bash
 # === 核心包 ===
 uv sync --all-packages                          # 安装所有依赖
-uv run pytest                                   # 全部 Python 测试（261 项）
+uv run pytest packages/ro_generator packages/ro_workbench_api -q
 uv run pytest packages/ro_generator/tests/test_resolver.py -v
 uv run pytest packages/ro_generator/tests/test_resolver.py::test_known_po_resolves -v
 
@@ -230,7 +235,7 @@ uv run ruff check . && uv run ruff format --check . && uv run mypy packages
 
 ## 模板处理注意
 
-- `.xls` 老格式已通过 `xlrd` 一次性转换为 `.xlsx`（EMAX Invoice、EMAX PL），原始 `.xls` 保留在 `templates/_legacy_xls/` 留底。业务方今后只在 `.xlsx` 模板上修改。
+- `.xls` 老格式已一次性转换为 `.xlsx` 并接入当前模板目录；业务方今后只在 `.xlsx` 模板上修改。
 - 更新其他 mapping 时，应参考当前成熟 `PI` mapping 沉淀出的规范格式；字段取值基准见 `docs/单据模板字段取值规则汇总.md`，示例起点见 `templates/_examples/`。但**不能**把某一份真实业务 `pi.yaml` 逐字复制成其它单据或主体的 mapping；必须按单据类型、主体信息和模板结构保留边界。
 - 对 mapping 做规范化收敛时，应主动清理无效空配置和旧结构残留，例如空 `to_label`、旧 `terms: {}`、已不参与布局或渲染的占位字段；不要保留“虽然不报错但没有实际作用”的配置噪音。
 - 如果 `start_row` 上方存在真实表格表头，mapping 中应显式声明 `table_header_row`；不要再依赖渲染器启发式猜测哪一行是表头。
@@ -238,17 +243,17 @@ uv run ruff check . && uv run ruff format --check . && uv run mypy packages
 - 当 PO 行数超过模板默认区域时，renderer 必须**插入新行并复制上一行样式**（先倒序平移 `row_dimensions` 再 `insert_rows`——这是 openpyxl 的已知陷阱，Phase 0 Spike A 已验证），返回 `severity: high` warning。
 - 优先写入最终计算值，公式只保留必要的本表内引用（如 `=E18*F18`），避免不同 Excel 环境重算行为不一致。
 - mapping 文件必须含 `template_version` 字段，加载时校验所有引用单元格在模板中存在。
-- 模板文件较小（~20-80 KB/个），随 git 跟踪。`templates/_legacy_xls/` 中的原 `.xls` 不再参与构建。
+- 模板文件较小（~20-80 KB/个），随 git 跟踪。原 `.xls` 不再参与构建。
 
 ## 实施顺序（产品方案 §16）
 
 | Phase | 内容 | 状态 |
 | --- | --- | --- |
 | 0 | 三个 spike：模板样式保留、预览渲染组件选型、启动器打包链路 | ✅ 完成（Spike A/B Phase 0 通过；Spike C Phase 3 完成） |
-| 1 | 核心包 + CLI（先做 Invoice 一种单据） | ✅ 完成（261 测试，覆盖率 92%） |
+| 1 | 核心包 + CLI（先做 Invoice 一种单据） | ✅ 完成 |
 | 2 | 四类单据 + GS/EMAX/SK/YM 多主体模板 + 模板预览 CLI | ✅ 完成（14 份 mapping，四类单据 × 三链段） |
 | 3 | 工作台 MVP（FastAPI + Vue + PyInstaller 启动器，含完整 UI） | ✅ 完成（前后端联调通过，.app 24 MB） |
-| 4 | 加固（回归测试、性能、模板版本管理） | ✅ 完成（E2E 5 场景、261 测试、README） |
+| 4 | 加固（回归测试、性能、模板版本管理） | ✅ 完成（E2E 5 场景、README） |
 
 > Phase 0 spike 结论见 [`docs/development/phase-0-spike-results.md`](docs/development/phase-0-spike-results.md)。
 

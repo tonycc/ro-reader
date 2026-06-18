@@ -72,7 +72,13 @@ cd frontend && pnpm run dev
 
 ### 6. 导出
 
-点击顶部栏右侧"导出 ⌘E"按钮，文件写入后端临时目录，状态栏显示导出文件名。
+点击顶部栏右侧"导出 ⌘E"按钮进入导出确认页：
+
+- 可勾选 PI / PO / Invoice / PL；SK / YM 主体下 PO 会自动隐藏
+- 当前预览为 Invoice 或 PL 时，默认同时勾选 Invoice + PL
+- Invoice + PL 同时导出时写入同一个 workbook 的两个 sheet
+- 只有一个生成文件时直接返回 `.xlsx`；多个生成文件时按 ZIP 打包
+- 文件写入后端 session 临时目录，状态栏显示导出文件名或失败原因
 
 ## 实现逻辑
 
@@ -102,6 +108,7 @@ RO DATA BASE.xlsx
      ▼
   Renderer ─── 先统一预留明细区样式，再写入 Excel 模板；超行时插入新行并复制样式
      │          openpyxl 陷阱：insert_rows() 不平移 row_dimensions，须先手动处理
+     │          支持 mapping.notes：例如 PL 底部 PACKED IN <总 CTNS> CTNS
      │
      ▼
   输出 .xlsx / .zip
@@ -115,8 +122,8 @@ RO DATA BASE.xlsx
 # templates/gs/mappings/invoice.yaml
 document: invoice
 template_version: "v1"
-template: templates/gs/invoice.xlsx
-sheet: Sheet1
+template: templates/gs/invoice&pl.xlsx
+sheet: Standard Invoice format
 table_header_row: 17      # 可选：start_row 上方若存在真实表格表头，则显式声明保留该行
 header:
   invoice_no: H6          # 发票号写到 H6
@@ -132,12 +139,15 @@ lines:
 totals:
   quantity: F27            # 数量合计写到 F27
   amount: H27              # 金额合计写到 H27
+notes:
+  packed_in_ctns: A16      # PL 底部写 PACKED IN <总 CTNS> CTNS
 ```
 
 模板版式变化时**只改 YAML，不改代码**。mapping 加载时自动校验所有单元格引用在模板中真实存在，防止模板漂移。
 
 - `style_source_row` 不只用于“超行插入时复制样式”，也用于把模板预留明细区统一成同一套样式，避免模板脏格式把单价/数量显示成日期等错误格式。
 - `table_header_row` 是可选字段；当 `start_row` 上方存在真实表格表头时显式声明，渲染器会保留该行，不再依赖启发式猜测。
+- `notes` 是可选字段；用于声明模板底部动态说明单元格，例如 SK/YM PL 的 `PACKED IN <总 CTNS> CTNS`。
 
 ### 贸易链段与定价
 
@@ -157,6 +167,15 @@ RO 业务涉及多段贸易链路。同一个 PO 在不同链段下使用不同�
 | EMAX PTE → PF | `EMAX PTE` | `PF-EMAX INV-*` |
 
 `SUBTOTAL = quantity × unit_price`，金额用 `Decimal` 避免浮点精度问题。
+
+SK / YM 主体按 `PO record.CATEGORY` 判断工厂主体：
+
+| CATEGORY | 主体 |
+| --- | --- |
+| `1` / `2` | YM |
+| `3` | SK |
+
+工作台或 CLI 已明确选择 `seller=SK` / `seller=YM` 时，只导出该主体对应的行，不会把同一 PO 下另一主体的行一并生成。SK/YM 的 PI 导出会先按主体预过滤 PO record 原始行，再做客户 PO 数量匹配，避免未选主体的缺失客户 PO 行阻断当前主体导出。
 
 ### 数量来源
 
@@ -284,11 +303,11 @@ ro_generator (核心包) → CLI | FastAPI 后端 → Vue 3 前端 → PyInstall
 
 ```text
 packages/
-  ro_generator/         核心包（Python, 261 tests）
-  ro_workbench_api/     工作台后端（FastAPI, 6 endpoints）
+  ro_generator/         核心包（Python）
+  ro_workbench_api/     工作台后端（FastAPI, 12 endpoints）
   ro_workbench_launcher/  启动器（PyInstaller 打包）
 frontend/               Vue 3 + Pinia + SheetJS（Vite 构建）
-templates/              14 个 .xlsx 模板 + 14 份 YAML mapping
+templates/              10 个 .xlsx workbook + 14 份 YAML mapping
 tests/fixtures/         合成 base 文件
 docs/                   产品方案 / UI 设计 / 实施指南
 ```
@@ -306,7 +325,7 @@ SK / YM 主体没有 PO 模板，请求 `--docs po --seller SK/YM` 时返回阻�
 ## 测试
 
 ```bash
-uv run pytest                                          # 全部 261 项
+uv run pytest packages/ro_generator packages/ro_workbench_api -q
 uv run pytest packages/ro_generator/tests/test_resolver.py -v
 cd frontend && pnpm run test:e2e                       # Playwright E2E（5 场景）
 ```

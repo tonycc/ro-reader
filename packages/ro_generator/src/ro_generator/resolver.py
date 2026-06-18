@@ -84,6 +84,7 @@ class ResolveResult:
 def resolve_po_lines(
     reader: WorkbookReader, po_no: str,
     *, products: dict[str, Product] | None = None,
+    row_filter: Callable[[dict[str, object]], bool] | None = None,
 ) -> ResolveResult:
     """解析指定 PO 号的所有订单行。
 
@@ -92,6 +93,10 @@ def resolve_po_lines(
     if products is None:
         products = build_product_index(reader)
     rows = _read_po_record_rows(reader, po_no)
+    if row_filter is not None:
+        filtered_rows = tuple(row for row in rows if row_filter(row))
+        if filtered_rows:
+            rows = filtered_rows
     customer_po_rows = _read_customer_po_rows(reader, po_no)
     return resolve_po_rows(
         tuple(rows),
