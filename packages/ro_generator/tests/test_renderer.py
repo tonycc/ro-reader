@@ -555,11 +555,12 @@ class TestStylePreservationParity:
 
 
 class TestEdgeCases:
-    def test_invalid_sheet_raises(self) -> None:
-        # 构造一个 mapping 引用不存在的 sheet 名
-        # 通过修改加载后的对象做不到（frozen）；直接传入坏 mapping 副本要复杂
-        # 用 monkeypatch 替换更简单：但本测试只为冒烟，我们先 skip 这条
-        pytest.skip("需要 mapping mocking")
+    def test_invalid_sheet_raises(self, tmp_path: Path) -> None:
+        mapping = load_template_mapping(GS_INVOICE_MAPPING)
+        broken_mapping = replace(mapping, sheet="NOT_A_TEMPLATE_SHEET")
+
+        with pytest.raises(TemplateError, match="找不到 sheet 'NOT_A_TEMPLATE_SHEET'"):
+            render_document(build_three_line_invoice(), broken_mapping, tmp_path / "out.xlsx")
 
     def test_corrupt_template_raises(self, tmp_path: Path) -> None:
         from dataclasses import replace

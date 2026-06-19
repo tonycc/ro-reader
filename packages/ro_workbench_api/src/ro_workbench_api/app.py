@@ -36,6 +36,8 @@ from ro_generator.models import (
 )
 from ro_generator.source_index import SourceIndex
 from ro_generator.workbench_service import (
+    ExportDocumentGroup,
+    export_document_groups,
     get_customer_po_data,
     get_po_data,
     get_po_issues,
@@ -185,6 +187,18 @@ class DryRunRequest(BaseModel):
     invoice_no: str | None = None
     document: str = "INVOICE"
     documents: list[str] | None = None
+
+
+class ExportGroupRequest(BaseModel):
+    seller: str
+    documents: list[str]
+    invoice_no: str | None = None
+
+
+class BatchExportRequest(BaseModel):
+    base_file: str
+    po_no: str
+    groups: list[ExportGroupRequest]
 
 
 class EditFieldRequest(BaseModel):
@@ -343,6 +357,13 @@ def open_session(req: OpenSessionRequest) -> dict[str, Any]:
             "sellers": list(p.sellers),
             "line_count": p.line_count,
             "invoice_nos": list(p.invoice_nos),
+            "invoice_options_by_seller": {
+                seller: list(options) for seller, options in p.invoice_options_by_seller.items()
+            },
+            "exportable_documents_by_seller": {
+                seller: list(documents)
+                for seller, documents in p.exportable_documents_by_seller.items()
+            },
             "blocking_count": p.blocking_count,
         }
         for p in inspection.po_list
@@ -519,6 +540,37 @@ def export_documents(
         output_format="zip",
     )
     result = generate(request)
+    return _result_to_dict(result)
+
+
+@app.post("/api/po/{po_no}/export-batch")
+def export_document_batch(
+    po_no: str,
+    req: BatchExportRequest,
+    x_session_id: str = Header(..., alias="X-Session-Id"),
+) -> dict[str, Any]:
+    """执行工作台导出确认页批量导出，返回单个 ZIP 文件。"""
+    session = _get_session(x_session_id)
+    if session is None:
+        raise HTTPException(
+            400,
+            detail={"code": "INVALID_SESSION", "message": f"session {x_session_id!r} 无效或已过期"},
+        )
+
+    groups = tuple(
+        ExportDocumentGroup(
+            seller=group.seller,
+            documents=_normalize_documents(group.documents),
+            invoice_no=group.invoice_no,
+        )
+        for group in req.groups
+    )
+    result = export_document_groups(
+        base_file=req.base_file,
+        po_no=po_no,
+        output_dir=session.temp_dir,
+        groups=groups,
+    )
     return _result_to_dict(result)
 
 

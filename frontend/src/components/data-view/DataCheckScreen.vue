@@ -11,20 +11,12 @@ const warningPanelOpen = ref(false);
 
 const visibleHeaders = computed(() => wb.dataHeaders.filter((h) => h && !String(h).startsWith("__")));
 const requiredFields = new Set(["SAP Number", "FINALQTY", "PO NO.", "INV#"]);
-const previewBlockingErrors = computed<ValidationIssue[]>(() => (
-  wb.blockingErrors.map((issue, index) => normalizeIssue(issue, index, "blocking_error", "PREVIEW_BLOCKING", "预览阻断"))
-));
 const issueErrors = computed<ValidationIssue[]>(() => dedupeIssues([
   ...(wb.poIssues?.blocking_errors ?? []),
-  ...previewBlockingErrors.value,
 ]));
 const blockingCount = computed(() => issueErrors.value.length);
-const previewWarnings = computed<ValidationIssue[]>(() => (
-  wb.warnings.map((issue, index) => normalizeIssue(issue, index, "warning", "PREVIEW_WARNING", "预览警告"))
-));
 const warningIssues = computed<ValidationIssue[]>(() => dedupeIssues([
   ...(wb.poIssues?.warnings ?? []),
-  ...previewWarnings.value,
 ]));
 const warningCount = computed(() => warningIssues.value.length);
 
@@ -46,25 +38,6 @@ async function commitEdit() {
   editingCell.value = null;
 }
 function cancelEdit() { editingCell.value = null; }
-function normalizeIssue(
-  issue: unknown,
-  index: number,
-  fallbackKind: string,
-  fallbackCodePrefix: string,
-  fallbackMessage: string,
-): ValidationIssue {
-  const raw = issue && typeof issue === "object" ? issue as Record<string, unknown> : {};
-  const severity = raw.severity === "high" || raw.severity === "low" ? raw.severity : null;
-  return {
-    kind: String(raw.kind ?? fallbackKind),
-    code: String(raw.code ?? `${fallbackCodePrefix}_${index + 1}`),
-    message: String(raw.message ?? raw.code ?? fallbackMessage),
-    sheet: typeof raw.sheet === "string" ? raw.sheet : null,
-    row: typeof raw.row === "number" ? raw.row : null,
-    field: typeof raw.field === "string" ? raw.field : null,
-    severity,
-  };
-}
 function dedupeIssues(issues: ValidationIssue[]): ValidationIssue[] {
   const seen = new Set<string>();
   const result: ValidationIssue[] = [];
@@ -138,7 +111,7 @@ onUnmounted(() => {
     <template v-else>
       <!-- 问题摘要 -->
       <div class="issue-bar">
-        <span class="issue-badge ready" v-if="blockingCount === 0 && warningCount === 0">✓ 数据完整</span>
+        <span class="issue-badge ready" v-if="blockingCount === 0 && warningCount === 0">✓ 就绪</span>
         <div v-if="blockingCount" class="data-issue-root">
           <button class="issue-badge blocked" type="button" @click="toggleIssuePanel">
             {{ blockingCount }} 项阻断
@@ -201,8 +174,7 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
-        <span class="issue-meta">{{ wb.dataRows.length }} 行 · {{ wb.selectedSeller || '未选链段' }}</span>
-        <span class="issue-meta" v-if="wb.selectedInvoiceNo">INV# {{ wb.selectedInvoiceNo }}</span>
+        <span class="issue-meta">{{ wb.dataRows.length }} 行 · PO 基础检查</span>
       </div>
 
       <!-- 数据表格 -->

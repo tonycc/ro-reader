@@ -13,7 +13,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ro_generator.errors import WorkbookOpenError
-from ro_generator.models import ValidationMessage
+from ro_generator.generator import generate
+from ro_generator.models import DocumentRequest, DocumentType, GenerationResult, ValidationMessage
+from ro_generator.packager import build_zip_filename, package_zip
 from ro_generator.resolver import resolve_po_rows
 from ro_generator.workbook_cache import get_cache_manager
 from ro_generator.workbook_snapshot import BuildSnapshotError, PoInspection
@@ -56,6 +58,13 @@ class WorkbookInspectionResult:
     ok: bool
     po_list: tuple[PoInspection, ...]
     errors: tuple[ValidationMessage, ...] = ()
+
+
+@dataclass(frozen=True)
+class ExportDocumentGroup:
+    seller: str
+    documents: tuple[DocumentType, ...]
+    invoice_no: str | None = None
 
 
 def inspect_workbook(base_file: str) -> WorkbookInspectionResult:
@@ -146,10 +155,94 @@ def get_po_issues(base_file: str, po_no: str) -> dict[str, object]:
     }
 
 
+def export_document_groups(
+    *,
+    base_file: str,
+    po_no: str,
+    output_dir: str,
+    groups: tuple[ExportDocumentGroup, ...],
+) -> GenerationResult:
+    """按主体批量导出，并把所有可生成文件合并成一个 ZIP。
+
+    这是工作台导出确认页的核心入口：API 只负责把前端选择转成 groups，
+    真正的单据生成、阻断错误和 ZIP 打包都留在核心包。
+    """
+    if not groups:
+        return GenerationResult(
+            status="error",
+            errors=(
+                ValidationMessage(
+                    kind="blocking_error",
+                    code="NO_EXPORT_DOCUMENTS",
+                    message="未选择需要导出的单据",
+                ),
+            ),
+        )
+
+    output_root = Path(output_dir)
+    output_root.mkdir(parents=True, exist_ok=True)
+    rendered_files: list[Path] = []
+    warnings: list[ValidationMessage] = []
+
+    for index, group in enumerate(groups, start=1):
+        group_dir = output_root / f"group-{index}"
+        request = DocumentRequest(
+            base_file=base_file,
+            po_no=po_no,
+            seller=group.seller,
+            invoice_no=group.invoice_no,
+            documents=group.documents,
+            output_format="xlsx",
+            output_dir=str(group_dir),
+        )
+        result = generate(request)
+        warnings.extend(result.warnings)
+
+        if result.status != "success":
+            return GenerationResult(
+                status=result.status,
+                errors=result.errors,
+                warnings=tuple(warnings),
+                missing_inputs=result.missing_inputs,
+                options=result.options,
+            )
+
+        rendered_files.extend(_generated_file_paths(result))
+
+    zip_path = package_zip(
+        files=tuple(rendered_files),
+        output_dir=output_root,
+        zip_name=build_zip_filename(po_no=po_no),
+    )
+    return GenerationResult(
+        status="success",
+        summary={
+            "po_no": po_no,
+            "groups": [
+                {"seller": group.seller, "documents": list(group.documents)} for group in groups
+            ],
+        },
+        files=tuple(path.name for path in rendered_files),
+        output_file=str(zip_path),
+        warnings=tuple(warnings),
+    )
+
+
+def _generated_file_paths(result: GenerationResult) -> tuple[Path, ...]:
+    if result.output_file is None:
+        return ()
+    output = Path(result.output_file)
+    if output.is_dir():
+        return tuple(output / filename for filename in result.files)
+    return (output,)
+
+
 __all__ = [
+    "ExportDocumentGroup",
     "FileInspectionResult",
     "PoInspection",
     "WorkbookInspectionResult",
+    "export_document_groups",
     "get_customer_po_data",
     "get_po_data",
     "get_po_issues",

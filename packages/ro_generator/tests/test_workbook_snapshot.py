@@ -32,10 +32,14 @@ PO_RECORD_HEADER = [
     "SAP Number",
     "DESCRIPTION",
     "FINALQTY",
+    "CATEGORY",
     "GS-SK/YM USD FOB",
     "EMAX-GS PTE FOB",
     "EMAX PTE",
     "INV#",
+    "SK/YM INVOICE NO.",
+    "E10 PO",
+    "YM PO",
     "SHIP QTY",
     "CTNS",
     "TOTAL CBM",
@@ -105,10 +109,14 @@ def basic_po_row(**overrides):
         "SAP Number": "21-44640",
         "DESCRIPTION": "CB2500.B2",
         "FINALQTY": 100,
+        "CATEGORY": 1,
         "GS-SK/YM USD FOB": 28.0,
         "EMAX-GS PTE FOB": 32.8,
         "EMAX PTE": 38.0,
         "INV#": "INV-001",
+        "SK/YM INVOICE NO.": "SKYM-INV-001",
+        "E10 PO": "SK-PI-001",
+        "YM PO": "YM-PI-001",
         "SHIP QTY": 100,
         "外箱(最终出口装箱率)": 24,
         "CTNS": 5,
@@ -240,6 +248,112 @@ class TestWorkbookSnapshot:
         assert s.status == "ready"
         assert s.line_count == 1
         assert s.blocking_count == 0
+
+    def test_po_summary_invoice_options_use_seller_context(self, tmp_path):
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[
+                basic_po_row(
+                    **{
+                        "ITEM LINE#": "10",
+                        "CATEGORY": 1,
+                        "INV#": "INV-001",
+                        "SK/YM INVOICE NO.": "YM-INV-001",
+                    }
+                ),
+                basic_po_row(
+                    **{
+                        "ITEM LINE#": "20",
+                        "CATEGORY": 3,
+                        "INV#": "INV-001",
+                        "SK/YM INVOICE NO.": "SK-INV-001",
+                    }
+                ),
+            ],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Item": "10",
+                    "Material": "21-44640",
+                    "Order Quantity": 100,
+                },
+                {
+                    "Purchasing Document": "4500030844",
+                    "Item": "20",
+                    "Material": "21-44640",
+                    "Order Quantity": 100,
+                },
+            ],
+        )
+
+        snap = build_workbook_snapshot(path)
+
+        summary = snap.po_summary[0]
+        assert summary.invoice_nos == ("INV-001",)
+        assert summary.invoice_options_by_seller["YM"] == ("YM-INV-001",)
+        assert summary.invoice_options_by_seller["SK"] == ("SK-INV-001",)
+        assert summary.invoice_options_by_seller["GS PTE"] == ("INV-001",)
+        assert summary.invoice_options_by_seller["EMAX PTE"] == ("INV-001-P",)
+
+    def test_po_summary_exportable_documents_use_factory_category_context(self, tmp_path):
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[
+                basic_po_row(
+                    **{
+                        "CATEGORY": 1,
+                        "INV#": "INV-001",
+                        "SK/YM INVOICE NO.": "YM-INV-001",
+                    }
+                ),
+            ],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Item": "10",
+                    "Material": "21-44640",
+                    "Order Quantity": 100,
+                },
+            ],
+        )
+
+        snap = build_workbook_snapshot(path)
+
+        summary = snap.po_summary[0]
+        assert summary.exportable_documents_by_seller["SK"] == ()
+        assert summary.exportable_documents_by_seller["YM"] == ("PI", "INVOICE_PL")
+        assert summary.exportable_documents_by_seller["GS PTE"] == ("PI", "PO", "INVOICE_PL")
+        assert summary.exportable_documents_by_seller["EMAX PTE"] == ("PI", "PO", "INVOICE_PL")
+
+    def test_po_summary_factory_pi_requires_factory_po_number(self, tmp_path):
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[
+                basic_po_row(
+                    **{
+                        "CATEGORY": 1,
+                        "YM PO": None,
+                        "SK/YM INVOICE NO.": "YM-INV-001",
+                    }
+                ),
+            ],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Item": "10",
+                    "Material": "21-44640",
+                    "Order Quantity": 100,
+                },
+            ],
+        )
+
+        snap = build_workbook_snapshot(path)
+
+        summary = snap.po_summary[0]
+        assert summary.exportable_documents_by_seller["YM"] == ("INVOICE_PL",)
 
     def test_po_summary_blocked_missing_sap(self, tmp_path):
         path = make_base_file(

@@ -48,6 +48,7 @@ export const useWorkbench = defineStore("workbench", () => {
 
   const poEntry = computed(() => poList.value.find((p) => p.po_no === selectedPo.value));
   const poStatus = computed(() => poEntry.value?.status ?? "");
+  const invoiceOptions = computed(() => invoiceOptionsForSeller(selectedSeller.value));
 
   async function openSession(file: string) {
     loading.value = true; error.value = "";
@@ -75,7 +76,7 @@ export const useWorkbench = defineStore("workbench", () => {
     dataRows.value = data.rows; dataHeaders.value = data.headers;
     const po = poList.value.find((p) => p.po_no === po_no);
     if (po?.sellers.length) selectedSeller.value = po.sellers[0];
-    if (po?.invoice_nos.length) selectedInvoiceNo.value = po.invoice_nos[0];
+    syncSelectedInvoiceForSeller();
     await refreshPoIssues();
     await refreshPreview();
   }
@@ -135,6 +136,8 @@ export const useWorkbench = defineStore("workbench", () => {
     await refreshPreview();
   }
 
+  type ExportGroup = { seller: string; documents: string[] };
+
   async function doExport(documents?: string[]) {
     if (!baseFile.value || !selectedPo.value || !selectedSeller.value) return;
     exporting.value = true;
@@ -143,9 +146,50 @@ export const useWorkbench = defineStore("workbench", () => {
       const exportDocuments = documents?.length
         ? documents
         : [isInvoicePlDocument(previewDocType.value) ? "INVOICE_PL" : previewDocType.value];
+      return await exportOneGroup({
+        seller: selectedSeller.value,
+        documents: exportDocuments,
+      });
+    } catch (e) {
+      exportError.value = e instanceof ApiError ? e.message : `导出失败：${e}`;
+    } finally { exporting.value = false; }
+  }
+
+  async function doExportGroups(groups: ExportGroup[]) {
+    if (!baseFile.value || !selectedPo.value || !groups.length) return;
+    exporting.value = true;
+    exportError.value = "";
+    lastExportFile.value = "";
+    try {
+      const result = await api.exportDocumentGroups({
+        base_file: baseFile.value,
+        po_no: selectedPo.value,
+        groups: groups.map((group) => ({
+          seller: group.seller,
+          documents: group.documents,
+          invoice_no: invoiceNoForSeller(group.seller),
+        })),
+      });
+      if (result.status !== "success") {
+        exportError.value = formatExportFailure(result);
+        lastExportFile.value = "";
+        return result;
+      }
+      lastExportFile.value = result.output_file ?? "";
+      triggerDownload(result, "export.zip");
+      return result;
+    } catch (e) {
+      exportError.value = e instanceof ApiError ? e.message : `导出失败：${e}`;
+    } finally { exporting.value = false; }
+  }
+
+  async function exportOneGroup(group: ExportGroup) {
+    const exportDocuments = group.documents;
+    if (!exportDocuments.length) return;
+    try {
       const payload = {
         base_file: baseFile.value, po_no: selectedPo.value,
-        seller: selectedSeller.value, invoice_no: selectedInvoiceNo.value,
+        seller: group.seller, invoice_no: invoiceNoForSeller(group.seller),
         document: exportDocuments[0], documents: exportDocuments,
       };
       const result = await api.exportDocuments(payload);
@@ -155,21 +199,27 @@ export const useWorkbench = defineStore("workbench", () => {
         return result;
       }
       lastExportFile.value = result.output_file ?? "";
-      // Trigger browser download
-      if (result.output_file) {
-        const downloadUrl = `/api/download?path=${encodeURIComponent(result.output_file)}&session_id=${getSessionId()}`;
-        const a = document.createElement("a");
-        a.href = downloadUrl;
-        a.download = result.output_file.split(/[\\/]/).pop() || result.files[0] || "export.xlsx";
-        a.click();
-      }
+      triggerDownload(result, "export.xlsx");
       return result;
     } catch (e) {
       exportError.value = e instanceof ApiError ? e.message : `导出失败：${e}`;
-    } finally { exporting.value = false; }
+    }
   }
 
-  function selectSeller(seller: string) { selectedSeller.value = seller; return refreshPreview(); }
+  function triggerDownload(result: DryRunResult, fallbackName: string) {
+    if (!result.output_file) return;
+    const downloadUrl = `/api/download?path=${encodeURIComponent(result.output_file)}&session_id=${getSessionId()}`;
+    const a = document.createElement("a");
+    a.href = downloadUrl;
+    a.download = result.output_file.split(/[\\/]/).pop() || result.files[0] || fallbackName;
+    a.click();
+  }
+
+  function selectSeller(seller: string) {
+    selectedSeller.value = seller;
+    syncSelectedInvoiceForSeller();
+    return refreshPreview();
+  }
   function selectInvoice(inv: string | null) { selectedInvoiceNo.value = inv; return refreshPreview(); }
 
   function isInvoicePlDocument(document: string): boolean {
@@ -198,6 +248,28 @@ export const useWorkbench = defineStore("workbench", () => {
     if (document === "INVOICE") return "Invoice";
     if (document === "PL") return "PL";
     return document;
+  }
+
+  function invoiceOptionsForSeller(seller: string): string[] {
+    const po = poEntry.value;
+    if (!po) return [];
+    const sellerOptions = po.invoice_options_by_seller?.[seller] ?? [];
+    if (seller === "SK" || seller === "YM") return sellerOptions;
+    return sellerOptions.length ? sellerOptions : po.invoice_nos;
+  }
+
+  function syncSelectedInvoiceForSeller() {
+    const options = invoiceOptionsForSeller(selectedSeller.value);
+    if (selectedInvoiceNo.value && options.includes(selectedInvoiceNo.value)) return;
+    selectedInvoiceNo.value = options[0] ?? null;
+  }
+
+  function invoiceNoForSeller(seller: string): string | null {
+    const options = invoiceOptionsForSeller(seller);
+    if (seller === selectedSeller.value && selectedInvoiceNo.value && options.includes(selectedInvoiceNo.value)) {
+      return selectedInvoiceNo.value;
+    }
+    return options[0] ?? null;
   }
 
   function toPreviewDocument(document: string, result: PreviewResponse, seller: string): PreviewDocumentResult {
@@ -251,13 +323,14 @@ export const useWorkbench = defineStore("workbench", () => {
     baseFile, poList, loading, error,
     selectedPo, dataRows, dataHeaders,
     selectedSeller, selectedInvoiceNo,
+    invoiceOptions,
     preview, previewData, previewDocuments, previewDocType, previewLoading, sourceIndex, previewSourceEntries,
     exporting, lastExportFile,
     blockingErrors, warnings,
     poIssues, issuesLoading, issuesError,
     previewError, exportError,
     poEntry, poStatus,
-    openSession, selectPo, refreshPreview, editCell, doExport,
+    openSession, selectPo, refreshPreview, editCell, doExport, doExportGroups,
     selectSeller, selectInvoice, refreshPoIssues,
   };
 });

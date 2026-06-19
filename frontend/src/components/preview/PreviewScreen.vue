@@ -52,13 +52,8 @@ const currentDocLabel = computed(() => (
 ));
 const issueErrors = computed<ValidationIssue[]>(() => wb.poIssues?.blocking_errors ?? []);
 const issueCount = computed(() => wb.poIssues?.blocking_count ?? wb.poEntry?.blocking_count ?? errors.value.length);
-const totalPoLineCount = computed(() => wb.poEntry?.line_count ?? 0);
-const invoiceOptions = computed(() => wb.poEntry?.invoice_nos ?? []);
-const showInvoiceFilter = computed(() => isInvoicePlMode.value && invoiceOptions.value.length > 0);
-const currentPreviewLineCount = computed(() => {
-  const counts = previewDocs.value.map((doc) => doc.preview?.lines?.length ?? 0);
-  return counts.length ? Math.max(...counts) : 0;
-});
+const invoiceSelectValue = computed(() => wb.selectedInvoiceNo ?? "");
+const invoiceSelectDisabled = computed(() => !isInvoicePlMode.value);
 
 async function exportCurrentDocument() {
   await wb.doExport();
@@ -73,6 +68,11 @@ async function toggleIssuePanel() {
 
 function closeIssuePanel() {
   issuePanelOpen.value = false;
+}
+
+async function onInvoiceChange(event: Event) {
+  const value = (event.target as HTMLSelectElement).value;
+  await wb.selectInvoice(value || null);
 }
 
 function formatIssueLocation(issue: ValidationIssue): string {
@@ -216,21 +216,19 @@ onUnmounted(() => {
               {{ d.label }}
             </button>
           </div>
-          <div v-if="showInvoiceFilter" class="filter-group invoice-filter">
-            <span class="filter-label">INV#</span>
-            <button
-              v-for="inv in invoiceOptions"
-              :key="inv"
-              class="filter-pill"
-              :class="{ active: wb.selectedInvoiceNo === inv }"
-              @click="wb.selectInvoice(inv)"
+          <div class="filter-group invoice-filter-group">
+            <span class="filter-label">发票</span>
+            <select
+              class="invoice-select"
+              :disabled="invoiceSelectDisabled"
+              :value="invoiceSelectValue"
+              @change="onInvoiceChange"
             >
-              {{ inv }}
-            </button>
-          </div>
-          <div class="preview-scope">
-            当前预览 {{ currentPreviewLineCount }} 行 / PO record {{ totalPoLineCount }} 行
-            <span v-if="isInvoicePlMode && wb.selectedInvoiceNo"> · INV# {{ wb.selectedInvoiceNo }}</span>
+              <option v-if="!wb.invoiceOptions.length" value="">未填写发票号</option>
+              <option v-for="inv in wb.invoiceOptions" :key="inv" :value="inv">
+                {{ inv }}
+              </option>
+            </select>
           </div>
         </div>
         <div class="filter-right">
@@ -450,11 +448,10 @@ onUnmounted(() => {
 .filter-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .filter-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .filter-label { color: var(--muted); font-size: 12px; font-weight: 800; white-space: nowrap; }
-.preview-scope {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
+.invoice-filter-group {
+  margin-left: 8px;
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
 }
 .filter-pill {
   height: 30px; padding: 0 10px;
@@ -467,6 +464,28 @@ onUnmounted(() => {
   background: var(--blue-weak); box-shadow: inset 0 0 0 1px #c7d9ff;
 }
 .filter-pill:disabled { opacity: 0.45; cursor: not-allowed; background: #f2f4f7; }
+.invoice-select {
+  height: 30px;
+  min-width: 150px;
+  max-width: 220px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: white;
+  color: var(--text);
+  padding: 0 28px 0 10px;
+  font-size: 12px;
+  font-weight: 800;
+  outline: none;
+}
+.invoice-select:disabled {
+  background: #f2f4f7;
+  color: var(--muted);
+  opacity: 0.8;
+  cursor: not-allowed;
+}
+.invoice-select:not(:disabled) {
+  cursor: pointer;
+}
 .issue-panel-root { position: relative; flex-shrink: 0; }
 .issue-badge-btn {
   height: 30px; padding: 0 10px;

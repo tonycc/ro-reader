@@ -42,12 +42,26 @@ export interface PoListItem {
   sellers: string[]
   line_count: number
   invoice_nos: string[]
+  invoice_options_by_seller?: Record<string, string[]>
+  exportable_documents_by_seller?: Record<string, string[]>
   blocking_count: number
 }
 
 export interface DryRunRequest {
   base_file: string; po_no: string; seller: string
   invoice_no?: string | null; document?: string; documents?: string[]
+}
+
+export interface BatchExportGroup {
+  seller: string
+  documents: string[]
+  invoice_no?: string | null
+}
+
+export interface BatchExportRequest {
+  base_file: string
+  po_no: string
+  groups: BatchExportGroup[]
 }
 
 export interface DryRunResult {
@@ -179,4 +193,6 @@ export const api = {
   editField: (po_no: string, req: Omit<EditRequest, "po_no">): Promise<{ ok: boolean; message: string }> =>
     request("POST", `/po/${po_no}/edit`, req),
   exportDocuments: (req: DryRunRequest): Promise<DryRunResult> => request("POST", `/po/${req.po_no}/export`, req),
+  exportDocumentGroups: (req: BatchExportRequest): Promise<DryRunResult> =>
+    request("POST", `/po/${req.po_no}/export-batch`, req),
 };

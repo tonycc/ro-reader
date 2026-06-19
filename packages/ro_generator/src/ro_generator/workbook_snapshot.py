@@ -17,8 +17,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ro_generator.base_schema import base_schema
+from ro_generator.document_model import invoice_no_for_line
 from ro_generator.errors import WorkbookOpenError
-from ro_generator.models import Product
+from ro_generator.models import OrderLine, Product
 from ro_generator.resolver import build_product_index_from_rows, resolve_po_rows
 from ro_generator.schema import SELLERS, SHEET_CUSTOMER_PO, SHEET_DATA_BASE, SHEET_PO_RECORD
 from ro_generator.validator import validate_workbook_structure
@@ -39,6 +40,8 @@ class PoInspection:
     sellers: tuple[str, ...]
     line_count: int
     invoice_nos: tuple[str, ...]
+    invoice_options_by_seller: dict[str, tuple[str, ...]]
+    exportable_documents_by_seller: dict[str, tuple[str, ...]]
     blocking_count: int
 
 
@@ -240,6 +243,8 @@ def _build_po_summary(
         for line in resolve_result.lines:
             if line.invoice_no:
                 invoice_nos.add(line.invoice_no)
+        invoice_options_by_seller = _build_invoice_options_by_seller(resolve_result.lines)
+        exportable_documents_by_seller = _build_exportable_documents_by_seller(resolve_result.lines)
 
         has_lines = len(resolve_result.lines) > 0
         status = "blocked" if blocking else ("ready" if has_lines else "partial")
@@ -250,10 +255,78 @@ def _build_po_summary(
                 sellers=tuple(SELLERS),
                 line_count=len(resolve_result.lines) or len(rows),
                 invoice_nos=tuple(sorted(invoice_nos)),
+                invoice_options_by_seller=invoice_options_by_seller,
+                exportable_documents_by_seller=exportable_documents_by_seller,
                 blocking_count=len(blocking),
             )
         )
     return tuple(summaries)
+
+
+def _build_invoice_options_by_seller(lines: tuple[OrderLine, ...]) -> dict[str, tuple[str, ...]]:
+    """返回当前 PO 在各 seller 的可选发票号。
+
+    SK/YM 的 Invoice/PL 使用 `SK/YM INVOICE NO.`；EMAX 使用追加 `-P` 后的发票号。
+    """
+    return {seller: _invoice_options_for_seller(lines, seller) for seller in SELLERS}
+
+
+def _invoice_options_for_seller(lines: tuple[OrderLine, ...], seller: str) -> tuple[str, ...]:
+    options: set[str] = set()
+    for line in _lines_for_invoice_options(lines, seller):
+        invoice_no = invoice_no_for_line(line, document_type="INVOICE", seller=seller)
+        if invoice_no:
+            options.add(invoice_no)
+    return tuple(sorted(options))
+
+
+def _build_exportable_documents_by_seller(
+    lines: tuple[OrderLine, ...],
+) -> dict[str, tuple[str, ...]]:
+    return {seller: _exportable_documents_for_seller(lines, seller) for seller in SELLERS}
+
+
+def _exportable_documents_for_seller(
+    lines: tuple[OrderLine, ...],
+    seller: str,
+) -> tuple[str, ...]:
+    seller_lines = _lines_for_invoice_options(lines, seller)
+    if not seller_lines:
+        return ()
+    if seller in {"SK", "YM"}:
+        documents: list[str] = []
+        if _has_factory_pi_number(seller_lines, seller):
+            documents.append("PI")
+        documents.append("INVOICE_PL")
+        return tuple(documents)
+    return ("PI", "PO", "INVOICE_PL")
+
+
+def _has_factory_pi_number(lines: tuple[OrderLine, ...], seller: str) -> bool:
+    if seller == "SK":
+        return any(line.e10_po for line in lines)
+    if seller == "YM":
+        return any(line.ym_po for line in lines)
+    return True
+
+
+def _lines_for_invoice_options(lines: tuple[OrderLine, ...], seller: str) -> tuple[OrderLine, ...]:
+    if seller not in {"SK", "YM"} or not _has_factory_categories(lines):
+        return lines
+    return tuple(line for line in lines if _factory_seller_for_line(line) == seller)
+
+
+def _has_factory_categories(lines: tuple[OrderLine, ...]) -> bool:
+    return any(_factory_seller_for_line(line) is not None for line in lines)
+
+
+def _factory_seller_for_line(line: OrderLine) -> str | None:
+    category = line.po_record_category
+    if category in (1, 2):
+        return "YM"
+    if category == 3:
+        return "SK"
+    return None
 
 
 # —————————————————————————————————————

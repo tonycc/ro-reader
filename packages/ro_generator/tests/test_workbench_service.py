@@ -4,8 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, cast
+from zipfile import ZipFile
 
-from ro_generator.workbench_service import get_po_issues, inspect_workbook
+from ro_generator.workbench_service import (
+    ExportDocumentGroup,
+    export_document_groups,
+    get_po_issues,
+    inspect_workbook,
+)
 
 FIXTURE = Path(__file__).parents[3] / "tests" / "fixtures" / "synthetic_base.xlsx"
 
@@ -75,3 +81,25 @@ def test_get_po_issues_returns_empty_for_ready_po() -> None:
     assert issues["po_no"] == "4500099999"
     assert issues["blocking_count"] == 0
     assert issues["blocking_errors"] == []
+
+
+def test_export_document_groups_returns_single_zip(tmp_path: Path) -> None:
+    result = export_document_groups(
+        base_file=str(FIXTURE),
+        po_no="4500099999",
+        output_dir=str(tmp_path),
+        groups=(
+            ExportDocumentGroup(seller="GS PTE", documents=("PI",)),
+            ExportDocumentGroup(seller="EMAX PTE", documents=("PI",)),
+        ),
+    )
+
+    assert result.status == "success"
+    assert result.output_file is not None
+    assert result.output_file.endswith(".zip")
+    assert result.files == (
+        "GS_PTE-RO-PI-4500099999.xlsx",
+        "EMAX_PTE-RO-PI-4500099999.xlsx",
+    )
+    with ZipFile(result.output_file) as zf:
+        assert sorted(zf.namelist()) == sorted(result.files)

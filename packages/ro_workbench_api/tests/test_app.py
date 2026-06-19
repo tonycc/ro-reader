@@ -59,6 +59,17 @@ def test_open_session_returns_po_list() -> None:
     assert "4500088888" in po_nos
 
 
+def test_open_session_returns_invoice_options_by_seller() -> None:
+    resp = client.post("/api/session/open", json={"base_file": str(FIXTURE)})
+
+    assert resp.status_code == 200
+    data = _response_json(resp)
+    po = next(p for p in data["po_list"] if p["po_no"] == "4500099999")
+    assert po["invoice_options_by_seller"]["GS PTE"] == ["INV-2603-001"]
+    assert po["invoice_options_by_seller"]["EMAX PTE"] == ["INV-2603-001-P"]
+    assert po["exportable_documents_by_seller"]["GS PTE"] == ["PI", "PO", "INVOICE_PL"]
+
+
 def test_open_session_reuses_existing_for_same_base() -> None:
     resp1 = client.post("/api/session/open", json={"base_file": str(FIXTURE)})
     resp2 = client.post("/api/session/open", json={"base_file": str(FIXTURE)})
@@ -240,6 +251,58 @@ def test_export_invoice_pl_requests_combined_documents(
     data = _response_json(resp)
     assert data["files"] == ["SK-RO-INVOICE&PL-4500099999.xlsx"]
     assert data["output_file"].endswith(".xlsx")
+
+
+def test_export_batch_returns_single_zip(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_export_document_groups(**kwargs: Any) -> GenerationResult:
+        captured.update(kwargs)
+        output = tmp_path / "RO-4500099999.zip"
+        output.write_bytes(b"fake zip")
+        return GenerationResult(
+            status="success",
+            files=(
+                "GS_PTE-RO-PI-4500099999.xlsx",
+                "EMAX_PTE-RO-INVOICE&PL-4500099999-INV-2603-001-P.xlsx",
+            ),
+            output_file=str(output),
+        )
+
+    monkeypatch.setattr("ro_workbench_api.app.export_document_groups", fake_export_document_groups)
+    sid = _response_json(client.post("/api/session/open", json={"base_file": str(FIXTURE)}))[
+        "session_id"
+    ]
+
+    resp = client.post(
+        "/api/po/4500099999/export-batch",
+        json={
+            "base_file": str(FIXTURE),
+            "po_no": "4500099999",
+            "groups": [
+                {"seller": "GS PTE", "documents": ["PI"]},
+                {
+                    "seller": "EMAX PTE",
+                    "documents": ["INVOICE_PL"],
+                    "invoice_no": "INV-2603-001-P",
+                },
+            ],
+        },
+        headers={"X-Session-Id": sid},
+    )
+
+    assert resp.status_code == 200
+    groups = captured["groups"]
+    assert groups[0].seller == "GS PTE"
+    assert groups[0].documents == ("PI",)
+    assert groups[1].seller == "EMAX PTE"
+    assert groups[1].documents == ("INVOICE", "PL")
+    data = _response_json(resp)
+    assert data["output_file"].endswith(".zip")
+    assert data["files"] == [
+        "GS_PTE-RO-PI-4500099999.xlsx",
+        "EMAX_PTE-RO-INVOICE&PL-4500099999-INV-2603-001-P.xlsx",
+    ]
 
 
 # --- Session expiry ---
