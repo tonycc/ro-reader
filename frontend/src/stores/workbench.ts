@@ -9,6 +9,7 @@ import type {
   PreviewDocumentResult,
   PoIssuesResponse,
   PreviewResponse,
+  ValidationIssue,
 } from "./api";
 import { api, setSessionId, getSessionId, ApiError } from "./api";
 
@@ -37,8 +38,8 @@ export const useWorkbench = defineStore("workbench", () => {
   const exporting = ref(false);
   const lastExportFile = ref("");
 
-  const blockingErrors = ref<unknown[]>([]);
-  const warnings = ref<unknown[]>([]);
+  const blockingErrors = ref<ValidationIssue[]>([]);
+  const warnings = ref<ValidationIssue[]>([]);
   const poIssues = ref<PoIssuesResponse | null>(null);
   const issuesLoading = ref(false);
   const issuesError = ref("");
@@ -59,7 +60,7 @@ export const useWorkbench = defineStore("workbench", () => {
     try {
       baseFile.value = file;
       const data = await api.openSession(file);
-      if (!data.ok) throw new Error(data.errors?.[0] ? String((data.errors[0] as Record<string, unknown>).message) : "session failed");
+      if (!data.ok) throw new Error(data.errors?.[0]?.message ?? "session failed");
       if (data.session_id) setSessionId(data.session_id);
       poList.value = data.po_list;
     } catch (e) { error.value = String(e); }
@@ -235,13 +236,9 @@ export const useWorkbench = defineStore("workbench", () => {
     return `导出失败：${result.status}`;
   }
 
-  function formatIssueMessage(issue: unknown): string {
-    if (!issue || typeof issue !== "object") return "";
-    const record = issue as Record<string, unknown>;
-    const code = typeof record.code === "string" ? record.code : "";
-    const message = typeof record.message === "string" ? record.message : "";
-    if (code && message) return `${code}: ${message}`;
-    return message || code;
+  function formatIssueMessage(issue: ValidationIssue): string {
+    if (issue.code && issue.message) return `${issue.code}: ${issue.message}`;
+    return issue.message || issue.code;
   }
 
   function documentLabel(document: string): string {
@@ -295,28 +292,17 @@ export const useWorkbench = defineStore("workbench", () => {
       document,
       label: `${seller} · ${documentLabel(document)}`,
       preview: null,
-      errors: [{ kind: "blocking_error", code: "PREVIEW_REQUEST_FAILED", message }],
+      errors: [{ kind: "blocking_error", code: "PREVIEW_REQUEST_FAILED", message, sheet: null, row: null, field: null }],
       warnings: [],
     };
   }
 
-  function isSoftPreviewIssue(issue: unknown): boolean {
-    return getIssueCode(issue) === "NO_LINES_FOR_SELLER";
+  function isSoftPreviewIssue(issue: ValidationIssue): boolean {
+    return issue.code === "NO_LINES_FOR_SELLER";
   }
 
-  function getIssueCode(issue: unknown): string {
-    if (!issue || typeof issue !== "object") return "";
-    const code = (issue as Record<string, unknown>).code;
-    return typeof code === "string" ? code : "";
-  }
-
-  function asPreviewWarning(issue: unknown): unknown {
-    if (!issue || typeof issue !== "object") return issue;
-    return {
-      ...(issue as Record<string, unknown>),
-      kind: "warning",
-      severity: "low",
-    };
+  function asPreviewWarning(issue: ValidationIssue): ValidationIssue {
+    return { ...issue, kind: "warning", severity: "low" };
   }
 
   return {

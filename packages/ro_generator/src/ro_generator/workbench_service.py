@@ -240,7 +240,6 @@ def _generated_file_paths(result: GenerationResult) -> tuple[Path, ...]:
 __all__ = [
     "ExportDocumentGroup",
     "FileInspectionResult",
-    "PoInspection",
     "WorkbookInspectionResult",
     "export_document_groups",
     "get_customer_po_data",

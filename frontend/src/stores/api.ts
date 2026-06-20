@@ -1,9 +1,11 @@
+import { ref } from "vue";
+
 const BASE = "/api";
 
-let _sessionId = "";
+const sessionId = ref("");
 
-export function setSessionId(id: string) { _sessionId = id; }
-export function getSessionId(): string { return _sessionId; }
+export function setSessionId(id: string) { sessionId.value = id; }
+export function getSessionId(): string { return sessionId.value; }
 
 export class ApiError extends Error {
   code: string;
@@ -17,7 +19,7 @@ export class ApiError extends Error {
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = {};
   if (body) headers["Content-Type"] = "application/json";
-  if (_sessionId) headers["X-Session-Id"] = _sessionId;
+  if (sessionId.value) headers["X-Session-Id"] = sessionId.value;
 
   const opts: RequestInit = {
     method,
@@ -66,7 +68,7 @@ export interface BatchExportRequest {
 
 export interface DryRunResult {
   status: string; summary: Record<string, unknown>; files: string[]
-  output_file: string | null; errors: unknown[]; warnings: unknown[]
+  output_file: string | null; errors: ValidationIssue[]; warnings: ValidationIssue[]
   missing_inputs: string[]; source_index: SourceIndexEntry[]
 }
 
@@ -123,7 +125,7 @@ export interface PreviewSourceEntry {
 export interface PreviewResponse {
   status: string
   preview: PreviewPayload | null
-  errors: unknown[]; warnings: unknown[]
+  errors: ValidationIssue[]; warnings: ValidationIssue[]
   missing_inputs: string[]
   options: Record<string, string[]>
 }
@@ -134,8 +136,8 @@ export interface PreviewDocumentResult {
   document: string
   label: string
   preview: PreviewPayload | null
-  errors: unknown[]
-  warnings: unknown[]
+  errors: ValidationIssue[]
+  warnings: ValidationIssue[]
 }
 
 export interface SourceIndexEntry {
@@ -167,7 +169,7 @@ export interface OpenSessionResponse {
   ok: boolean
   session_id?: string
   po_list: PoListItem[]
-  errors?: unknown[]
+  errors?: ValidationIssue[]
 }
 
 export interface CheckPathResult {
