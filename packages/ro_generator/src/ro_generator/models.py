@@ -13,7 +13,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from ro_generator.source_index import SourceIndex
 
 # —————————————————————————————————————
 # 校验消息
@@ -210,6 +213,4 @@ class GenerationResult:
     warnings: tuple[ValidationMessage, ...] = ()
     missing_inputs: tuple[str, ...] = ()
     options: dict[str, tuple[dict[str, str], ...]] = field(default_factory=dict)
-    # 注：source_index 是 SourceIndex 类型，但避免 models.py 反向依赖 source_index.py，
-    # 用 object 暂存，工作台后端可用 isinstance 还原类型。
-    source_index: object = None
+    source_index: SourceIndex | None = None

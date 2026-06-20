@@ -66,6 +66,7 @@ from ro_generator.validator import validate_workbook_structure
 from ro_generator.workbook_reader import WorkbookReader
 
 if TYPE_CHECKING:
+    from ro_generator.document_preview import DocumentPreview
     from ro_generator.workbook_snapshot import WorkbookSnapshot
 
 _bs = base_schema()
@@ -89,7 +90,7 @@ class PreviewResult:
     """预览结果。不包含 output_file，不经过 Excel renderer。"""
 
     status: str  # success | error | needs_input
-    preview: object | None = None  # DocumentPreview
+    preview: DocumentPreview | None = None
     errors: tuple[ValidationMessage, ...] = ()
     warnings: tuple[ValidationMessage, ...] = ()
     missing_inputs: tuple[str, ...] = ()
@@ -209,7 +210,9 @@ def preview_from_snapshot(
     """
     from ro_generator.document_preview import build_preview
 
-    documents = tuple(d.upper() for d in request.documents)
+    documents: tuple[DocumentType, ...] = cast(
+        tuple[DocumentType, ...], tuple(d.upper() for d in request.documents)
+    )
     if not documents:
         return PreviewResult(
             status="error",
@@ -221,7 +224,7 @@ def preview_from_snapshot(
                 ),
             ),
         )
-    doc_type = documents[0]
+    doc_type: DocumentType = documents[0]
 
     # 从 snapshot 获取 PO 行和产品索引
     rows = snapshot.po_rows_for_po(request.po_no)
@@ -319,7 +322,7 @@ def preview_from_snapshot(
         buyer=buyer,
         po_no=request.po_no,
         invoice_no=invoice_no,
-        doc_type=doc_type,  # type: ignore[arg-type]
+        doc_type=doc_type,
     )
 
     all_warnings = list(warnings_resolver)
@@ -337,7 +340,9 @@ def preview_from_snapshot(
 
 
 def _generate(request: DocumentRequest) -> GenerationResult:
-    documents = tuple(d.upper() for d in request.documents)
+    documents: tuple[DocumentType, ...] = cast(
+        tuple[DocumentType, ...], tuple(d.upper() for d in request.documents)
+    )
     if not documents:
         return _error_result(
             ValidationMessage(
@@ -435,7 +440,7 @@ def _generate(request: DocumentRequest) -> GenerationResult:
                 buyer=active_buyer,
                 po_no=request.po_no,
                 invoice_no=invoice_no,
-                doc_type=doc_type,  # type: ignore[arg-type]
+                doc_type=doc_type,
                 request=request,
             )
             if doc_result.status == "error":
@@ -521,7 +526,7 @@ def _generate(request: DocumentRequest) -> GenerationResult:
 
 
 def build_document_model(
-    lines: tuple,  # type: ignore[type-arg]
+    lines: tuple[OrderLine, ...],
     *,
     seller: str,
     buyer: str,
@@ -692,7 +697,7 @@ def _build_generation_plan(
 
 
 def _generate_invoice_pl_bundle(
-    lines: tuple,  # type: ignore[type-arg]
+    lines: tuple[OrderLine, ...],
     *,
     seller: str,
     buyer: str,
@@ -777,7 +782,7 @@ def _build_summary(
 
 def _resolve_segment(
     request: DocumentRequest,
-    lines: tuple,  # type: ignore[type-arg]
+    lines: tuple[OrderLine, ...],
 ) -> tuple[str | None, str | None, tuple[ValidationMessage, ...]]:
     if request.seller:
         if request.seller not in SELLERS:
@@ -801,7 +806,7 @@ def _missing_pi_no_result(
     *,
     seller: str,
     field: str,
-    lines: tuple,  # type: ignore[type-arg]
+    lines: tuple[OrderLine, ...],
 ) -> BuildDocumentResult:
     row = next((line.source_row for line in lines if line.source_row is not None), None)
     return BuildDocumentResult(
@@ -823,7 +828,7 @@ def _missing_pi_no_result(
 def _needs_input(
     base_messages: tuple[ValidationMessage, ...],
     inputs: list[str],
-    lines: tuple,  # type: ignore[type-arg]
+    lines: tuple[OrderLine, ...],
 ) -> GenerationResult:
     options: dict[str, tuple[dict[str, str], ...]] = {}
     if INPUT_SELLER in inputs:
@@ -837,7 +842,7 @@ def _needs_input(
 
 
 def _collect_distinct_invoice_nos(
-    lines: tuple,  # type: ignore[type-arg]
+    lines: tuple[OrderLine, ...],
     *,
     seller: str,
     document_type: str,
@@ -852,7 +857,7 @@ def _collect_distinct_invoice_nos(
 
 
 def _invoice_no_exists(
-    lines: tuple,  # type: ignore[type-arg]
+    lines: tuple[OrderLine, ...],
     invoice_no: str,
     *,
     seller: str,

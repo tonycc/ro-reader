@@ -480,16 +480,35 @@ def _build_source_entries(
     resolved_values: dict[str, str] | None = None,
 ) -> list[dict[str, object]]:
     """从 layout + column_labels 构建字段来源记录，与预览展示完全一致。"""
+    src_overrides = _parse_source_overrides(preview_config)
     entries: list[dict[str, object]] = []
-    src_overrides: dict[str, dict[str, str]] = {}
-    raw_overrides = preview_config.get("source_overrides", {})
-    if isinstance(raw_overrides, dict):
-        for k, v in raw_overrides.items():
-            if isinstance(k, str) and isinstance(v, dict):
-                src_overrides[k] = {ik: str(iv) for ik, iv in v.items() if isinstance(iv, str)}
+    entries.extend(
+        _build_header_source_entries(model, layout, mapping, resolved_values, src_overrides)
+    )
+    entries.extend(_build_line_source_entries(model, column_labels, mapping, src_overrides))
+    entries.extend(_build_totals_source_entries(totals, mapping))
+    return entries
 
-    # 1. Header 字段：遍历 layout 中所有区域引用的 field 名
-    seen_header: set[str] = set()
+
+def _parse_source_overrides(preview_config: dict[str, Any]) -> dict[str, dict[str, str]]:
+    result: dict[str, dict[str, str]] = {}
+    raw = preview_config.get("source_overrides", {})
+    if isinstance(raw, dict):
+        for k, v in raw.items():
+            if isinstance(k, str) and isinstance(v, dict):
+                result[k] = {ik: str(iv) for ik, iv in v.items() if isinstance(iv, str)}
+    return result
+
+
+def _build_header_source_entries(
+    model: DocumentModel,
+    layout: dict[str, object],
+    mapping: Any,
+    resolved_values: dict[str, str] | None,
+    src_overrides: dict[str, dict[str, str]],
+) -> list[dict[str, object]]:
+    entries: list[dict[str, object]] = []
+    seen: set[str] = set()
     for section in ("top", "info"):
         sec = layout.get(section, {})
         if not isinstance(sec, dict):
@@ -499,9 +518,9 @@ def _build_source_entries(
             if not isinstance(field_names, list):
                 continue
             for field_name in field_names:
-                if not isinstance(field_name, str) or field_name in seen_header:
+                if not isinstance(field_name, str) or field_name in seen:
                     continue
-                seen_header.add(field_name)
+                seen.add(field_name)
 
                 spec = resolve_header_field_spec(
                     field_name, seller=model.seller, document_type=model.document_type
@@ -526,7 +545,6 @@ def _build_source_entries(
                         sheet = spec.source_sheet
                         field = spec.source_field
                         rule = spec.rule
-                # YAML source_overrides 覆盖默认来源信息
                 override = src_overrides.get(field_name, {})
                 if override.get("sheet"):
                     sheet = override["sheet"]
@@ -556,22 +574,29 @@ def _build_source_entries(
                         "rule": rule,
                     }
                 )
+    return entries
 
-    # 2. 明细行字段：遍历 column_labels（与预览表格列头一致）
+
+def _build_line_source_entries(
+    model: DocumentModel,
+    column_labels: list[dict[str, str]],
+    mapping: Any,
+    src_overrides: dict[str, dict[str, str]],
+) -> list[dict[str, object]]:
+    entries: list[dict[str, object]] = []
     for i, dl in enumerate(model.lines):
         for col_def in column_labels:
             key = col_def.get("key", "")
             if not isinstance(key, str) or not key:
                 continue
-            # label 直接来自 YAML column_labels，保证与预览表头一致
             label = str(col_def.get("label", key))
             override = src_overrides.get(key, {})
 
-            # row_fixed 列（键为列字母，如 "A"）从映射取值
             row_fixed: dict[str, str] = {}
             if mapping is not None and hasattr(mapping, "lines"):
                 row_fixed = mapping.lines.row_fixed or {}
             line_spec = None
+            val: object = None
             if key in row_fixed:
                 val = row_fixed[key]
                 if not val:
@@ -619,8 +644,15 @@ def _build_source_entries(
                     "rule": rule,
                 }
             )
+    return entries
 
-    # 3. 合计字段（严格跟随 mapping.totals，保证与预览 footer 一致）
+
+def _build_totals_source_entries(
+    totals: dict[str, object],
+    mapping: Any,
+) -> list[dict[str, object]]:
+    entries: list[dict[str, object]] = []
+
     mapping_totals = getattr(mapping, "totals", {}) if mapping is not None else {}
     if isinstance(mapping_totals, dict):
         for key, total_cell in mapping_totals.items():

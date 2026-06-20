@@ -27,6 +27,7 @@ from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from ro_generator.document_preview import DocumentPreview
 from ro_generator.generator import generate, preview_from_snapshot
 from ro_generator.models import (
     DocumentRequest,
@@ -461,29 +462,28 @@ def preview_document(
     snapshot = cache.get_snapshot(req.base_file)
     result = preview_from_snapshot(snapshot, request)
 
-    # Serialize DocumentPreview
     preview_data: dict[str, Any] | None = None
     if result.preview is not None:
-        p = result.preview
+        p: DocumentPreview = result.preview
         preview_data = {
-            "document_type": getattr(p, "document_type", ""),
-            "title": getattr(p, "title", ""),
-            "seller": getattr(p, "seller", ""),
-            "buyer": getattr(p, "buyer", ""),
-            "po_no": getattr(p, "po_no", ""),
-            "pi_no": getattr(p, "pi_no", None),
-            "invoice_no": getattr(p, "invoice_no", None),
-            "ship_to": getattr(p, "ship_to", None),
-            "seller_info": getattr(p, "seller_info", []),
-            "to_label": getattr(p, "to_label", ""),
-            "terms": getattr(p, "terms", {}),
-            "column_labels": getattr(p, "column_labels", []),
-            "lines": getattr(p, "lines", []),
-            "totals": getattr(p, "totals", {}),
-            "notes": getattr(p, "notes", []),
-            "source_entries": getattr(p, "source_entries", []),
-            "layout": getattr(p, "layout", {}),
-            "resolved_values": getattr(p, "resolved_values", {}),
+            "document_type": p.document_type,
+            "title": p.title,
+            "seller": p.seller,
+            "buyer": p.buyer,
+            "po_no": p.po_no,
+            "pi_no": p.pi_no,
+            "invoice_no": p.invoice_no,
+            "ship_to": p.ship_to,
+            "seller_info": p.seller_info,
+            "to_label": p.to_label,
+            "terms": p.terms,
+            "column_labels": p.column_labels,
+            "lines": p.lines,
+            "totals": p.totals,
+            "notes": p.notes,
+            "source_entries": p.source_entries,
+            "layout": p.layout,
+            "resolved_values": p.resolved_values,
         }
 
     return {
