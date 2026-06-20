@@ -10,11 +10,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```text
 packages/
-  ro_generator/        核心包（Python）：13 模块，261 测试，92% 覆盖
-  ro_workbench_api/    工作台后端（FastAPI）：10 API 端点 + 2 静态资源路由
+  ro_generator/        核心包（Python）：24 模块，~400 测试
+  ro_workbench_api/    工作台后端（FastAPI）：13 API 端点 + 3 静态资源路由
   ro_workbench_launcher/  启动器（PyInstaller .app 24 MB）
-frontend/              Vue 3 + TypeScript + Pinia（Vite 构建）
-templates/             14 个 .xlsx 模板 + 14 份 YAML mapping
+frontend/              Vue 3 + TypeScript + Pinia（Vite 构建，16 E2E 场景）
+templates/             10 个 .xlsx 模板 workbook + 14 份 YAML mapping
 tests/fixtures/        合成 base 文件生成脚本
 ```
 
@@ -22,6 +22,8 @@ tests/fixtures/        合成 base 文件生成脚本
 - `docs/development/ro-document-workbench-ui-design.md`：**前端 UI 与交互设计**。
 - `docs/development/implementation-guide.md`：**工程实施指南**（含各 Phase 细粒度任务清单与状态）。
 - `docs/单据模板字段取值规则汇总.md`：**单据模板字段取值规则汇总**（当前字段来源基准，按模板汇总字段取值规则）。
+- `docs/development/agent-field-fix-playbook.md`：**Agent 字段修复操作手册**（标准排查步骤、修改层级速查）。
+- `docs/development/field-fix-case-library.md`：**字段修复案例库**（常见字段问题的根因、修改位置与验证方式）。
 - `docs/development/phase-0-spike-results.md`：Phase 0 spike 结论。
 
 > 当 docs 文件之间冲突时，优先级为：产品方案 > UI 设计 > 实施指南 > CLAUDE.md。
@@ -44,6 +46,9 @@ MVP 形态为**本地启动器 + 浏览器**：双击 PyInstaller 打包的可�
 │  models / errors / schema / workbook_reader / validator    │
 │  resolver / document_model / template_mapping              │
 │  renderer / packager / generator / cli / source_index      │
+│  line_rules / header_rules / totals_rules                  │
+│  workbench_service / workbook_cache / workbook_snapshot     │
+│  workbook_editor / document_preview / header_multiline     │
 │  —— 业务规则只写在这里 ——                                   │
 └────────────────────────────────────────────────────────────┘
               ▲                          ▲
@@ -88,7 +93,7 @@ MVP 形态为**本地启动器 + 浏览器**：双击 PyInstaller 打包的可�
 | 前端状态 | Pinia |
 | 数据视图 | 自研 `<table>` + inline 编辑（未引入重型 grid 库） |
 | 预览渲染 | 后端 openpyxl 渲染后通过结构化 JSON payload 传给前端展示（header + table layout），支持悬停溯源 |
-| 测试 | pytest（后端） / Playwright（E2E，5 场景） |
+| 测试 | pytest（后端） / Playwright（E2E） |
 
 **禁用清单**：
 
@@ -145,6 +150,9 @@ MVP 形态为**本地启动器 + 浏览器**：双击 PyInstaller 打包的可�
 - `TOTAL CBM = L * W * H / 1000000 * CTNS`
 - `BALANCE QTY = FINALQTY - 各月出货数量合计`
 - **PI/PO 使用 `客户PO.Order Quantity`；Invoice/PL 按 `invoice_month` 用月度出货数量**。
+- SK/YM 主体按 `PO record.CATEGORY` 过滤：`1/2 → YM`，`3 → SK`。已明确选择 seller 时只处理对应行。
+- SK/YM 的 Invoice + PL 同时导出时生成一个 `.xlsx` workbook，包含两个 sheet。
+- PL 底部 `PACKED IN <总 CTNS> CTNS` 由 renderer 根据 `DocumentModel.total_carton_count` 写入，mapping 通过 `notes.packed_in_ctns` 指定单元格。
 - **MVP 仅支持 USD**。
 - 缺失关键字段（INV#、FACTORY DOC NO.、SAP、价格等）必须报阻断错误，**绝不自动编造**。
 - SK / YM 主体没有 PO 模板，请求生成 PO 时返回阻断错误。
@@ -193,7 +201,7 @@ zip：`RO-<PO>-<MONTH>.zip`。`<MONTH>` 已含年份信息（`2601` = 2026-01）
 ```bash
 # === 核心包 ===
 uv sync --all-packages                          # 安装所有依赖
-uv run pytest                                   # 全部 Python 测试（261 项）
+uv run pytest                                   # 全部 Python 测试
 uv run pytest packages/ro_generator/tests/test_resolver.py -v
 uv run pytest packages/ro_generator/tests/test_resolver.py::test_known_po_resolves -v
 
@@ -210,7 +218,7 @@ uv run uvicorn ro_workbench_api.app:app --reload --host 127.0.0.1 --port 54321
 pnpm install
 pnpm run dev                                    # Vite 开发服务器 :5173
 pnpm run build                                  # vue-tsc + vite build → dist/
-pnpm run test:e2e                               # Playwright E2E（5 场景）
+pnpm run test:e2e                               # Playwright E2E（16 场景）
 
 # === 启动器（macOS） ===
 uv run pyinstaller packages/ro_workbench_launcher/ro-workbench.spec --noconfirm
@@ -219,6 +227,16 @@ uv run pyinstaller packages/ro_workbench_launcher/ro-workbench.spec --noconfirm
 # === Lint ===
 uv run ruff check . && uv run ruff format --check . && uv run mypy packages
 ```
+
+## 提交规范
+
+使用 [Conventional Commits](https://www.conventionalcommits.org/)，commitlint 强制校验。
+
+允许的 type：`feat` / `fix` / `refactor` / `test` / `docs` / `chore` / `spike`
+
+允许的 scope：`generator` / `api` / `launcher` / `frontend` / `templates` / `impl` / `product` / `ui` / `ci` / `deps` / `repo`
+
+标题上限 100 字符。示例：`feat(generator): add SK/YM CATEGORY filtering`
 
 ## 工作台前端架构
 
@@ -258,10 +276,13 @@ uv run ruff check . && uv run ruff format --check . && uv run mypy packages
 | `POST` | `/api/check-path` | 校验文件路径是否存在 |
 | `POST` | `/api/session/open` | 打开 base 文件，返回 session_id + PO 列表 |
 | `GET` | `/api/po/{po_no}` | 获取 PO 数据行（headers + rows） |
+| `GET` | `/api/po/{po_no}/customer-po` | 获取客户 PO 数据 |
+| `GET` | `/api/po/{po_no}/issues` | 获取 PO 校验问题（阻断/警告/缺失） |
 | `POST` | `/api/po/{po_no}/dry-run` | 干跑装配（不写入磁盘） |
 | `POST` | `/api/po/{po_no}/preview` | 获取结构化预览 payload |
 | `POST` | `/api/po/{po_no}/edit` | 编辑单元格并写回 base 文件 |
-| `POST` | `/api/export` | 导出单据到磁盘 |
+| `POST` | `/api/po/{po_no}/export` | 导出单个 PO 的单据 |
+| `POST` | `/api/po/{po_no}/export-batch` | 批量导出多个单据组 |
 | `GET` | `/api/download` | 下载导出文件 |
 | `POST` | `/api/session/close` | 关闭 session |
 
@@ -291,10 +312,10 @@ Session 通过 `X-Session-Id` header 传递（前端 Pinia store 自动管理）
 | Phase | 内容 | 状态 |
 | --- | --- | --- |
 | 0 | 三个 spike：模板样式保留、预览渲染组件选型、启动器打包链路 | ✅ 完成（Spike A/B Phase 0 通过；Spike C Phase 3 完成） |
-| 1 | 核心包 + CLI（先做 Invoice 一种单据） | ✅ 完成（261 测试，覆盖率 92%） |
+| 1 | 核心包 + CLI（先做 Invoice 一种单据） | ✅ 完成 |
 | 2 | 四类单据 + GS/EMAX/SK/YM 多主体模板 + 模板预览 CLI | ✅ 完成（14 份 mapping，四类单据 × 三链段） |
 | 3 | 工作台 MVP（FastAPI + Vue + PyInstaller 启动器，含完整 UI） | ✅ 完成（前后端联调通过，.app 24 MB） |
-| 4 | 加固（回归测试、性能、模板版本管理） | ✅ 完成（E2E 5 场景、261 测试、README） |
+| 4 | 加固（回归测试、性能、模板版本管理） | ✅ 完成（E2E 16 场景、~400 pytest、README） |
 
 > Phase 0 spike 结论见 [`docs/development/phase-0-spike-results.md`](docs/development/phase-0-spike-results.md)。
 

@@ -31,6 +31,7 @@ from ro_generator.schema import (
     SHEET_DATA_BASE,
     SHEET_PO_RECORD,
 )
+from ro_generator.seller_filter import int_or_none
 from ro_generator.workbook_reader import ROW_NUMBER_KEY, WorkbookReader, row_decimal_places
 
 _bs = base_schema()
@@ -168,7 +169,7 @@ def build_product_index_from_rows(rows: tuple[dict[str, object], ...]) -> dict[s
         sap = _str_or_none(row.get(_db("sap")))
         if not sap:
             continue
-        category = _int_or_none(row.get(_db("category")))
+        category = int_or_none(row.get(_db("category")))
         if category is None:
             continue
         # 按品类读取 DATA BASE 中的价格（9 列：3 卖方 × 3 品类）
@@ -188,8 +189,8 @@ def build_product_index_from_rows(rows: tuple[dict[str, object], ...]) -> dict[s
             category=category,
             gs_model=_str_or_none(row.get(_db("gs_model"))),
             sub_category=_str_or_none(row.get(_db("sub_category"))),
-            moq=_int_or_none(row.get(_db("moq"))),
-            fob_lt=_int_or_none(row.get(_db("fob_lt"))),
+            moq=int_or_none(row.get(_db("moq"))),
+            fob_lt=int_or_none(row.get(_db("fob_lt"))),
             brand=_str_or_none(row.get(_db("brand"))),
             rfid=_str_or_none(row.get(_db("rfid"))),
             packing_type=_str_or_none(row.get(_db("packing_type"))),
@@ -255,7 +256,7 @@ def _resolve_row(
     products: dict[str, Product],
     customer_po_lookup: CustomerPoLookup,
 ) -> tuple[OrderLine | None, list[ValidationMessage]]:
-    row_number = _int_or_none(row.get(ROW_NUMBER_KEY))
+    row_number = int_or_none(row.get(ROW_NUMBER_KEY))
     messages: list[ValidationMessage] = []
 
     sap = _str_or_none(row.get(_po("sap")))
@@ -377,7 +378,7 @@ def _resolve_row(
         description=product.description,
         category=product.category,
         quantity=quantity,
-        po_record_category=_int_or_none(row.get(_po("category"))),
+        po_record_category=int_or_none(row.get(_po("category"))),
         product=product,
         ship_to=_resolve_ship_to(
             sap=sap,
@@ -600,7 +601,7 @@ def _matched_customer_po_rows(
 def _row_number(row: dict[str, object] | None) -> int | None:
     if row is None:
         return None
-    return _int_or_none(row.get(ROW_NUMBER_KEY))
+    return int_or_none(row.get(ROW_NUMBER_KEY))
 
 
 def _row_label(row: dict[str, object] | None) -> str:
@@ -721,21 +722,6 @@ def _str_or_empty(value: object) -> str:
     return _str_or_none(value) or ""
 
 
-def _int_or_none(value: object) -> int | None:
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value) if value == int(value) else None
-    if isinstance(value, Decimal):
-        return int(value) if value == value.to_integral_value() else None
-    if isinstance(value, str):
-        try:
-            return int(value.strip())
-        except ValueError:
-            return None
-    return None
 
 
 def _decimal_from_row(row: dict[str, object], field_name: str) -> Decimal | None:

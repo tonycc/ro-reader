@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, cast
@@ -51,6 +51,14 @@ from ro_generator.resources import resource_root
 from ro_generator.schema import (
     SELLER_TO_BUYER,
     SELLERS,
+)
+from ro_generator.seller_filter import (
+    ENTITIES_WITHOUT_PO,
+    SK_YM_FACTORY_SELLERS,
+    filter_lines_for_seller,
+    has_factory_categories,
+    prefilter_raw_rows,
+    raw_row_filter_for_request,
 )
 from ro_generator.source_index import SourceIndex
 from ro_generator.template_mapping import TemplateMapping, load_template_mapping
@@ -228,7 +236,7 @@ def preview_from_snapshot(
                 ),
             ),
         )
-    rows = _prefilter_raw_rows_for_request(rows, seller=request.seller, documents=documents)
+    rows = prefilter_raw_rows(rows, seller=request.seller, documents=documents)
 
     # 解析订单行
     resolve_result = resolve_po_rows(
@@ -346,7 +354,7 @@ def _generate(request: DocumentRequest) -> GenerationResult:
         resolve_result = resolve_po_lines(
             reader,
             request.po_no,
-            row_filter=_raw_row_filter_for_request(seller=request.seller, documents=documents),
+            row_filter=raw_row_filter_for_request(seller=request.seller, documents=documents),
         )
 
     blocking = tuple(m for m in resolve_result.messages if m.kind == "blocking_error")
@@ -510,8 +518,6 @@ def _generate(request: DocumentRequest) -> GenerationResult:
 # 单文档模型构建（export 和 preview 共用）
 # —————————————————————————————————————
 
-ENTITIES_WITHOUT_PO: Final = {"SK", "YM"}
-SK_YM_FACTORY_SELLERS: Final = {"SK", "YM"}
 
 
 def build_document_model(
@@ -542,7 +548,7 @@ def build_document_model(
             ),
         )
 
-    lines = _filter_lines_for_selected_seller(lines, seller)
+    lines = filter_lines_for_seller(lines, seller)
     if not lines:
         return BuildDocumentResult(
             model=None,
@@ -676,94 +682,13 @@ def _build_generation_plan(
     buyer: str,
     lines: tuple[OrderLine, ...],
 ) -> tuple[tuple[str, str, tuple[OrderLine, ...]], ...]:
-    if seller not in SK_YM_FACTORY_SELLERS or not _has_po_record_factory_categories(lines):
+    if seller not in SK_YM_FACTORY_SELLERS or not has_factory_categories(lines):
         return ((seller, buyer, lines),)
 
-    group_lines = _filter_lines_for_selected_seller(lines, seller)
+    group_lines = filter_lines_for_seller(lines, seller)
     if group_lines:
         return ((seller, SELLER_TO_BUYER[seller], group_lines),)
     return ((seller, buyer, lines),)
-
-
-def _filter_lines_for_selected_seller(
-    lines: tuple,  # type: ignore[type-arg]
-    seller: str,
-) -> tuple:  # type: ignore[type-arg]
-    if seller not in SK_YM_FACTORY_SELLERS or not _has_po_record_factory_categories(lines):
-        return lines
-    return tuple(line for line in lines if _factory_seller_for_line(line) == seller)
-
-
-def _has_po_record_factory_categories(lines: tuple) -> bool:  # type: ignore[type-arg]
-    return any(_factory_seller_for_line(line) is not None for line in lines)
-
-
-def _factory_seller_for_line(line: object) -> str | None:
-    category = getattr(line, "po_record_category", None)
-    return _factory_seller_for_category(category)
-
-
-def _factory_seller_for_category(category: object) -> str | None:
-    if category in (1, 2):
-        return "YM"
-    if category == 3:
-        return "SK"
-    return None
-
-
-def _raw_row_filter_for_request(
-    *,
-    seller: str | None,
-    documents: tuple[str, ...],
-) -> Callable[[dict[str, object]], bool] | None:
-    if not _should_prefilter_raw_rows(seller=seller, documents=documents):
-        return None
-
-    def row_filter(row: dict[str, object]) -> bool:
-        return _raw_row_belongs_to_factory_seller(row, seller)
-
-    return row_filter
-
-
-def _prefilter_raw_rows_for_request(
-    rows: tuple[dict[str, object], ...],
-    *,
-    seller: str | None,
-    documents: tuple[str, ...],
-) -> tuple[dict[str, object], ...]:
-    if not _should_prefilter_raw_rows(seller=seller, documents=documents):
-        return rows
-    if not any(_raw_row_factory_seller(row) is not None for row in rows):
-        return rows
-    return tuple(row for row in rows if _raw_row_belongs_to_factory_seller(row, seller))
-
-
-def _should_prefilter_raw_rows(*, seller: str | None, documents: tuple[str, ...]) -> bool:
-    return seller in SK_YM_FACTORY_SELLERS and set(documents) == {"PI"}
-
-
-def _raw_row_belongs_to_factory_seller(row: dict[str, object], seller: str | None) -> bool:
-    return _raw_row_factory_seller(row) == seller
-
-
-def _raw_row_factory_seller(row: dict[str, object]) -> str | None:
-    category_field = _bs.field("PO record", "category")
-    return _factory_seller_for_category(_int_or_none(row.get(category_field)))
-
-
-def _int_or_none(value: object) -> int | None:
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value) if value == int(value) else None
-    if isinstance(value, str):
-        try:
-            return int(value.strip())
-        except ValueError:
-            return None
-    return None
 
 
 def _generate_invoice_pl_bundle(

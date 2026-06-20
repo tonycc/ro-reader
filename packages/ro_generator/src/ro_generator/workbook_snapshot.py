@@ -22,6 +22,7 @@ from ro_generator.errors import WorkbookOpenError
 from ro_generator.models import OrderLine, Product
 from ro_generator.resolver import build_product_index_from_rows, resolve_po_rows
 from ro_generator.schema import SELLERS, SHEET_CUSTOMER_PO, SHEET_DATA_BASE, SHEET_PO_RECORD
+from ro_generator.seller_filter import factory_seller_for_line, has_factory_categories
 from ro_generator.validator import validate_workbook_structure
 from ro_generator.workbook_reader import WorkbookReader
 
@@ -311,22 +312,9 @@ def _has_factory_pi_number(lines: tuple[OrderLine, ...], seller: str) -> bool:
 
 
 def _lines_for_invoice_options(lines: tuple[OrderLine, ...], seller: str) -> tuple[OrderLine, ...]:
-    if seller not in {"SK", "YM"} or not _has_factory_categories(lines):
+    if seller not in {"SK", "YM"} or not has_factory_categories(lines):
         return lines
-    return tuple(line for line in lines if _factory_seller_for_line(line) == seller)
-
-
-def _has_factory_categories(lines: tuple[OrderLine, ...]) -> bool:
-    return any(_factory_seller_for_line(line) is not None for line in lines)
-
-
-def _factory_seller_for_line(line: OrderLine) -> str | None:
-    category = line.po_record_category
-    if category in (1, 2):
-        return "YM"
-    if category == 3:
-        return "SK"
-    return None
+    return tuple(line for line in lines if factory_seller_for_line(line) == seller)
 
 
 # —————————————————————————————————————
