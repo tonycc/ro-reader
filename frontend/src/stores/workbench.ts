@@ -10,6 +10,7 @@ import type {
   PoIssuesResponse,
   PreviewResponse,
   ValidationIssue,
+  BatchExportGroup,
 } from "./api";
 import { api, setSessionId, getSessionId, ApiError } from "./api";
 
@@ -156,7 +157,7 @@ export const useWorkbench = defineStore("workbench", () => {
     } finally { exporting.value = false; }
   }
 
-  async function doExportGroups(groups: ExportGroup[]) {
+  async function doExportGroups(groups: BatchExportGroup[]) {
     if (!baseFile.value || !selectedPo.value || !groups.length) return;
     exporting.value = true;
     exportError.value = "";
@@ -168,7 +169,7 @@ export const useWorkbench = defineStore("workbench", () => {
         groups: groups.map((group) => ({
           seller: group.seller,
           documents: group.documents,
-          invoice_no: invoiceNoForSeller(group.seller),
+          invoice_no: group.invoice_no ?? null,
         })),
       });
       if (result.status !== "success") {

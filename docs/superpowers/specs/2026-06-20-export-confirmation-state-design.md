@@ -1,24 +1,24 @@
-# Export Confirmation State Design
+# 导出确认页状态设计
 
-## Goal
+## 目标
 
-Make export confirmation independent from document preview: each seller has its own document and invoice selection, and the selected entries are generated as one ZIP file.
+让导出确认与单据预览相互独立：每个主体分别选择单据和发票，所有已选内容统一生成一个 ZIP 文件。
 
-## Current Problem
+## 当前问题
 
-`selectedSeller` and `selectedInvoiceNo` belong to the preview state. The export confirmation page builds its seller groups independently, but the batch request reuses the preview state for the currently selected seller. This can make the displayed Invoice/PL filename disagree with the invoice that is actually exported.
+`selectedSeller` 与 `selectedInvoiceNo` 属于预览状态。导出确认页虽然独立构建主体分组，但批量导出请求会复用当前预览主体的状态，导致页面展示的 Invoice/PL 文件名与实际导出的发票号可能不一致。
 
-## Design
+## 设计
 
-- The confirmation page owns a local export selection for every seller in the selected PO.
-- Each seller group has a normal invoice dropdown that is shown when Invoice/PL is exportable. It uses that seller's available invoice options and defaults to its first option.
-- The document checkboxes and invoice dropdown together form the `groups` payload for `/export-batch`.
-- Changing the preview seller or preview invoice has no effect on confirmation-page selections.
-- The confirmation-page filename uses the same group invoice selected for the batch request.
-- PI and PO retain no invoice selector. Sellers without an exportable Invoice/PL retain no selectable Invoice/PL entry.
+- 确认页为所选 PO 的每个主体维护独立的导出选择状态。
+- 当主体的 Invoice/PL 可导出时，在该主体分组中显示普通发票下拉框；选项来自该主体可用的发票号，默认选中第一项。
+- 单据复选框和发票下拉框共同组成 `/export-batch` 的 `groups` 请求参数。
+- 修改预览页的主体或发票，不影响确认页中的任何选择。
+- 确认页显示的文件名与该主体实际提交给批量导出的发票号必须一致。
+- PI 与 PO 不显示发票选择器；不能导出 Invoice/PL 的主体，其对应条目仍不可选择。
 
-## Validation
+## 验证
 
-- Frontend E2E verifies that preview invoice selection does not change confirmation-page invoice selection.
-- Frontend E2E verifies the batch request contains each selected seller's own invoice number.
-- Existing API/core ZIP tests continue to verify one downloaded ZIP contains the selected Excel files.
+- 前端 E2E 验证：修改预览页发票后，不会改变确认页的发票选择。
+- 前端 E2E 验证：批量导出请求包含每个已选主体各自的发票号。
+- 既有 API 与核心 ZIP 测试继续验证：一次下载的 ZIP 包含全部已选 Excel 文件。

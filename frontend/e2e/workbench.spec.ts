@@ -172,8 +172,21 @@ test.describe("RO Workbench E2E", () => {
     await expect(statusBar).toContainText(".zip");
   });
 
-  test("export screen groups documents by seller and sends selected document", async ({ page }) => {
+  test("export confirmation keeps seller invoice independent from preview", async ({ page }) => {
     const exportRequests: unknown[] = [];
+    await page.route("**/api/session/open", async (route) => {
+      const response = await route.fetch();
+      const data = await response.json();
+      for (const po of data.po_list ?? []) {
+        if (po.po_no === "4500099999") {
+          po.invoice_options_by_seller = {
+            ...(po.invoice_options_by_seller ?? {}),
+            "GS PTE": ["INV-GS-001", "INV-GS-002"],
+          };
+        }
+      }
+      await route.fulfill({ response, json: data });
+    });
     await page.route("**/api/po/4500099999/export-batch", async (route) => {
       exportRequests.push(route.request().postDataJSON());
       await route.fulfill({
@@ -194,20 +207,27 @@ test.describe("RO Workbench E2E", () => {
     await page.locator(".po-card").filter({ hasText: "4500099999" }).click();
     await page.waitForTimeout(2000);
 
+    await page.locator(".tab").filter({ hasText: "单据预览" }).click();
+    await selectGsSeller(page);
+    await page.locator(".filter-pill").filter({ hasText: "Invoice / PL" }).click();
+    await page.locator(".invoice-select").selectOption("INV-GS-002");
+
     await page.locator(".tab").filter({ hasText: "导出确认" }).click();
     await expect(page.locator(".seller-section").filter({ hasText: "SK" })).toBeVisible();
     await expect(page.locator(".seller-section").filter({ hasText: "GS PTE" })).toBeVisible();
     await expect(page.getByTestId("export-doc-GS_PTE-PI")).toContainText("GS_PTE-RO-PI-4500099999.xlsx");
-    await expect(page.getByTestId("export-doc-GS_PTE-INVOICE_PL")).toContainText("GS_PTE-RO-INVOICE&PL-4500099999-INV-2603-001.xlsx");
+    await expect(page.getByTestId("export-doc-GS_PTE-INVOICE_PL")).toContainText("GS_PTE-RO-INVOICE&PL-4500099999-INV-GS-001.xlsx");
     await expect(page.getByTestId("export-doc-GS_PTE-INVOICE")).toHaveCount(0);
     await expect(page.getByTestId("export-doc-GS_PTE-PL")).toHaveCount(0);
     await expect(page.getByText("输出目录")).toHaveCount(0);
+    await expect(page.getByTestId("export-invoice-GS_PTE")).toHaveValue("INV-GS-001");
 
     for (const row of await page.locator(".check-line").all()) {
       const testId = await row.getAttribute("data-testid");
       const checkbox = row.locator(".checkbox");
-      if (testId !== "export-doc-GS_PTE-PI") await checkbox.click();
+      if (testId !== "export-doc-GS_PTE-INVOICE_PL") await checkbox.click();
     }
+    await page.getByTestId("export-invoice-GS_PTE").selectOption("INV-GS-002");
 
     const exportBtn = page.locator("button").filter({ hasText: "确认导出" });
     await expect(exportBtn).toBeEnabled();
@@ -216,7 +236,7 @@ test.describe("RO Workbench E2E", () => {
     await expect.poll(() => exportRequests.length).toBe(1);
     expect(exportRequests[0]).toMatchObject({
       po_no: "4500099999",
-      groups: [{ seller: "GS PTE", documents: ["PI"], invoice_no: "INV-2603-001" }],
+      groups: [{ seller: "GS PTE", documents: ["INVOICE", "PL"], invoice_no: "INV-GS-002" }],
     });
   });
 

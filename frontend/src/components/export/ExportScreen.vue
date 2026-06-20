@@ -17,12 +17,12 @@ interface ExportDocEntry {
   seller: string
   document: string
   documents: string[]
-  filename: string
   label: string
   disabled: boolean
 }
 
 const selectedDocs = ref<Set<string>>(new Set());
+const selectedInvoices = ref<Record<string, string | null>>({});
 
 const exportGroups = computed(() => (
   (wb.poEntry?.sellers ?? []).map((seller) => ({
@@ -35,11 +35,16 @@ const exportGroups = computed(() => (
 
 const selectedExportDocs = computed(() => (
   exportGroups.value
-    .map((group) => ({
+      .map((group) => ({
       seller: group.seller,
       documents: group.entries
         .filter((entry) => selectedDocs.value.has(entry.id))
         .flatMap((entry) => entry.documents),
+      invoice_no: group.entries.some((entry) => (
+        selectedDocs.value.has(entry.id) && entry.document === "INVOICE_PL"
+      ))
+        ? selectedInvoiceForSeller(group.seller)
+        : null,
     }))
     .filter((group) => group.documents.length > 0)
 ));
@@ -54,6 +59,10 @@ watch(exportGroups, (groups) => {
   selectedDocs.value = new Set(groups.flatMap((group) => (
     group.entries.filter((entry) => !entry.disabled).map((entry) => entry.id)
   )));
+  selectedInvoices.value = Object.fromEntries(groups.map((group) => [
+    group.seller,
+    invoiceOptionsForSeller(group.seller)[0] ?? null,
+  ]));
 }, { immediate: true });
 
 function toggleDoc(id: string) {
@@ -74,7 +83,6 @@ function buildExportEntry(seller: string, document: string): ExportDocEntry {
     seller,
     document,
     documents: document === "INVOICE_PL" ? ["INVOICE", "PL"] : [document],
-    filename: buildFilename(seller, document),
     label: docLabels[document],
     disabled: !exportableDocumentsForSeller(seller).includes(document),
   };
@@ -83,18 +91,30 @@ function buildExportEntry(seller: string, document: string): ExportDocEntry {
 function buildFilename(seller: string, document: string): string {
   const documentToken = document === "INVOICE_PL" ? "INVOICE&PL" : document;
   const base = `${safeToken(seller)}-RO-${documentToken}-${safeToken(wb.selectedPo)}`;
-  if (document === "INVOICE_PL" && invoiceNoForSeller(seller)) {
-    return `${base}-${safeToken(invoiceNoForSeller(seller) ?? "")}.xlsx`;
+  if (document === "INVOICE_PL" && selectedInvoiceForSeller(seller)) {
+    return `${base}-${safeToken(selectedInvoiceForSeller(seller) ?? "")}.xlsx`;
   }
   return `${base}.xlsx`;
 }
 
-function invoiceNoForSeller(seller: string): string | null {
+function invoiceOptionsForSeller(seller: string): string[] {
   const po = wb.poEntry;
-  if (!po) return null;
+  if (!po) return [];
   const options = po.invoice_options_by_seller?.[seller] ?? [];
-  if (seller === "SK" || seller === "YM") return options[0] ?? null;
-  return options[0] ?? po.invoice_nos[0] ?? null;
+  return options.length ? options : po.invoice_nos;
+}
+
+function selectedInvoiceForSeller(seller: string): string | null {
+  return selectedInvoices.value[seller] ?? invoiceOptionsForSeller(seller)[0] ?? null;
+}
+
+function selectExportInvoice(seller: string, event: Event) {
+  const value = (event.target as HTMLSelectElement).value || null;
+  selectedInvoices.value = { ...selectedInvoices.value, [seller]: value };
+}
+
+function canExportInvoicePl(seller: string): boolean {
+  return exportableDocumentsForSeller(seller).includes("INVOICE_PL");
 }
 
 function exportableDocumentsForSeller(seller: string): string[] {
@@ -114,6 +134,18 @@ function safeToken(value: string): string {
         <h3>导出内容确认</h3>
         <section v-for="group in exportGroups" :key="group.seller" class="seller-section">
           <h4>{{ group.seller }}</h4>
+          <label v-if="canExportInvoicePl(group.seller)" class="invoice-field">
+            <span>发票号</span>
+            <select
+              :data-testid="`export-invoice-${safeToken(group.seller)}`"
+              :value="selectedInvoiceForSeller(group.seller) ?? ''"
+              @change="selectExportInvoice(group.seller, $event)"
+            >
+              <option v-for="invoiceNo in invoiceOptionsForSeller(group.seller)" :key="invoiceNo" :value="invoiceNo">
+                {{ invoiceNo }}
+              </option>
+            </select>
+          </label>
           <div
             v-for="entry in group.entries"
             :key="entry.id"
@@ -122,7 +154,7 @@ function safeToken(value: string): string {
             :data-testid="`export-doc-${entry.id}`"
           >
             <div>
-              <b>{{ entry.filename }}</b><br>
+              <b>{{ buildFilename(entry.seller, entry.document) }}</b><br>
               <span class="fname">{{ entry.label }}</span>
             </div>
             <span
@@ -164,6 +196,8 @@ function safeToken(value: string): string {
 .seller-section { padding: 12px 0; border-top: 1px solid var(--line); }
 .seller-section:first-of-type { border-top: 0; padding-top: 0; }
 .seller-section h4 { margin: 0 0 8px; font-size: 12px; color: var(--muted); font-weight: 900; }
+.invoice-field { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.invoice-field select { min-width: 0; max-width: 260px; height: 30px; border: 1px solid var(--line); border-radius: 6px; background: white; color: var(--text); font: inherit; }
 .check-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .check-line:last-child { border-bottom: 0; }
 .check-line.disabled { opacity: 0.45; }
