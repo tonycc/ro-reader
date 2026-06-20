@@ -479,19 +479,6 @@ def _generate(request: DocumentRequest) -> GenerationResult:
             last_summary = bundle_result.summary
 
     all_warnings_t = tuple(all_warnings)
-    if len(rendered_files) == 1:
-        filename, path = rendered_files[0]
-        return GenerationResult(
-            status="success",
-            summary=_build_summary(
-                request, seller, buyer, lines, documents, invoice_no=invoice_no, extra=last_summary
-            ),
-            files=(filename,),
-            output_file=str(path),
-            warnings=all_warnings_t,
-            source_index=source_indices[0] if source_indices else None,
-        )
-
     if request.output_format == "zip":
         zip_name = build_zip_filename(po_no=request.po_no, invoice_no=invoice_no)
         zip_path = package_zip(
@@ -509,6 +496,19 @@ def _generate(request: DocumentRequest) -> GenerationResult:
             warnings=all_warnings_t,
         )
 
+    if len(rendered_files) == 1:
+        filename, path = rendered_files[0]
+        return GenerationResult(
+            status="success",
+            summary=_build_summary(
+                request, seller, buyer, lines, documents, invoice_no=invoice_no, extra=last_summary
+            ),
+            files=(filename,),
+            output_file=str(path),
+            warnings=all_warnings_t,
+            source_index=source_indices[0] if source_indices else None,
+        )
+
     filenames = tuple(fn for fn, _ in rendered_files)
     return GenerationResult(
         status="success",
@@ -522,7 +522,6 @@ def _generate(request: DocumentRequest) -> GenerationResult:
 # —————————————————————————————————————
 # 单文档模型构建（export 和 preview 共用）
 # —————————————————————————————————————
-
 
 
 def build_document_model(

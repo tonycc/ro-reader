@@ -354,8 +354,7 @@ test.describe("RO Workbench E2E", () => {
     await expect(previewExportBtn).toBeVisible();
     await expect(previewExportBtn).toContainText("Invoice / PL");
     await previewExportBtn.click();
-    await expect(page.locator("footer")).toContainText("INVOICE&PL", { timeout: 8000 });
-    await expect(page.locator("footer")).toContainText(".xlsx");
+    await expect(page.locator("footer")).toContainText("RO-4500099999.zip", { timeout: 8000 });
 
     await page.locator(".filter-pill").filter({ hasText: "GS PTE" }).click();
     await expect(page.locator(".preview-doc-section")).toHaveCount(2, { timeout: 8000 });

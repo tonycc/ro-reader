@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from zipfile import ZipFile
 
 import pytest
 from openpyxl import Workbook, load_workbook
@@ -174,6 +175,28 @@ def basic_po_row(**overrides):
 
 
 class TestSuccessPath:
+    def test_zip_output_with_single_workbook_is_still_packaged(self, tmp_path):
+        path = make_base_file(
+            tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
+        )
+        request = DocumentRequest(
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("INVOICE",),
+            seller="GS PTE",
+            invoice_no="INV-001",
+            output_format="zip",
+            output_dir=str(tmp_path / "out"),
+        )
+
+        result = generate(request)
+
+        assert result.status == "success", result.errors
+        assert result.output_file is not None
+        assert result.output_file.endswith(".zip")
+        with ZipFile(result.output_file) as archive:
+            assert archive.namelist() == list(result.files)
+
     def test_invoice_with_seller_and_invoice_no(self, tmp_path):
         path = make_base_file(
             tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
