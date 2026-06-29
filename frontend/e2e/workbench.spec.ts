@@ -216,6 +216,9 @@ test.describe("RO Workbench E2E", () => {
     await page.locator(".tab").filter({ hasText: "导出确认" }).click();
     await page.waitForTimeout(1000);
 
+    await expect(page.locator('[data-testid$="-INVOICE_PL"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid^="export-invoice-"]')).toHaveCount(0);
+
     for (const row of await page.locator(".check-line").all()) {
       const testId = await row.getAttribute("data-testid");
       const checkbox = row.locator(".checkbox");

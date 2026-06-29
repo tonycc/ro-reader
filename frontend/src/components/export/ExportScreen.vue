@@ -7,10 +7,9 @@ const wb = useWorkbench();
 const docLabels: Record<string, string> = {
   PI: "形式发票（PI）",
   PO: "采购订单（PO）",
-  INVOICE_PL: "商业发票 / 装箱单（Invoice / PL）",
 };
 
-const docOrder = ["PI", "PO", "INVOICE_PL"];
+const docOrder = ["PI", "PO"];
 
 interface ExportDocEntry {
   id: string
@@ -22,7 +21,6 @@ interface ExportDocEntry {
 }
 
 const selectedDocs = ref<Set<string>>(new Set());
-const selectedInvoices = ref<Record<string, string | null>>({});
 const selectedInvoiceDocuments = ref<Set<"INVOICE" | "PL">>(new Set(["INVOICE", "PL"]));
 
 const exportGroups = computed(() => (
@@ -41,11 +39,6 @@ const selectedExportDocs = computed(() => (
       documents: group.entries
         .filter((entry) => selectedDocs.value.has(entry.id))
         .flatMap((entry) => entry.documents),
-      invoice_no: group.entries.some((entry) => (
-        selectedDocs.value.has(entry.id) && entry.document === "INVOICE_PL"
-      ))
-        ? selectedInvoiceForSeller(group.seller)
-        : null,
     }))
     .filter((group) => group.documents.length > 0)
 ));
@@ -60,10 +53,6 @@ watch(exportGroups, (groups) => {
   selectedDocs.value = new Set(groups.flatMap((group) => (
     group.entries.filter((entry) => !entry.disabled).map((entry) => entry.id)
   )));
-  selectedInvoices.value = Object.fromEntries(groups.map((group) => [
-    group.seller,
-    invoiceOptionsForSeller(group.seller)[0] ?? null,
-  ]));
 }, { immediate: true });
 
 function toggleDoc(id: string) {
@@ -100,39 +89,14 @@ function buildExportEntry(seller: string, document: string): ExportDocEntry {
     id: `${safeToken(seller)}-${document}`,
     seller,
     document,
-    documents: document === "INVOICE_PL" ? ["INVOICE", "PL"] : [document],
+    documents: [document],
     label: docLabels[document],
     disabled: !exportableDocumentsForSeller(seller).includes(document),
   };
 }
 
 function buildFilename(seller: string, document: string): string {
-  const documentToken = document === "INVOICE_PL" ? "INVOICE&PL" : document;
-  const base = `${safeToken(seller)}-RO-${documentToken}-${safeToken(wb.selectedPo)}`;
-  if (document === "INVOICE_PL" && selectedInvoiceForSeller(seller)) {
-    return `${base}-${safeToken(selectedInvoiceForSeller(seller) ?? "")}.xlsx`;
-  }
-  return `${base}.xlsx`;
-}
-
-function invoiceOptionsForSeller(seller: string): string[] {
-  const po = wb.poEntry;
-  if (!po) return [];
-  const options = po.invoice_options_by_seller?.[seller] ?? [];
-  return options.length ? options : po.invoice_nos;
-}
-
-function selectedInvoiceForSeller(seller: string): string | null {
-  return selectedInvoices.value[seller] ?? invoiceOptionsForSeller(seller)[0] ?? null;
-}
-
-function selectExportInvoice(seller: string, event: Event) {
-  const value = (event.target as HTMLSelectElement).value || null;
-  selectedInvoices.value = { ...selectedInvoices.value, [seller]: value };
-}
-
-function canExportInvoicePl(seller: string): boolean {
-  return exportableDocumentsForSeller(seller).includes("INVOICE_PL");
+  return `${safeToken(seller)}-RO-${document}-${safeToken(wb.selectedPo)}.xlsx`;
 }
 
 function exportableDocumentsForSeller(seller: string): string[] {
@@ -186,18 +150,6 @@ function safeToken(value: string): string {
         <h3>导出内容确认</h3>
         <section v-for="group in exportGroups" :key="group.seller" class="seller-section">
           <h4>{{ group.seller }}</h4>
-          <label v-if="canExportInvoicePl(group.seller)" class="invoice-field">
-            <span>发票号</span>
-            <select
-              :data-testid="`export-invoice-${safeToken(group.seller)}`"
-              :value="selectedInvoiceForSeller(group.seller) ?? ''"
-              @change="selectExportInvoice(group.seller, $event)"
-            >
-              <option v-for="invoiceNo in invoiceOptionsForSeller(group.seller)" :key="invoiceNo" :value="invoiceNo">
-                {{ invoiceNo }}
-              </option>
-            </select>
-          </label>
           <div
             v-for="entry in group.entries"
             :key="entry.id"
@@ -248,8 +200,6 @@ function safeToken(value: string): string {
 .seller-section { padding: 12px 0; border-top: 1px solid var(--line); }
 .seller-section:first-of-type { border-top: 0; padding-top: 0; }
 .seller-section h4 { margin: 0 0 8px; font-size: 12px; color: var(--muted); font-weight: 900; }
-.invoice-field { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; color: var(--muted); font-size: 12px; font-weight: 700; }
-.invoice-field select { min-width: 0; max-width: 260px; height: 30px; border: 1px solid var(--line); border-radius: 6px; background: white; color: var(--text); font: inherit; }
 .check-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .check-line:last-child { border-bottom: 0; }
 .check-line.disabled { opacity: 0.45; }
