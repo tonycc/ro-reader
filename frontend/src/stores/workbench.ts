@@ -42,7 +42,7 @@ export const useWorkbench = defineStore("workbench", () => {
   const preview = ref<DryRunResult | null>(null);
   const previewData = ref<PreviewPayload | null>(null);
   const previewDocuments = ref<PreviewDocumentResult[]>([]);
-  const previewDocType = ref("INVOICE");
+  const previewDocType = ref("PI");
   const previewLoading = ref(false);
   const sourceIndex = ref<SourceIndexEntry[]>([]);
   const previewSourceEntries = ref<PreviewSourceEntry[]>([]);
@@ -140,8 +140,10 @@ export const useWorkbench = defineStore("workbench", () => {
     if (!baseFile.value || !selectedSeller.value) return;
     if (previewScope.value === "po" && !selectedPo.value) return;
     if (previewScope.value === "invoice" && !selectedInvoiceGroup.value) return;
-    const fallbackDocument = previewScope.value === "invoice" ? "INVOICE" : "PI";
-    const dt = docType || previewDocType.value || fallbackDocument;
+    const requestedDocument = docType || previewDocType.value;
+    const dt = previewScope.value === "invoice"
+      ? (isInvoicePlDocument(requestedDocument) ? requestedDocument : "INVOICE")
+      : (["PI", "PO"].includes(requestedDocument) ? requestedDocument : "PI");
     const requestSeller = selectedSeller.value;
     previewLoading.value = true;
     previewError.value = "";

@@ -136,6 +136,17 @@ test.describe("RO Workbench E2E", () => {
     await expect(page.getByRole("row", { name: /PI # 4500099999/ })).toBeVisible();
   });
 
+  test("PO preview defaults to PI and never offers Invoice PL quick export", async ({ page }) => {
+    await openBaseFile(page);
+    await page.locator(".po-card").filter({ hasText: "4500099999" }).click();
+    await page.locator(".tab").filter({ hasText: "单据预览" }).click();
+    await selectGsSeller(page);
+
+    await expect(page.getByRole("button", { name: "导出 Invoice / PL", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "导出 PI", exact: true })).toBeVisible();
+    await expect(page.locator(".preview-doc-title")).toContainText("PROFORMA INVOICE");
+  });
+
   test("PO preview keeps invoice documents in their own scope", async ({ page }) => {
     await openBaseFile(page);
     const poCard = page.locator(".po-card").filter({ hasText: "4500099999" });

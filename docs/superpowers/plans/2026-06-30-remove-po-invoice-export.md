@@ -126,3 +126,25 @@ Expected: exit code 0 with no output.
 git add frontend/src/components/export/ExportScreen.vue frontend/e2e/workbench.spec.ts docs/superpowers/plans/2026-06-30-remove-po-invoice-export.md
 git commit -m "fix: remove invoice export from PO scope"
 ```
+
+### Task 4: Prevent stale Invoice state in PO preview
+
+**Files:**
+- Modify: `frontend/e2e/workbench.spec.ts`
+- Modify: `frontend/src/stores/workbench.ts`
+
+- [x] **Step 1: Reproduce the first-entry path**
+
+Add an E2E scenario that opens a PO preview without clicking PI and asserts that `导出 Invoice / PL` is absent, `导出 PI` is visible, and the document title is `PROFORMA INVOICE`.
+
+- [x] **Step 2: Verify RED**
+
+Run the focused scenario and confirm the PI quick-export button is missing because `previewDocType` starts as `INVOICE`.
+
+- [x] **Step 3: Normalize preview document state**
+
+Initialize PO preview state to `PI`. In `refreshPreview`, normalize requested documents to PI/PO in PO scope and Invoice/PL in Invoice scope before requesting preview data.
+
+- [x] **Step 4: Verify GREEN**
+
+Run the focused scenario and confirm the PI preview and quick-export assertions pass.
