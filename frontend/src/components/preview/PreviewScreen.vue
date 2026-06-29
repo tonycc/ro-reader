@@ -17,11 +17,15 @@ const activeFieldEl = ref<HTMLElement | null>(null);
 const issuePanelOpen = ref(false);
 
 const sellers = ["SK", "YM", "GS PTE", "EMAX PTE"] as const;
-const docTypes = [
-  { key: "PI" as const, label: "PI" },
-  { key: "PO" as const, label: "PO" },
-  { key: "INVOICE" as const, label: "Invoice / PL" },
-];
+const docTypes = computed(() => wb.previewScope === "invoice"
+  ? [
+      { key: "INVOICE" as const, label: "Invoice" },
+      { key: "PL" as const, label: "PL" },
+    ]
+  : [
+      { key: "PI" as const, label: "PI" },
+      { key: "PO" as const, label: "PO" },
+    ]);
 const docTypeLabelMap: Record<string, string> = {
   PI: "PI",
   PO: "PO",
@@ -52,8 +56,14 @@ const currentDocLabel = computed(() => (
 ));
 const issueErrors = computed<ValidationIssue[]>(() => wb.poIssues?.blocking_errors ?? []);
 const issueCount = computed(() => wb.poIssues?.blocking_count ?? wb.poEntry?.blocking_count ?? errors.value.length);
-const invoiceSelectValue = computed(() => wb.selectedInvoiceNo ?? "");
-const invoiceSelectDisabled = computed(() => !isInvoicePlMode.value);
+const hasSelectedObject = computed(() => wb.previewScope === "invoice"
+  ? Boolean(wb.selectedInvoiceGroup)
+  : Boolean(wb.selectedPo));
+const scopeTitle = computed(() => wb.previewScope === "invoice"
+  ? wb.invoiceEntry?.display_invoice_no ?? ""
+  : wb.selectedPo);
+const sellerDisabled = (seller: string) => wb.previewScope === "invoice"
+  && !wb.invoiceEntry?.sellers.includes(seller);
 
 async function exportCurrentDocument() {
   await wb.doExport();
@@ -61,18 +71,13 @@ async function exportCurrentDocument() {
 
 async function toggleIssuePanel() {
   issuePanelOpen.value = !issuePanelOpen.value;
-  if (issuePanelOpen.value && !wb.poIssues && !wb.issuesLoading) {
+  if (wb.previewScope === "po" && issuePanelOpen.value && !wb.poIssues && !wb.issuesLoading) {
     await wb.refreshPoIssues();
   }
 }
 
 function closeIssuePanel() {
   issuePanelOpen.value = false;
-}
-
-async function onInvoiceChange(event: Event) {
-  const value = (event.target as HTMLSelectElement).value;
-  await wb.selectInvoice(value || null);
 }
 
 function formatIssueLocation(issue: ValidationIssue): string {
@@ -186,19 +191,25 @@ onUnmounted(() => {
 
 <template>
   <div class="preview-screen">
-    <div v-if="!wb.selectedPo" class="placeholder">
-      选择左侧 PO 并切换单据预览
+    <div v-if="!hasSelectedObject" class="placeholder">
+      {{ wb.previewScope === 'invoice' ? '选择左侧 Invoice 开始预览' : '选择左侧 PO 并切换单据预览' }}
     </div>
     <template v-else>
       <!-- Filter bar -->
       <div class="preview-filterbar">
         <div class="filter-left">
+          <div v-if="wb.previewScope === 'invoice'" class="scope-heading" data-testid="invoice-scope-title">
+            <strong>{{ scopeTitle }}</strong>
+            <span>{{ wb.invoiceEntry?.po_count ?? 0 }} 个 PO</span>
+          </div>
           <div class="filter-group">
             <span class="filter-label">公司主体</span>
             <button
               v-for="s in sellers" :key="s"
               class="filter-pill"
               :class="{ active: wb.selectedSeller === s }"
+              :disabled="sellerDisabled(s)"
+              :title="sellerDisabled(s) ? '该票据组在此主体下无可装配数据' : ''"
               @click="wb.selectSeller(s)"
             >
               {{ s }}
@@ -209,30 +220,17 @@ onUnmounted(() => {
             <button
               v-for="d in docTypes" :key="d.key"
               class="filter-pill"
-              :class="{ active: wb.previewDocType === d.key || (isInvoicePlMode && d.key === 'INVOICE') }"
+              :class="{ active: wb.previewDocType === d.key }"
               :disabled="(wb.selectedSeller === 'SK' || wb.selectedSeller === 'YM') && d.key === 'PO'"
+              :data-testid="wb.previewScope === 'invoice' ? `invoice-document-${d.key}` : undefined"
               @click="wb.refreshPreview(d.key)"
             >
               {{ d.label }}
             </button>
           </div>
-          <div class="filter-group invoice-filter-group">
-            <span class="filter-label">发票</span>
-            <select
-              class="invoice-select"
-              :disabled="invoiceSelectDisabled"
-              :value="invoiceSelectValue"
-              @change="onInvoiceChange"
-            >
-              <option v-if="!wb.invoiceOptions.length" value="">未填写发票号</option>
-              <option v-for="inv in wb.invoiceOptions" :key="inv" :value="inv">
-                {{ inv }}
-              </option>
-            </select>
-          </div>
         </div>
         <div class="filter-right">
-          <div v-if="wb.poStatus === 'blocked' || issueCount > 0" class="issue-panel-root">
+          <div v-if="wb.previewScope === 'po' && (wb.poStatus === 'blocked' || issueCount > 0)" class="issue-panel-root">
             <button
               class="issue-badge-btn"
               :class="{ active: issuePanelOpen }"
@@ -445,14 +443,12 @@ onUnmounted(() => {
   flex-wrap: wrap;
 }
 .filter-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.scope-heading { display: flex; align-items: baseline; gap: 8px; margin-right: 6px; }
+.scope-heading strong { font-family: var(--mono); font-size: 18px; }
+.scope-heading span { color: var(--muted); font-size: 12px; }
 .filter-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .filter-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .filter-label { color: var(--muted); font-size: 12px; font-weight: 800; white-space: nowrap; }
-.invoice-filter-group {
-  margin-left: 8px;
-  padding-left: 14px;
-  border-left: 1px solid var(--line);
-}
 .filter-pill {
   height: 30px; padding: 0 10px;
   border: 1px solid var(--line); border-radius: 999px;
@@ -464,28 +460,6 @@ onUnmounted(() => {
   background: var(--blue-weak); box-shadow: inset 0 0 0 1px #c7d9ff;
 }
 .filter-pill:disabled { opacity: 0.45; cursor: not-allowed; background: #f2f4f7; }
-.invoice-select {
-  height: 30px;
-  min-width: 150px;
-  max-width: 220px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: white;
-  color: var(--text);
-  padding: 0 28px 0 10px;
-  font-size: 12px;
-  font-weight: 800;
-  outline: none;
-}
-.invoice-select:disabled {
-  background: #f2f4f7;
-  color: var(--muted);
-  opacity: 0.8;
-  cursor: not-allowed;
-}
-.invoice-select:not(:disabled) {
-  cursor: pointer;
-}
 .issue-panel-root { position: relative; flex-shrink: 0; }
 .issue-badge-btn {
   height: 30px; padding: 0 10px;

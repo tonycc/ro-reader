@@ -58,6 +58,20 @@ def build_invoice_pl_filename(
     return f"{base}.xlsx"
 
 
+def build_invoice_group_document_filename(
+    *,
+    seller: str,
+    document_type: Literal["INVOICE", "PL", "INVOICE_PL"],
+    invoice_no: str,
+) -> str:
+    document_token = "INVOICE&PL" if document_type == "INVOICE_PL" else document_type
+    return f"{_sanitize(seller)}-RO-{document_token}-{_sanitize(invoice_no)}.xlsx"
+
+
+def build_invoice_group_zip_filename(*, invoice_no: str) -> str:
+    return f"RO-{_sanitize(invoice_no)}.zip"
+
+
 def build_zip_filename(*, po_no: str, invoice_no: str | None = None) -> str:
     base = f"RO-{_sanitize(po_no)}"
     if invoice_no:
@@ -158,6 +172,8 @@ def _sanitize(token: str) -> str:
 __all__ = [
     "OnConflict",
     "build_document_filename",
+    "build_invoice_group_document_filename",
+    "build_invoice_group_zip_filename",
     "build_invoice_pl_filename",
     "build_zip_filename",
     "copy_file",

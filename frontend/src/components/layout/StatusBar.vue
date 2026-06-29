@@ -3,11 +3,15 @@ import { useWorkbench } from "../../stores/workbench";
 import { computed } from "vue";
 
 const wb = useWorkbench();
+const currentStatus = computed(() => wb.previewScope === "invoice" ? wb.invoiceStatus : wb.poStatus);
+const hasSelection = computed(() => wb.previewScope === "invoice"
+  ? Boolean(wb.selectedInvoiceGroup)
+  : Boolean(wb.selectedPo));
 
 const statusColor = computed(() => {
-  if (!wb.selectedPo) return "var(--muted)";
-  if (wb.poStatus === "ready") return "var(--green)";
-  if (wb.poStatus === "partial") return "var(--amber)";
+  if (!hasSelection.value) return "var(--muted)";
+  if (currentStatus.value === "ready") return "var(--green)";
+  if (currentStatus.value === "partial") return "var(--amber)";
   return "var(--red)";
 });
 </script>
@@ -16,8 +20,8 @@ const statusColor = computed(() => {
   <footer class="statusbar">
     <span>
       <span class="dot" :style="{ background: statusColor }" />
-      {{ wb.selectedPo ? (wb.poStatus === 'ready' ? '就绪' : wb.poStatus === 'partial' ? '待补全' : '阻断') : '未选择' }}
-      <template v-if="wb.selectedPo"> · {{ wb.blockingErrors.length }} blocking · {{ wb.warnings.length }} warnings</template>
+      {{ hasSelection ? (currentStatus === 'ready' ? '就绪' : currentStatus === 'partial' ? '待补全' : '阻断') : '未选择' }}
+      <template v-if="hasSelection"> · {{ wb.blockingErrors.length }} blocking · {{ wb.warnings.length }} warnings</template>
     </span>
     <span v-if="wb.lastExportFile">已导出: {{ wb.lastExportFile.split("/").pop() }}</span>
     <span>Local service :54321</span>

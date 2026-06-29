@@ -18,7 +18,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, cast
+from typing import TYPE_CHECKING, Final, Literal, cast
 
 from ro_generator.base_schema import base_schema
 from ro_generator.document_model import (
@@ -31,6 +31,10 @@ from ro_generator.document_model import (
     invoice_no_matches,
 )
 from ro_generator.errors import RoGeneratorError, WorkbookOpenError
+from ro_generator.invoice_inspection import (
+    CODE_INVOICE_GROUP_NOT_FOUND,
+    resolve_invoice_group_from_snapshot,
+)
 from ro_generator.models import (
     DocumentRequest,
     DocumentType,
@@ -40,6 +44,8 @@ from ro_generator.models import (
 )
 from ro_generator.packager import (
     build_document_filename,
+    build_invoice_group_document_filename,
+    build_invoice_group_zip_filename,
     build_invoice_pl_filename,
     build_zip_filename,
     package_zip,
@@ -102,6 +108,7 @@ CODE_UNSUPPORTED_SEGMENT: Final = "UNSUPPORTED_CHAIN_SEGMENT"
 CODE_MAPPING_NOT_FOUND: Final = "MAPPING_NOT_FOUND"
 CODE_PI_NO_MISSING: Final = "PI_NO_MISSING"
 CODE_NO_LINES_FOR_SELLER: Final = "NO_LINES_FOR_SELLER"
+CODE_INVOICE_GROUP_SELLER_UNAVAILABLE: Final = "INVOICE_GROUP_SELLER_UNAVAILABLE"
 
 INPUT_SELLER: Final = "seller"
 INPUT_BUYER: Final = "buyer"
@@ -336,6 +343,193 @@ def preview_from_snapshot(
         preview=preview_data if build.model is not None else None,
         errors=tuple(m for m in build.messages if m.kind == "blocking_error"),
         warnings=tuple(all_warnings),
+    )
+
+
+def preview_invoice_group_from_snapshot(
+    snapshot: WorkbookSnapshot,
+    invoice_group_key: str,
+    *,
+    seller: str,
+    document: str,
+) -> PreviewResult:
+    """Preview one Invoice/PL document for a cross-PO invoice group."""
+    from ro_generator.document_preview import build_preview
+
+    doc_type = document.upper()
+    if doc_type not in {"INVOICE", "PL"}:
+        return _invoice_group_preview_error(
+            CODE_UNSUPPORTED_DOCUMENT,
+            f"Invoice 视角不支持单据类型 {document!r}",
+        )
+    resolution = resolve_invoice_group_from_snapshot(snapshot, invoice_group_key)
+    if resolution.summary is None:
+        return _invoice_group_preview_error(
+            CODE_INVOICE_GROUP_NOT_FOUND,
+            f"票据组 {invoice_group_key!r} 不存在",
+        )
+    summary = resolution.summary
+    invoice_no = summary.seller_invoice_numbers.get(seller)
+    buyer = SELLER_TO_BUYER.get(seller)
+    if invoice_no is None or buyer is None:
+        return _invoice_group_preview_error(
+            CODE_INVOICE_GROUP_SELLER_UNAVAILABLE,
+            f"票据组 {summary.display_invoice_no!r} 在 {seller} 主体下没有可装配数据",
+        )
+
+    if resolution.blocking_errors:
+        return PreviewResult(
+            status="error",
+            errors=resolution.blocking_errors,
+            warnings=resolution.warnings,
+        )
+
+    po_display = ", ".join(summary.po_nos)
+    build = build_document_model(
+        resolution.lines,
+        seller=seller,
+        buyer=buyer,
+        po_no=po_display,
+        invoice_no=invoice_no,
+        doc_type=cast(DocumentType, doc_type),
+    )
+    warnings = resolution.warnings + tuple(
+        message for message in build.messages if message.kind == "warning"
+    )
+    return PreviewResult(
+        status="success" if build.model is not None else "error",
+        preview=build_preview(build) if build.model is not None else None,
+        errors=tuple(message for message in build.messages if message.kind == "blocking_error"),
+        warnings=warnings,
+    )
+
+
+def export_invoice_group_from_snapshot(
+    snapshot: WorkbookSnapshot,
+    invoice_group_key: str,
+    *,
+    seller: str,
+    documents: tuple[str, ...],
+    output_dir: str,
+) -> GenerationResult:
+    """Render Invoice/PL documents for one cross-PO invoice group."""
+    normalized_documents = tuple(document.upper() for document in documents)
+    if not normalized_documents or any(
+        document not in {"INVOICE", "PL"} for document in normalized_documents
+    ):
+        return _error_result(
+            ValidationMessage(
+                kind="blocking_error",
+                code=CODE_UNSUPPORTED_DOCUMENT,
+                message="Invoice 视角只能导出 INVOICE 或 PL",
+            )
+        )
+
+    resolution = resolve_invoice_group_from_snapshot(snapshot, invoice_group_key)
+    if resolution.summary is None:
+        return _error_result(
+            ValidationMessage(
+                kind="blocking_error",
+                code=CODE_INVOICE_GROUP_NOT_FOUND,
+                message=f"票据组 {invoice_group_key!r} 不存在",
+            )
+        )
+    summary = resolution.summary
+    invoice_no = summary.seller_invoice_numbers.get(seller)
+    buyer = SELLER_TO_BUYER.get(seller)
+    if invoice_no is None or buyer is None:
+        return _error_result(
+            ValidationMessage(
+                kind="blocking_error",
+                code=CODE_INVOICE_GROUP_SELLER_UNAVAILABLE,
+                message=f"票据组 {summary.display_invoice_no!r} 在 {seller} 主体下没有可装配数据",
+            )
+        )
+
+    if resolution.blocking_errors:
+        return GenerationResult(
+            status="error",
+            errors=resolution.blocking_errors,
+            warnings=resolution.warnings,
+        )
+
+    output_root = Path(output_dir)
+    output_root.mkdir(parents=True, exist_ok=True)
+    po_display = ", ".join(summary.po_nos)
+    builds: list[BuildDocumentResult] = []
+    warnings = list(resolution.warnings)
+    for document in normalized_documents:
+        build = build_document_model(
+            resolution.lines,
+            seller=seller,
+            buyer=buyer,
+            po_no=po_display,
+            invoice_no=invoice_no,
+            doc_type=cast(DocumentType, document),
+        )
+        blocking = tuple(message for message in build.messages if message.kind == "blocking_error")
+        warnings.extend(message for message in build.messages if message.kind == "warning")
+        if build.model is None or build.mapping is None:
+            return GenerationResult(
+                status="error",
+                errors=blocking,
+                warnings=tuple(warnings),
+            )
+        builds.append(build)
+
+    rendered_paths: list[Path] = []
+    filenames: list[str] = []
+    if set(normalized_documents) == {"INVOICE", "PL"}:
+        filename = build_invoice_group_document_filename(
+            seller=seller,
+            document_type="INVOICE_PL",
+            invoice_no=invoice_no,
+        )
+        output_path = resolve_output_path(output_root, filename)
+        bundle_items = tuple(
+            (build.model, build.mapping)
+            for build in builds
+            if build.model is not None and build.mapping is not None
+        )
+        rendered = render_document_bundle(bundle_items, output_path)
+        rendered_paths.append(Path(rendered.output_path))
+        filenames.append(filename)
+    else:
+        for document, build in zip(normalized_documents, builds, strict=True):
+            filename = build_invoice_group_document_filename(
+                seller=seller,
+                document_type=cast(Literal["INVOICE", "PL"], document),
+                invoice_no=invoice_no,
+            )
+            output_path = resolve_output_path(output_root, filename)
+            assert build.model is not None and build.mapping is not None
+            rendered = render_document(build.model, build.mapping, output_path)
+            rendered_paths.append(Path(rendered.output_path))
+            filenames.append(filename)
+
+    zip_path = package_zip(
+        files=tuple(rendered_paths),
+        output_dir=output_root,
+        zip_name=build_invoice_group_zip_filename(invoice_no=invoice_no),
+    )
+    return GenerationResult(
+        status="success",
+        summary={
+            "invoice_group_key": invoice_group_key,
+            "display_invoice_no": summary.display_invoice_no,
+            "po_nos": list(summary.po_nos),
+            "seller": seller,
+        },
+        files=tuple(filenames),
+        output_file=str(zip_path),
+        warnings=tuple(warnings),
+    )
+
+
+def _invoice_group_preview_error(code: str, message: str) -> PreviewResult:
+    return PreviewResult(
+        status="error",
+        errors=(ValidationMessage(kind="blocking_error", code=code, message=message),),
     )
 
 

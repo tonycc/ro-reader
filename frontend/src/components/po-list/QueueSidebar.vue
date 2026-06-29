@@ -4,6 +4,7 @@ import { useWorkbench } from "../../stores/workbench";
 
 const wb = useWorkbench();
 const poSearch = ref("");
+const invoiceSearch = ref("");
 const dropdownOpen = ref(false);
 const selectedPos = ref<Set<string>>(new Set());
 const dropdownRef = ref<HTMLElement | null>(null);
@@ -81,6 +82,12 @@ const filtered = computed(() => {
   return list;
 });
 
+const filteredInvoices = computed(() => {
+  const query = invoiceSearch.value.trim().toLowerCase();
+  if (!query) return wb.invoiceList;
+  return wb.invoiceList.filter((item) => item.display_invoice_no.toLowerCase().includes(query));
+});
+
 const statusLabel: Record<string, string> = { ready: "就绪", partial: "待补全", blocked: "阻断", done: "已导出" };
 const statusBadgeClass: Record<string, string> = { ready: "ready", partial: "fix", blocked: "blocked", done: "exported" };
 
@@ -92,13 +99,27 @@ watch(() => wb.poList.length, (n) => {
 <template>
   <aside class="queue">
     <div class="queue-head">
+      <div class="scope-switch" role="group" aria-label="预览视角">
+        <button
+          type="button"
+          data-testid="preview-scope-po"
+          :class="{ active: wb.previewScope === 'po' }"
+          @click="wb.selectPreviewScope('po')"
+        >PO 视角</button>
+        <button
+          type="button"
+          data-testid="preview-scope-invoice"
+          :class="{ active: wb.previewScope === 'invoice' }"
+          @click="wb.selectPreviewScope('invoice')"
+        >Invoice 视角</button>
+      </div>
       <div class="section-title">
-        <h2>PO 工作队列</h2>
-        <span>{{ wb.poList.length }} total</span>
+        <h2>{{ wb.previewScope === 'po' ? 'PO 工作队列' : 'Invoice 列表' }}</h2>
+        <span>{{ wb.previewScope === 'po' ? wb.poList.length : wb.invoiceList.length }} total</span>
       </div>
 
       <!-- 下拉多选（内嵌搜索） -->
-      <div ref="dropdownRef" class="po-select">
+      <div v-if="wb.previewScope === 'po'" ref="dropdownRef" class="po-select">
         <div class="select-trigger" @click="toggleDropdown">
           <span class="search-icon">⌕</span>
           <input
@@ -127,10 +148,14 @@ watch(() => wb.poList.length, (n) => {
           <div v-if="!dropdownFiltered.length" class="dropdown-item empty-item">无匹配 PO</div>
         </div>
       </div>
+      <div v-else class="invoice-search">
+        <span class="search-icon">⌕</span>
+        <input v-model="invoiceSearch" placeholder="搜索 Invoice 号…" />
+      </div>
 
     </div>
 
-    <div class="po-list">
+    <div v-if="wb.previewScope === 'po'" class="po-list">
       <article
         v-for="po in filtered" :key="po.po_no"
         class="po-card"
@@ -148,6 +173,24 @@ watch(() => wb.poList.length, (n) => {
       <div v-if="!filtered.length && !wb.loading" class="empty-msg">没有匹配的 PO</div>
       <div v-if="wb.loading" class="empty-msg">解析中…</div>
     </div>
+    <div v-else class="po-list invoice-list">
+      <article
+        v-for="invoice in filteredInvoices"
+        :key="invoice.invoice_group_key"
+        class="po-card invoice-card"
+        :class="{ active: wb.selectedInvoiceGroup === invoice.invoice_group_key }"
+        @click="wb.selectInvoiceGroup(invoice.invoice_group_key)"
+      >
+        <div class="po-main">
+          <span class="po-no">{{ invoice.display_invoice_no }}</span>
+          <span class="badge" :class="statusBadgeClass[invoice.status]">
+            <span class="b-dot" />{{ statusLabel[invoice.status] }}
+          </span>
+        </div>
+        <div class="po-meta">{{ invoice.po_count }} 个 PO · {{ invoice.sellers.join(', ') }}</div>
+      </article>
+      <div v-if="!filteredInvoices.length && !wb.loading" class="empty-msg">没有匹配的 Invoice</div>
+    </div>
   </aside>
 </template>
 
@@ -159,11 +202,24 @@ watch(() => wb.poList.length, (n) => {
 }
 .queue * { box-sizing: border-box; }
 .queue-head { padding: 16px 14px 12px; border-bottom: 1px solid var(--line); }
+.scope-switch { display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 12px; }
+.scope-switch button {
+  height: 32px; border: 1px solid var(--line); background: white; color: var(--muted);
+  font-weight: 700; cursor: pointer;
+}
+.scope-switch button:first-child { border-radius: 6px 0 0 6px; }
+.scope-switch button:last-child { border-radius: 0 6px 6px 0; border-left: 0; }
+.scope-switch button.active { color: var(--blue); border-color: var(--blue); background: var(--blue-weak); }
 .section-title { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
 .section-title h2 { margin: 0; font-size: 16px; }
 .section-title span { color: var(--subtle); font-size: 12px; }
 
 .po-select { position: relative; margin-bottom: 12px; }
+.invoice-search {
+  display: flex; align-items: center; gap: 5px; height: 34px; padding: 0 9px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--panel-soft);
+}
+.invoice-search input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; font: inherit; }
 .select-trigger {
   display: flex; align-items: center; gap: 4px;
   width: 100%; height: 34px;
@@ -205,7 +261,7 @@ watch(() => wb.poList.length, (n) => {
 
 .po-list { overflow: auto; padding: 8px; flex: 1; }
 .po-card {
-  border: 1px solid transparent; border-radius: 10px;
+  border: 1px solid transparent; border-radius: 6px;
   padding: 10px; margin-bottom: 6px;
   background: white; cursor: pointer;
 }

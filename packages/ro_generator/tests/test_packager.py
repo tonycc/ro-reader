@@ -10,6 +10,8 @@ import pytest
 from ro_generator.errors import InvalidRequestError
 from ro_generator.packager import (
     build_document_filename,
+    build_invoice_group_document_filename,
+    build_invoice_group_zip_filename,
     build_zip_filename,
     copy_file,
     package_zip,
@@ -23,6 +25,26 @@ from ro_generator.packager import (
 
 
 class TestFilenameRules:
+    def test_invoice_group_document_filename_has_no_po_token(self) -> None:
+        assert (
+            build_invoice_group_document_filename(
+                seller="GS PTE",
+                document_type="INVOICE",
+                invoice_no="INV/001",
+            )
+            == "GS_PTE-RO-INVOICE-INV_001.xlsx"
+        )
+
+    def test_invoice_group_bundle_filename_has_no_po_token(self) -> None:
+        assert (
+            build_invoice_group_document_filename(
+                seller="YM",
+                document_type="INVOICE_PL",
+                invoice_no="SKYM-001",
+            )
+            == "YM-RO-INVOICE&PL-SKYM-001.xlsx"
+        )
+
     def test_pi_no_month_suffix(self) -> None:
         name = build_document_filename(seller="GS PTE", document_type="PI", po_no="4500030844")
         assert name == "GS_PTE-RO-PI-4500030844.xlsx"
@@ -78,6 +100,9 @@ class TestFilenameRules:
 
 
 class TestZipFilename:
+    def test_invoice_group_zip_uses_invoice_number(self) -> None:
+        assert build_invoice_group_zip_filename(invoice_no="INV/001") == "RO-INV_001.zip"
+
     def test_zip_with_month(self) -> None:
         assert build_zip_filename(po_no="4500030844", invoice_no="2601") == (
             "RO-4500030844-2601.zip"

@@ -14,13 +14,16 @@ from ro_generator.generator import (
     INPUT_INVOICE_NO,
     INPUT_SELLER,
     build_document_model,
+    export_invoice_group_from_snapshot,
     generate,
     preview,
+    preview_invoice_group_from_snapshot,
 )
 from ro_generator.models import DocumentRequest
 from ro_generator.resolver import resolve_po_lines
 from ro_generator.source_index import SourceIndex
 from ro_generator.workbook_reader import WorkbookReader
+from ro_generator.workbook_snapshot import build_workbook_snapshot
 
 DATA_BASE_HEADER = [
     "SAP",
@@ -2247,3 +2250,93 @@ class TestPreviewFunction:
         assert signature_entry["source_type"] == "template_content"
         assert date_entry["value"] == date.today().strftime("%Y-%m-%d")
         assert date_entry["source_type"] == "system_generated"
+
+
+class TestInvoiceGroupPreview:
+    def test_preview_combines_rows_from_multiple_pos(self, tmp_path):
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[
+                basic_po_row(**{"PO NO.": "PO-1", "SHIP QTY": 100}),
+                basic_po_row(**{"PO NO.": "PO-2", "ITEM LINE#": "20", "SHIP QTY": 50}),
+            ],
+        )
+        snapshot = build_workbook_snapshot(str(path))
+        group = snapshot.invoice_summary[0]
+
+        result = preview_invoice_group_from_snapshot(
+            snapshot,
+            group.invoice_group_key,
+            seller="GS PTE",
+            document="INVOICE",
+        )
+
+        assert result.status == "success", result.errors
+        assert result.preview is not None
+        assert result.preview.po_no == "PO-1, PO-2"
+        assert result.preview.invoice_no == "INV-001"
+        assert len(result.preview.lines) == 2
+
+    def test_preview_blocks_conflicting_cross_po_headers(self, tmp_path):
+        rows = [
+            basic_po_row(**{"PO NO.": "PO-1"}),
+            basic_po_row(**{"PO NO.": "PO-2", "ITEM LINE#": "20"}),
+        ]
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=rows,
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "PO-1",
+                    "Material": "21-44640",
+                    "Order Quantity": 100,
+                    "ship to": "Destination A",
+                },
+                {
+                    "Purchasing Document": "PO-2",
+                    "Material": "21-44640",
+                    "Order Quantity": 100,
+                    "ship to": "Destination B",
+                },
+            ],
+        )
+        snapshot = build_workbook_snapshot(str(path))
+        group = snapshot.invoice_summary[0]
+
+        result = preview_invoice_group_from_snapshot(
+            snapshot,
+            group.invoice_group_key,
+            seller="GS PTE",
+            document="INVOICE",
+        )
+
+        assert result.status == "error"
+        assert any(error.code == "INVOICE_GROUP_HEADER_CONFLICT" for error in result.errors)
+
+    def test_export_invoice_group_returns_zip_without_po_filename(self, tmp_path):
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[
+                basic_po_row(**{"PO NO.": "PO-1", "SHIP QTY": 100}),
+                basic_po_row(**{"PO NO.": "PO-2", "ITEM LINE#": "20", "SHIP QTY": 50}),
+            ],
+        )
+        snapshot = build_workbook_snapshot(str(path))
+        group = snapshot.invoice_summary[0]
+
+        result = export_invoice_group_from_snapshot(
+            snapshot,
+            group.invoice_group_key,
+            seller="GS PTE",
+            documents=("INVOICE", "PL"),
+            output_dir=str(tmp_path / "invoice-export"),
+        )
+
+        assert result.status == "success", result.errors
+        assert result.output_file is not None
+        assert Path(result.output_file).name == "RO-INV-001.zip"
+        with ZipFile(result.output_file) as archive:
+            assert archive.namelist() == ["GS_PTE-RO-INVOICE&PL-INV-001.xlsx"]

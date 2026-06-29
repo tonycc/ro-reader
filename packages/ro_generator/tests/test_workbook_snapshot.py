@@ -216,6 +216,68 @@ class TestWorkbookSnapshot:
         rows = snap.po_rows_for_po("NONEXISTENT")
         assert rows == ()
 
+    def test_invoice_summary_groups_rows_across_pos(self, tmp_path):
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[
+                basic_po_row(**{"PO NO.": "PO-1", "INV#": "INV-001"}),
+                basic_po_row(
+                    **{
+                        "PO NO.": "PO-2",
+                        "ITEM LINE#": "20",
+                        "INV#": "INV-001",
+                        "SK/YM INVOICE NO.": None,
+                    }
+                ),
+            ],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "PO-1",
+                    "Material": "21-44640",
+                    "Order Quantity": 100,
+                },
+                {
+                    "Purchasing Document": "PO-2",
+                    "Material": "21-44640",
+                    "Order Quantity": 100,
+                },
+            ],
+        )
+
+        snap = build_workbook_snapshot(path)
+
+        assert len(snap.invoice_summary) == 1
+        summary = snap.invoice_summary[0]
+        assert summary.po_nos == ("PO-1", "PO-2")
+        assert snap.invoice_index[summary.invoice_group_key] == (0, 1)
+        assert snap.invoice_header_context[summary.invoice_group_key].conflicts == ()
+        assert tuple(
+            row["PO NO."] for row in snap.invoice_rows_for_group(summary.invoice_group_key)
+        ) == (
+            "PO-1",
+            "PO-2",
+        )
+
+    def test_invoice_summary_excludes_zero_ship_qty(self, tmp_path):
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[basic_po_row(**{"SHIP QTY": 0})],
+            customer_po_rows=[
+                {
+                    "Purchasing Document": "4500030844",
+                    "Material": "21-44640",
+                    "Order Quantity": 100,
+                }
+            ],
+        )
+
+        snap = build_workbook_snapshot(path)
+
+        assert snap.invoice_summary == ()
+        assert snap.invoice_index == {}
+
     def test_headers_preserved(self, tmp_path):
         path = make_base_file(
             tmp_path,

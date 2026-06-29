@@ -253,6 +253,100 @@ def test_export_invoice_pl_requests_combined_documents(
     assert data["output_file"].endswith(".xlsx")
 
 
+def test_get_invoice_groups_uses_session_snapshot() -> None:
+    sid = _response_json(client.post("/api/session/open", json={"base_file": str(FIXTURE)}))[
+        "session_id"
+    ]
+
+    resp = client.get("/api/invoices", headers={"X-Session-Id": sid})
+
+    assert resp.status_code == 200
+    groups = resp.json()["invoices"]
+    assert groups
+    assert all("invoice_group_key" in group for group in groups)
+    assert all("invoice_month" not in group for group in groups)
+
+
+def test_invoice_inspection_returns_rows_and_issue_counts() -> None:
+    sid = _response_json(client.post("/api/session/open", json={"base_file": str(FIXTURE)}))[
+        "session_id"
+    ]
+    groups = client.get("/api/invoices", headers={"X-Session-Id": sid}).json()["invoices"]
+    group = next(item for item in groups if item["display_invoice_no"] == "INV-2601-001")
+
+    resp = client.get(
+        f"/api/invoice/{group['invoice_group_key']}/inspection",
+        headers={"X-Session-Id": sid},
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["invoice_group_key"] == group["invoice_group_key"]
+    assert data["display_invoice_no"] == "INV-2601-001"
+    assert data["line_count"] == len(data["rows"]) == 2
+    assert data["blocking_count"] == len(data["blocking_errors"])
+    assert data["warnings_count"] == len(data["warnings"])
+    assert all(row["ship_qty"] > 0 for row in data["rows"])
+    assert "base_file" not in data
+
+
+def test_invoice_inspection_requires_valid_session() -> None:
+    resp = client.get(
+        "/api/invoice/invgrp::missing/inspection",
+        headers={"X-Session-Id": "missing"},
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["code"] == "INVALID_SESSION"
+
+
+def test_preview_invoice_group_uses_session_without_base_file() -> None:
+    sid = _response_json(client.post("/api/session/open", json={"base_file": str(FIXTURE)}))[
+        "session_id"
+    ]
+    group = client.get("/api/invoices", headers={"X-Session-Id": sid}).json()["invoices"][0]
+
+    resp = client.post(
+        f"/api/invoice/{group['invoice_group_key']}/preview",
+        json={"seller": "GS PTE", "document": "INVOICE"},
+        headers={"X-Session-Id": sid},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "success"
+    assert resp.json()["invoice_group_key"] == group["invoice_group_key"]
+    assert "base_file" not in resp.json()
+
+
+def test_export_invoice_group_returns_zip() -> None:
+    sid = _response_json(client.post("/api/session/open", json={"base_file": str(FIXTURE)}))[
+        "session_id"
+    ]
+    group = client.get("/api/invoices", headers={"X-Session-Id": sid}).json()["invoices"][0]
+
+    resp = client.post(
+        f"/api/invoice/{group['invoice_group_key']}/export",
+        json={"seller": "GS PTE", "documents": ["INVOICE", "PL"]},
+        headers={"X-Session-Id": sid},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "success"
+    assert resp.json()["output_file"].endswith(".zip")
+
+
+def test_invoice_group_endpoints_reject_invalid_session() -> None:
+    resp = client.get("/api/invoices", headers={"X-Session-Id": "missing"})
+    assert resp.status_code == 400
+
+    resp = client.post(
+        "/api/invoice/invgrp::missing/preview",
+        json={"seller": "GS PTE", "document": "INVOICE"},
+        headers={"X-Session-Id": "missing"},
+    )
+    assert resp.status_code == 400
+
+
 def test_export_batch_returns_single_zip(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     captured: dict[str, Any] = {}
 

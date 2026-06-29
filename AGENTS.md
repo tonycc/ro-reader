@@ -18,7 +18,7 @@ templates/             10 个 .xlsx workbook + 14 份 YAML mapping
 tests/fixtures/        合成 base 文件生成脚本
 ```
 
-当前核心包 + 工作台 API 可收集 **420 个 pytest 用例**（含 1 个已知 skip）。
+当前核心包 + 工作台 API 可收集 **428 个 pytest 用例**。
 
 - `docs/product/ro-document-generator-product-plan.md`：**产品方案**（最权威，所有产品决策以此为准）。
 - `docs/development/ro-document-workbench-ui-design.md`：**前端 UI 与交互设计**。
@@ -136,7 +136,7 @@ MVP 形态为**本地启动器 + 浏览器**：双击 PyInstaller 打包的可�
 - 数量价格：`FINALQTY`、`SK/YM USD FOB`、`GS PTE FOB`、`EMAX PTE`、`SUBTOTAL`
 - 装箱：`CTNS`、`N/W`、`G/W`、`L`/`W`/`H`、`TOTAL CBM`、`外箱`
 - 发票：`INV#`、`FACTORY DOC NO.`
-- **月度出货列 `2601` 到 `2612`** = 2026 年 1–12 月的发货数量
+- 实际出货数量：`SHIP QTY`（当前 `INV#` 对应的出货数量）
 - 月度发票金额：`GS-SK/YM INV-*`、`EMAX-GS INV-*`、`PF-EMAX INV-*`
 
 注意：表头可能含换行和多余空格（如 `"GS PTE \nFOB "`），`schema.normalize_header()` 必须先规范化再匹配。
@@ -146,8 +146,8 @@ MVP 形态为**本地启动器 + 浏览器**：双击 PyInstaller 打包的可�
 - `SUBTOTAL = quantity * unit_price`
 - `CTNS = quantity / 外箱`（当前实现中 `quantity` 取 `客户PO.Order Quantity`）
 - `TOTAL CBM = L * W * H / 1000000 * CTNS`
-- `BALANCE QTY = FINALQTY - 各月出货数量合计`
-- **PI/PO 使用 `客户PO.Order Quantity`；Invoice/PL 按 `invoice_month` 用月度出货数量**。
+- `BALANCE QTY` 直接读取 `PO record` 中的维护值。
+- **PI/PO 使用 `客户PO.Order Quantity`；Invoice/PL 使用 `PO record.SHIP QTY`**。
 - SK/YM 主体按 `PO record.CATEGORY` 过滤：`1/2 -> YM`，`3 -> SK`。工作台或 CLI 已明确选择 `seller=SK/YM` 时，只处理该主体对应行，不自动拆出另一主体文件。
 - SK/YM 的 Invoice + PL 同时导出时生成一个 `.xlsx` workbook，包含 Invoice 与 PL 两个 sheet。
 - PL 底部 `PACKED IN <总 CTNS> CTNS` 由 renderer 根据 `DocumentModel.total_carton_count` 写入，mapping 通过 `notes.packed_in_ctns` 指定单元格。
@@ -172,10 +172,10 @@ MVP 形态为**本地启动器 + 浏览器**：双击 PyInstaller 打包的可�
 | --- | --- |
 | PI | `<SELLER>-RO-PI-<PO>.xlsx` |
 | PO | `<SELLER>-RO-PO-<PO>.xlsx` |
-| Invoice | `<SELLER>-RO-INVOICE-<PO>-<MONTH>.xlsx` |
-| PL | `<SELLER>-RO-PL-<PO>-<MONTH>.xlsx` |
+| Invoice | `<SELLER>-RO-INVOICE-<INVOICE_NO>.xlsx` |
+| PL | `<SELLER>-RO-PL-<INVOICE_NO>.xlsx` |
 
-zip：`RO-<PO>-<MONTH>.zip`。`<MONTH>` 已含年份信息（`2601` = 2026-01）。
+票据组 zip：`RO-<INVOICE_NO>.zip`。PO 视角导出仍使用 `RO-<PO>.zip`。
 
 工作台默认导出策略：写入 `outputs/<YYYYMMDD-HHMMSS>/` 子目录，避免覆盖。CLI 保留 `--on-conflict overwrite|rename|abort` 选项。
 
@@ -230,7 +230,7 @@ uv run ruff check . && uv run ruff format --check . && uv run mypy packages
 
 - 黄金回归 PO：**`4500030844`**。
 - 合成 fixture 路径：`tests/fixtures/synthetic_base.xlsx`（由 `tests/fixtures/generate_synthetic_base.py` 生成，已加入 `.gitignore`）。
-- 合成 fixture 覆盖：combo / rod / reel 三种类别、跨多月份（2601/2602）、多 INV#、缺 SAP 阻断、SK/YM 请求 PO 阻断。
+- 合成 fixture 覆盖：combo / rod / reel 三种类别、`SHIP QTY`、多 INV#、缺 SAP 阻断、SK/YM 请求 PO 阻断。
 - 真实 `RO DATA BASE.xlsx` 未入库（`.gitignore` 已排除），待与团队确认数据敏感性。
 
 ## 模板处理注意

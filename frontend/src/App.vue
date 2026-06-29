@@ -8,6 +8,10 @@ import PreviewScreen from "./components/preview/PreviewScreen.vue";
 import ExportScreen from "./components/export/ExportScreen.vue";
 
 const activeTab = ref<"check" | "preview" | "export">("check");
+
+function selectWorkflowTab(tab: "check" | "preview" | "export") {
+  activeTab.value = tab;
+}
 </script>
 
 <template>
@@ -18,9 +22,9 @@ const activeTab = ref<"check" | "preview" | "export">("check");
       <section class="main">
         <nav class="mode-tabs">
           <div class="tabs">
-            <button class="tab" :class="{ active: activeTab === 'check' }" @click="activeTab = 'check'">数据检查</button>
-            <button class="tab" :class="{ active: activeTab === 'preview' }" @click="activeTab = 'preview'">单据预览</button>
-            <button class="tab" :class="{ active: activeTab === 'export' }" @click="activeTab = 'export'">导出确认</button>
+            <button class="tab" :class="{ active: activeTab === 'check' }" @click="selectWorkflowTab('check')">数据检查</button>
+            <button class="tab" :class="{ active: activeTab === 'preview' }" @click="selectWorkflowTab('preview')">单据预览</button>
+            <button class="tab" :class="{ active: activeTab === 'export' }" @click="selectWorkflowTab('export')">导出确认</button>
           </div>
           <div class="tab-tools">
             <span v-if="activeTab === 'export'" style="color: var(--muted)">导出前请确认单据内容</span>

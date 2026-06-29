@@ -369,14 +369,14 @@ GitHub Actions，三个独立 job 并行：
 
 - [x] 实现 `resolver.py`：按 PO 号筛选行、SAP 匹配产品、按所有合法链段读取价格列
 - [x] 公式回退逻辑（产品方案 §10.4）：CTNS / TOTAL CBM 读到 None 时按 §10.2 公式现算并 high warning
-- [x] 单元测试覆盖：combo 类、跨多个月份、缺 SAP 阻断、SAP 在 DATA BASE 找不到、价格全缺、部分行失败
+- [x] 单元测试覆盖：combo 类、`SHIP QTY`、缺 SAP 阻断、SAP 在 DATA BASE 找不到、价格全缺、部分行失败
 
 ### 6.5 Document Model（Invoice）
 
 - [x] 实现 `document_model.py` 中 Invoice 的视图模型构建
-- [x] 数量来源切换：`客户PO.Order Quantity` vs 月度出货数量
+- [x] 数量来源切换：`客户PO.Order Quantity` vs `PO record.SHIP QTY`
 - [x] 合计计算：总数量、总金额（PL 合计字段在 Phase 2 加）
-- [x] 单元测试覆盖月份切片、空行剔除（产品方案 §10.3）、链段定价缺失、Invoice 必填字段
+- [x] 单元测试覆盖 `SHIP QTY` 行筛选、空行剔除（产品方案 §10.3）、链段定价缺失、Invoice 必填字段
 
 ### 6.6 Template Mapping
 
@@ -401,7 +401,7 @@ GitHub Actions，三个独立 job 并行：
 
 - [x] 实现 `generator.py`：串联 reader → validator → resolver → document_model → renderer → packager
 - [x] 统一返回 `GenerationResult`，含 status (success/error/needs_input)、files、output_file、warnings、errors、missing_inputs、options、source_index
-- [x] 集成测试：成功路径、需补充月份、需补充链段、未知 PO、缺字段、不支持的单据/链段
+- [x] 集成测试：成功路径、需选择发票号、需补充链段、未知 PO、缺字段、不支持的单据/链段
 
 ### 6.10 CLI
 
@@ -413,14 +413,14 @@ GitHub Actions，三个独立 job 并行：
 
 - [ ] 与团队确认是否能提交真实 base 文件作为 fixture
 - [x] 编写合成 fixture 生成脚本 `tests/fixtures/generate_synthetic_base.py`
-- [x] 合成 fixture 覆盖（参见 CLAUDE.md "测试 fixture"）：combo/rod/reel、跨多月份、缺 SAP；多 INV# 留待 Phase 2 实现
+- [x] 合成 fixture 覆盖（参见 AGENTS.md "测试 fixture"）：combo/rod/reel、`SHIP QTY`、缺 SAP；多 INV# 留待 Phase 2 实现
 - [x] 端到端 CLI 验证：单月 success、跨月 needs_input、缺 SAP error 三种退出码全部正确
 
 ### 6.12 收尾
 
 - [ ] 黄金 PO `4500030844` 装配的 Invoice 与人工模板逐字段对比，达到 §14.2 一致性
   - 现状：合成 fixture（含 PO `4500030844` 三行跨月数据）端到端装配通过，自动化断言验证了样式保留、合并单元格、列宽、公式平移、数据正确写入。逐字段视觉对比依赖真实 `RO DATA BASE.xlsx`，**Phase 2 真实模板接入时一并验证**。
-- [x] CI 中 Python 包测试覆盖率 ≥ 80%（当前核心包 + API 可收集 420 个 pytest 用例）
+- [x] CI 中 Python 包测试覆盖率 ≥ 80%（当前核心包 + API 可收集 428 个 pytest 用例）
 - [x] 在 CLAUDE.md 中标记 Phase 1 完成
 - [x] 把 Phase 2 的细粒度任务清单写入本文档 §7（覆盖当前占位）
 
@@ -447,7 +447,7 @@ GitHub Actions，三个独立 job 并行：
 ### 7.2 PI / PO / PL document model
 
 - [x] `document_model.py` 增加 `build_pi_model()` / `build_po_model()` / `build_pl_model()`
-- [x] PI / PO 使用 `客户PO.Order Quantity`（不依赖 invoice_month），不要求 INV# / FACTORY DOC NO.
+- [x] PI / PO 使用 `客户PO.Order Quantity`，不要求 INV# / FACTORY DOC NO.
 - [x] PL 在 Invoice 字段基础上必须填充：`carton_count` / `net_weight` / `gross_weight` / `cbm`，以及合计字段 `total_*`
 - [x] PL 缺装箱字段时返回阻断错误（产品方案 §11）
 - [x] 单元测试覆盖每类单据的字段集与必填校验
@@ -470,7 +470,7 @@ GitHub Actions，三个独立 job 并行：
 
 ### 7.5 多 INV# needs_input 支持
 
-- [ ] resolver 收集每个 PO 行的 `INV#`，generator 检测同一 `(po, invoice_month)` 多个 INV# 时返回 `needs_input` + `options`
+- [ ] resolver 收集每个 PO 行的 `INV#`，generator 检测同一 PO 下多个 INV# 时返回 `needs_input` + `options`
 - [ ] CLI 接受 `--invoice-no` 参数（已支持），同时填充 request 时优先用之
 - [ ] 单元测试：`PO 4500099999` 跨两个 INV# 触发 needs_input
 
@@ -490,7 +490,7 @@ GitHub Actions，三个独立 job 并行：
 
 ### 7.8 收尾
 
-- [x] CI 测试覆盖率 ≥ 80%（当前核心包 + API 可收集 420 个 pytest 用例）
+- [x] CI 测试覆盖率 ≥ 80%（当前核心包 + API 可收集 428 个 pytest 用例）
 - [x] CLAUDE.md 标记 Phase 2 完成
 - [x] 把 Phase 3 的细粒度任务清单写入本文档 §8（覆盖当前占位）
 
@@ -534,7 +534,7 @@ GitHub Actions，三个独立 job 并行：
 - [x] `frontend/` 下按 UI 设计文档 §3 实现三栏布局（PO 列表 + 主区 + 预览栏）
 - [x] PO 列表：按状态着色 + 搜索筛选
 - [x] 数据视图：inline 编辑（双击→填入→Enter 提交→后端回写→预览刷新）
-- [x] 链段选择器（胶囊按钮组）+ 月份选择器（mono 字体按钮）
+- [x] 链段选择器（胶囊按钮组）+ `SHIP QTY` 出货摘要
 - [x] 文档预览栏：SheetJS `sheet_to_html` 渲染 + 悬停溯源 tooltip
 - [x] 导出流程（TopBar 导出按钮 + 导出确认页 + StatusBar 已导出路径）
 - [x] 缺字段高亮（DataCheckScreen 必填字段为空时红色边框 + 粉色背景）
@@ -608,3 +608,17 @@ GitHub Actions，三个独立 job 并行：
 - [x] `PreviewScreen.vue`：预览失败时展示错误信息；`LayoutTopZone.vue` 抽取消除三处重复渲染逻辑
 - [x] `ExportScreen.vue`：导出失败时展示错误信息
 - [x] 修复 4 处预先存在的测试失败（YAML null 值、单元格引用错误、溯源断言错误、缺 fixture 数据）
+
+---
+
+## 10. Phase 5：Invoice 只读检查视图
+
+> 目标：让用户在装配前看到票据组实际出货行，并集中理解 resolver、发票标识和跨 PO 抬头问题。
+
+- [x] 核心包新增 `InvoiceGroupInspection` / `InvoiceInspectionRow` 和共享票据组解析入口。
+- [x] inspection、Invoice/PL 预览与导出复用同一成员行和冲突判断。
+- [x] 新增 `GET /api/invoice/{invoice_group_key}/inspection`，仅从 session 获取 base 文件。
+- [x] 前端增加独立 inspection 状态、只读出货行表格和明确的 loading/error/empty 状态。
+- [x] PO 与 Invoice 检查复用同一个阻断/警告摘要组件；PO 行内编辑保持不变。
+- [x] 数据检查页恢复 `PO 视角 / Invoice 视角`切换，并分别记忆选中对象。
+- [x] 核心/API/Playwright 覆盖成员行、冲突原因、只读约束和 PO 回归。

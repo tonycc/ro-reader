@@ -36,7 +36,7 @@
 - Create: `packages/ro_generator/src/ro_generator/invoice_inspection.py`
 - Create: `packages/ro_generator/tests/test_invoice_inspection.py`
 
-- [ ] **Step 1: Write failing result-model and member-row tests**
+- [x] **Step 1: Write failing result-model and member-row tests**
 
 Add tests with these exact behaviors:
 
@@ -60,7 +60,7 @@ def test_inspection_unknown_key_returns_structured_blocking_error(snapshot):
 
 The fixture must include a zero-shipment row with the same invoice identifier and assert that its source row is absent.
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run:
 
@@ -70,7 +70,7 @@ uv run pytest packages/ro_generator/tests/test_invoice_inspection.py -q
 
 Expected: collection fails because `ro_generator.invoice_inspection` does not exist.
 
-- [ ] **Step 3: Add frozen inspection types and minimal entry point**
+- [x] **Step 3: Add frozen inspection types and minimal entry point**
 
 Implement:
 
@@ -113,7 +113,7 @@ def _sellers_for_line(line: OrderLine) -> tuple[str, ...]:
     return tuple(seller for seller in SELLERS if seller in sellers)
 ```
 
-- [ ] **Step 4: Run the focused tests and verify GREEN**
+- [x] **Step 4: Run the focused tests and verify GREEN**
 
 Run the command from Step 2. Expected: all tests pass.
 
@@ -132,7 +132,7 @@ git commit -m "feat: add invoice group inspection model"
 - Modify: `packages/ro_generator/tests/test_invoice_inspection.py`
 - Modify: `packages/ro_generator/tests/test_generator.py`
 
-- [ ] **Step 1: Write failing issue tests**
+- [x] **Step 1: Write failing issue tests**
 
 Cover resolver and group-level messages:
 
@@ -154,7 +154,7 @@ def test_header_conflict_is_blocking(header_conflict_snapshot):
     assert next(m for m in result.blocking_errors if m.code == "INVOICE_GROUP_HEADER_CONFLICT")
 ```
 
-- [ ] **Step 2: Verify the tests fail for missing messages**
+- [x] **Step 2: Verify the tests fail for missing messages**
 
 ```bash
 uv run pytest packages/ro_generator/tests/test_invoice_inspection.py -k "deduplicates or identifier_conflict or header_conflict" -q
@@ -162,7 +162,7 @@ uv run pytest packages/ro_generator/tests/test_invoice_inspection.py -k "dedupli
 
 Expected: assertions fail because inspection currently returns only resolver output or no group messages.
 
-- [ ] **Step 3: Implement stable issue construction**
+- [x] **Step 3: Implement stable issue construction**
 
 Add constants and helpers to `invoice_inspection.py`:
 
@@ -185,7 +185,7 @@ def dedupe_messages(messages: Iterable[ValidationMessage]) -> tuple[ValidationMe
 
 Use `snapshot.invoice_header_context[group_key]` for header conflicts. Emit one `severity="high"` warning when `summary.conflict_count > summary.blocking_count`; include the display invoice number and conflicting identifier values in the reason.
 
-- [ ] **Step 4: Replace generator-private group resolution**
+- [x] **Step 4: Replace generator-private group resolution**
 
 Expose this frozen result from `invoice_inspection.py`:
 
@@ -244,7 +244,7 @@ Implement `_group_messages(snapshot, summary)` in Step 3: iterate `snapshot.invo
 
 Do not change seller filtering, document building, filenames, or rendering behavior.
 
-- [ ] **Step 5: Run inspection and generator regression tests**
+- [x] **Step 5: Run inspection and generator regression tests**
 
 ```bash
 uv run pytest packages/ro_generator/tests/test_invoice_inspection.py packages/ro_generator/tests/test_generator.py -q
@@ -265,7 +265,7 @@ git commit -m "refactor: share invoice group inspection rules"
 - Modify: `packages/ro_workbench_api/src/ro_workbench_api/app.py`
 - Modify: `packages/ro_workbench_api/tests/test_app.py`
 
-- [ ] **Step 1: Write failing API tests**
+- [x] **Step 1: Write failing API tests**
 
 Add tests for the exact route:
 
@@ -293,7 +293,7 @@ def test_invoice_inspection_returns_rows_and_issue_counts():
     assert "base_file" not in data
 ```
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 ```bash
 uv run pytest packages/ro_workbench_api/tests/test_app.py -k invoice_inspection -q
@@ -301,7 +301,7 @@ uv run pytest packages/ro_workbench_api/tests/test_app.py -k invoice_inspection 
 
 Expected: route returns 404.
 
-- [ ] **Step 3: Add a thin GET route**
+- [x] **Step 3: Add a thin GET route**
 
 Implement:
 
@@ -327,7 +327,7 @@ def inspect_invoice_group(
 
 The serializer converts `Decimal` to JSON-safe values, tuple sellers to lists, and `ValidationMessage` through the existing message serializer. It reports `line_count`, `blocking_count`, and `warnings_count`; it performs no validation or grouping.
 
-- [ ] **Step 4: Run API and core tests**
+- [x] **Step 4: Run API and core tests**
 
 ```bash
 uv run pytest packages/ro_generator packages/ro_workbench_api -q
@@ -348,7 +348,7 @@ git commit -m "feat: expose invoice inspection endpoint"
 - Modify: `frontend/src/stores/api.ts`
 - Modify: `frontend/src/stores/workbench.ts`
 
-- [ ] **Step 1: Add response types and API method**
+- [x] **Step 1: Add response types and API method**
 
 Define:
 
@@ -380,7 +380,7 @@ export interface InvoiceInspectionResponse {
 
 Add `getInvoiceInspection(invoiceGroupKey)` using the session header and no `base_file`.
 
-- [ ] **Step 2: Add isolated store state**
+- [x] **Step 2: Add isolated store state**
 
 Add:
 
@@ -406,7 +406,7 @@ async function refreshInvoiceInspection() {
 
 Clear stale inspection state when the session or selected group changes. Do not derive issues or sellers in the store.
 
-- [ ] **Step 3: Verify TypeScript compilation**
+- [x] **Step 3: Verify TypeScript compilation**
 
 ```bash
 cd frontend && pnpm run build
@@ -430,7 +430,7 @@ git commit -m "feat: add invoice inspection state"
 - Modify: `frontend/src/components/po-list/QueueSidebar.vue`
 - Modify: `frontend/src/App.vue`
 
-- [ ] **Step 1: Extract the existing PO issue summary without behavior changes**
+- [x] **Step 1: Extract the existing PO issue summary without behavior changes**
 
 Create `IssueSummaryBar.vue` with props:
 
@@ -447,7 +447,7 @@ const props = defineProps<{
 
 Move the current panel open/close, Escape/outside-click handling, issue dedupe key, location formatting, badges, and panel styles from `DataCheckScreen.vue` into this component. Preserve existing classes such as `.issue-badge`, `.data-issue-panel`, and `.data-warning-panel` so PO E2E behavior remains stable.
 
-- [ ] **Step 2: Build the Invoice read-only view**
+- [x] **Step 2: Build the Invoice read-only view**
 
 `InvoiceDataCheck.vue` must watch `wb.selectedInvoiceGroup` with `{ immediate: true }` and call `wb.refreshInvoiceInspection()`. Render:
 
@@ -466,7 +466,7 @@ Render a `<table data-testid="invoice-inspection-table">` with the fixed columns
 
 Render these explicit states before the table: no selection uses `选择左侧 Invoice 开始数据检查`; loading uses `正在读取 Invoice 检查结果…`; request failure shows `wb.invoiceInspectionError`; a successful zero-row result keeps `IssueSummaryBar` visible and shows `该票据组没有可检查的出货行`.
 
-- [ ] **Step 3: Branch the data-check screen by scope**
+- [x] **Step 3: Branch the data-check screen by scope**
 
 At the top level of `DataCheckScreen.vue`:
 
@@ -479,14 +479,14 @@ At the top level of `DataCheckScreen.vue`:
 
 Use `IssueSummaryBar` for the PO branch with the existing `poIssues` data. Preserve PO inline editing exactly.
 
-- [ ] **Step 4: Restore data-check scope switching**
+- [x] **Step 4: Restore data-check scope switching**
 
 - Remove `v-if="activeTab !== 'check'"` from `.scope-switch` in `QueueSidebar.vue`.
 - Remove the forced `selectPreviewScope("po")` branch from `App.selectWorkflowTab()`.
 - Remove the now-unused `activeTab` prop from `QueueSidebar.vue` and change `<QueueSidebar :active-tab="activeTab" />` back to `<QueueSidebar />` in `App.vue`.
 - Preserve independent `selectedPo` and `selectedInvoiceGroup` state.
 
-- [ ] **Step 5: Build and inspect both views**
+- [x] **Step 5: Build and inspect both views**
 
 ```bash
 cd frontend && pnpm run build
@@ -514,7 +514,7 @@ git commit -m "feat: add read-only invoice data check"
 - Modify: `docs/development/implementation-guide.md`
 - Modify: `frontend/e2e/workbench.spec.ts`
 
-- [ ] **Step 1: Replace the obsolete PO-only E2E**
+- [x] **Step 1: Replace the obsolete PO-only E2E**
 
 Replace `data check always keeps the PO queue` with:
 
@@ -571,7 +571,7 @@ test("invoice data check explains blocking issues", async ({ page }) => {
 })
 ```
 
-- [ ] **Step 2: Run the new scenario and fix only integration defects**
+- [x] **Step 2: Run the new scenario and fix only integration defects**
 
 ```bash
 cd frontend && pnpm exec playwright test --grep "invoice data check" --reporter=line
@@ -579,7 +579,7 @@ cd frontend && pnpm exec playwright test --grep "invoice data check" --reporter=
 
 Expected: pass.
 
-- [ ] **Step 3: Update authoritative docs**
+- [x] **Step 3: Update authoritative docs**
 
 Change the product/UI rule to:
 
@@ -589,7 +589,7 @@ Change the product/UI rule to:
 
 Record the endpoint, core ownership boundary, non-editability, and completed verification in the implementation guide. Remove contradictory statements that data check always forces PO scope.
 
-- [ ] **Step 4: Run final verification**
+- [x] **Step 4: Run final verification**
 
 ```bash
 uv run pytest packages/ro_generator packages/ro_workbench_api -q

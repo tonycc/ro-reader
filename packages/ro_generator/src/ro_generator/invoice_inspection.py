@@ -1,0 +1,255 @@
+"""Read-only inspection projection for an invoice group."""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+from dataclasses import dataclass
+from decimal import Decimal
+from typing import TYPE_CHECKING, Final
+
+from ro_generator.base_schema import base_schema
+from ro_generator.invoice_groups import InvoiceHeaderContext, InvoiceInspection
+from ro_generator.models import OrderLine, ValidationMessage
+from ro_generator.resolver import resolve_po_rows
+from ro_generator.schema import SELLERS
+from ro_generator.seller_filter import factory_seller_for_line
+
+if TYPE_CHECKING:
+    from ro_generator.workbook_snapshot import WorkbookSnapshot
+
+
+CODE_INVOICE_GROUP_NOT_FOUND: Final = "INVOICE_GROUP_NOT_FOUND"
+CODE_INVOICE_GROUP_HEADER_CONFLICT: Final = "INVOICE_GROUP_HEADER_CONFLICT"
+CODE_INVOICE_IDENTIFIER_CONFLICT: Final = "INVOICE_IDENTIFIER_CONFLICT"
+
+_bs = base_schema()
+
+
+@dataclass(frozen=True)
+class InvoiceInspectionRow:
+    source_row: int
+    po_no: str
+    sap: str
+    description: str
+    category: int | None
+    ship_qty: Decimal
+    invoice_no: str | None
+    factory_document_no: str | None
+    sellers: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class InvoiceGroupInspection:
+    invoice_group_key: str
+    display_invoice_no: str
+    po_nos: tuple[str, ...]
+    rows: tuple[InvoiceInspectionRow, ...]
+    blocking_errors: tuple[ValidationMessage, ...]
+    warnings: tuple[ValidationMessage, ...]
+
+
+@dataclass(frozen=True)
+class InvoiceGroupResolution:
+    summary: InvoiceInspection | None
+    lines: tuple[OrderLine, ...]
+    blocking_errors: tuple[ValidationMessage, ...]
+    warnings: tuple[ValidationMessage, ...]
+
+
+def dedupe_messages(
+    messages: Iterable[ValidationMessage],
+) -> tuple[ValidationMessage, ...]:
+    seen: set[tuple[object, ...]] = set()
+    result: list[ValidationMessage] = []
+    for message in messages:
+        key = (
+            message.kind,
+            message.code,
+            message.message,
+            message.sheet,
+            message.row,
+            message.field,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(message)
+    return tuple(result)
+
+
+def resolve_invoice_group_from_snapshot(
+    snapshot: WorkbookSnapshot,
+    invoice_group_key: str,
+) -> InvoiceGroupResolution:
+    summary = next(
+        (item for item in snapshot.invoice_summary if item.invoice_group_key == invoice_group_key),
+        None,
+    )
+    if summary is None:
+        return InvoiceGroupResolution(
+            summary=None,
+            lines=(),
+            blocking_errors=(
+                ValidationMessage(
+                    kind="blocking_error",
+                    code=CODE_INVOICE_GROUP_NOT_FOUND,
+                    message=f"票据组 {invoice_group_key!r} 不存在",
+                ),
+            ),
+            warnings=(),
+        )
+
+    member_rows = snapshot.invoice_rows_for_group(invoice_group_key)
+    po_field = _bs.field("PO record", "po_no")
+    lines: list[OrderLine] = []
+    blocking_errors: list[ValidationMessage] = []
+    warnings: list[ValidationMessage] = []
+    for po_no in summary.po_nos:
+        po_rows = tuple(row for row in member_rows if str(row.get(po_field, "")).strip() == po_no)
+        resolved = resolve_po_rows(
+            po_rows,
+            snapshot.product_index,
+            po_no=po_no,
+            customer_po_rows=snapshot.customer_po_rows_for_po(po_no),
+        )
+        lines.extend(
+            line for line in resolved.lines if line.ship_qty is not None and line.ship_qty > 0
+        )
+        blocking_errors.extend(
+            message for message in resolved.messages if message.kind == "blocking_error"
+        )
+        warnings.extend(message for message in resolved.messages if message.kind == "warning")
+
+    context = snapshot.invoice_header_context.get(invoice_group_key)
+    blocking_errors.extend(_header_conflict_messages(context, summary.po_nos, tuple(lines)))
+    if summary.conflict_count > summary.blocking_count:
+        identifiers = sorted(
+            {
+                value.strip()
+                for line in lines
+                for value in (line.invoice_no, line.sk_ym_invoice_no)
+                if value and value.strip()
+            }
+        )
+        warnings.append(
+            ValidationMessage(
+                kind="warning",
+                code=CODE_INVOICE_IDENTIFIER_CONFLICT,
+                message=(
+                    f"票据组 {summary.display_invoice_no!r} 包含多个发票标识："
+                    f"{', '.join(identifiers)}"
+                ),
+                severity="high",
+            )
+        )
+    return InvoiceGroupResolution(
+        summary=summary,
+        lines=tuple(lines),
+        blocking_errors=dedupe_messages(blocking_errors),
+        warnings=dedupe_messages(warnings),
+    )
+
+
+def inspect_invoice_group_from_snapshot(
+    snapshot: WorkbookSnapshot,
+    invoice_group_key: str,
+) -> InvoiceGroupInspection:
+    resolution = resolve_invoice_group_from_snapshot(snapshot, invoice_group_key)
+    if resolution.summary is None:
+        return InvoiceGroupInspection(
+            invoice_group_key=invoice_group_key,
+            display_invoice_no="",
+            po_nos=(),
+            rows=(),
+            blocking_errors=resolution.blocking_errors,
+            warnings=resolution.warnings,
+        )
+
+    projected_rows = [
+        _project_line(line)
+        for line in resolution.lines
+        if line.source_row is not None and line.ship_qty is not None and line.ship_qty > 0
+    ]
+
+    projected_rows.sort(key=lambda row: row.source_row)
+    return InvoiceGroupInspection(
+        invoice_group_key=invoice_group_key,
+        display_invoice_no=resolution.summary.display_invoice_no,
+        po_nos=resolution.summary.po_nos,
+        rows=tuple(projected_rows),
+        blocking_errors=resolution.blocking_errors,
+        warnings=resolution.warnings,
+    )
+
+
+def _header_conflict_messages(
+    context: InvoiceHeaderContext | None,
+    po_nos: tuple[str, ...],
+    lines: tuple[OrderLine, ...],
+) -> tuple[ValidationMessage, ...]:
+    if context is None:
+        return ()
+    messages: list[ValidationMessage] = []
+    for field_name in context.conflicts:
+        values = context.values.get(field_name, ())
+        source_rows = sorted(
+            {
+                line.source_row
+                for line in lines
+                if line.source_row is not None
+                and (value := getattr(line, field_name)) is not None
+                and str(value).strip()
+            }
+        )
+        messages.append(
+            ValidationMessage(
+                kind="blocking_error",
+                code=CODE_INVOICE_GROUP_HEADER_CONFLICT,
+                message=(
+                    f"票据组跨 PO 的 {field_name} 不一致：{', '.join(values)}；"
+                    f"涉及 PO：{', '.join(po_nos)}；"
+                    f"源行：{', '.join(str(row) for row in source_rows)}"
+                ),
+                field=field_name,
+            )
+        )
+    return tuple(messages)
+
+
+def _project_line(line: OrderLine) -> InvoiceInspectionRow:
+    assert line.source_row is not None
+    assert line.ship_qty is not None
+    return InvoiceInspectionRow(
+        source_row=line.source_row,
+        po_no=line.po_no,
+        sap=line.sap,
+        description=line.description,
+        category=line.po_record_category if line.po_record_category is not None else line.category,
+        ship_qty=line.ship_qty,
+        invoice_no=line.invoice_no,
+        factory_document_no=line.sk_ym_invoice_no,
+        sellers=_sellers_for_line(line),
+    )
+
+
+def _sellers_for_line(line: OrderLine) -> tuple[str, ...]:
+    sellers: list[str] = []
+    if line.invoice_no:
+        sellers.extend(("GS PTE", "EMAX PTE"))
+    factory_seller = factory_seller_for_line(line)
+    if line.sk_ym_invoice_no and factory_seller:
+        sellers.append(factory_seller)
+    return tuple(seller for seller in SELLERS if seller in sellers)
+
+
+__all__ = [
+    "CODE_INVOICE_GROUP_HEADER_CONFLICT",
+    "CODE_INVOICE_GROUP_NOT_FOUND",
+    "CODE_INVOICE_IDENTIFIER_CONFLICT",
+    "InvoiceGroupInspection",
+    "InvoiceGroupResolution",
+    "InvoiceInspectionRow",
+    "dedupe_messages",
+    "inspect_invoice_group_from_snapshot",
+    "resolve_invoice_group_from_snapshot",
+]

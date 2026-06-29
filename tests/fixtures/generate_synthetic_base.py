@@ -5,9 +5,9 @@
 - 端到端 CLI 验证：不依赖单元测试 fixture，直接跑 ro-generate
 - 真实 base 文件入库决策待与团队确认；在确认前用合成数据替代
 
-覆盖场景（CLAUDE.md "测试 fixture"）：
+覆盖场景（AGENTS.md "测试 fixture"）：
 - combo / rod / reel 三类
-- 单 PO 跨多个月份（触发 needs_input invoice_month）
+- `SHIP QTY` 实际出货数量
 - 多 INV#（触发 needs_input invoice_no，Phase 2 实现）
 - 一行缺 SAP 的失败案例（按需取用）
 
@@ -66,7 +66,8 @@ PO_RECORD_HEADER = [
     "G/W",
     "TOTAL CBM",
     "外箱",
-    *[f"26{m:02d}" for m in range(1, 13)],
+    "SHIP QTY",
+    "BALANCE QTY",
 ]
 
 # ————————————————————————————————————————
@@ -133,7 +134,7 @@ DATA_BASE_ROWS: list[dict[str, Any]] = [
 # ————————————————————————————————————————
 
 PO_RECORD_ROWS: list[dict[str, Any]] = [
-    # PO 4500030844：3 行（combo + rod + reel），跨 2601 / 2602 两个月
+    # PO 4500030844：3 行（combo + rod + reel），均有实际出货数量
     {
         "SHIP TO": "EMAX HQ",
         "PO NO.": "4500030844",
@@ -150,8 +151,8 @@ PO_RECORD_ROWS: list[dict[str, Any]] = [
         "外箱": 24,
         "CTNS": 10,
         "TOTAL CBM": Decimal("0.72"),
-        "2601": 100,
-        "2602": 140,
+        "SHIP QTY": 100,
+        "BALANCE QTY": 140,
     },
     {
         "SHIP TO": "EMAX HQ",
@@ -169,8 +170,8 @@ PO_RECORD_ROWS: list[dict[str, Any]] = [
         "外箱": 12,
         "CTNS": 10,
         "TOTAL CBM": Decimal("0.72"),
-        "2601": 60,
-        "2602": 60,
+        "SHIP QTY": 60,
+        "BALANCE QTY": 60,
     },
     {
         "SHIP TO": "EMAX HQ",
@@ -188,9 +189,10 @@ PO_RECORD_ROWS: list[dict[str, Any]] = [
         "外箱": 36,
         "CTNS": 10,
         "TOTAL CBM": Decimal("0.24"),
-        "2601": 360,  # 1 月一次性出完
+        "SHIP QTY": 360,
+        "BALANCE QTY": 0,
     },
-    # PO 4500099999：1 行，单月，简单成功路径
+    # PO 4500099999：1 行，简单成功路径
     {
         "SHIP TO": "EMAX HQ",
         "PO NO.": "4500099999",
@@ -207,7 +209,8 @@ PO_RECORD_ROWS: list[dict[str, Any]] = [
         "外箱": 24,
         "CTNS": 5,  # 100/24=4.17，留作回退测试时用整 5
         "TOTAL CBM": Decimal("0.36"),
-        "2603": 100,
+        "SHIP QTY": 100,
+        "BALANCE QTY": 0,
     },
     # PO 4500088888：包含一行缺 SAP 的失败案例（按需取用）
     {
@@ -222,6 +225,8 @@ PO_RECORD_ROWS: list[dict[str, Any]] = [
         "INV#": "INV-2604-001",
         "FACTORY DOC NO.": "FDOC-2604",
         "外箱": 24,
+        "SHIP QTY": 50,
+        "BALANCE QTY": 0,
     },
 ]
 
@@ -369,8 +374,8 @@ def main() -> None:
     print(
         "覆盖：\n"
         "  - 3 个产品（combo/rod/reel）\n"
-        "  - PO 4500030844：3 行跨 2601/2602 月份（适合月度切片测试）\n"
-        "  - PO 4500099999：1 行单月（简单成功路径）\n"
+        "  - PO 4500030844：3 行带 SHIP QTY（出货行筛选测试）\n"
+        "  - PO 4500099999：1 行（简单成功路径）\n"
         "  - PO 4500088888：1 行缺 SAP（阻断错误测试）"
     )
 

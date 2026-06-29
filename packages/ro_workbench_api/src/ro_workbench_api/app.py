@@ -28,7 +28,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from ro_generator.document_preview import DocumentPreview
-from ro_generator.generator import generate, preview_from_snapshot
+from ro_generator.generator import (
+    export_invoice_group_from_snapshot,
+    generate,
+    preview_from_snapshot,
+    preview_invoice_group_from_snapshot,
+)
+from ro_generator.invoice_inspection import (
+    InvoiceGroupInspection,
+    inspect_invoice_group_from_snapshot,
+)
 from ro_generator.models import (
     DocumentRequest,
     DocumentType,
@@ -190,6 +199,16 @@ class DryRunRequest(BaseModel):
     documents: list[str] | None = None
 
 
+class InvoicePreviewRequest(BaseModel):
+    seller: str
+    document: Literal["INVOICE", "PL"]
+
+
+class InvoiceExportRequest(BaseModel):
+    seller: str
+    documents: list[Literal["INVOICE", "PL"]]
+
+
 class ExportGroupRequest(BaseModel):
     seller: str
     documents: list[str]
@@ -257,6 +276,27 @@ def _msg_to_dict(m: ValidationMessage) -> dict[str, Any]:
     return asdict(m)
 
 
+def _invoice_inspection_to_dict(result: InvoiceGroupInspection) -> dict[str, Any]:
+    return {
+        "invoice_group_key": result.invoice_group_key,
+        "display_invoice_no": result.display_invoice_no,
+        "po_nos": list(result.po_nos),
+        "line_count": len(result.rows),
+        "blocking_count": len(result.blocking_errors),
+        "warnings_count": len(result.warnings),
+        "rows": [
+            {
+                **asdict(row),
+                "ship_qty": float(row.ship_qty),
+                "sellers": list(row.sellers),
+            }
+            for row in result.rows
+        ],
+        "blocking_errors": [_msg_to_dict(message) for message in result.blocking_errors],
+        "warnings": [_msg_to_dict(message) for message in result.warnings],
+    }
+
+
 def _normalize_document(raw: str | None) -> DocumentType:
     doc = (raw or "INVOICE").upper()
     if doc not in {"PI", "PO", "INVOICE", "PL"}:
@@ -296,6 +336,31 @@ def _preview_options_to_dict(options: Mapping[str, object]) -> dict[str, list[di
                 items.append({"value": raw_value, "label": raw_label})
         payload[key] = items
     return payload
+
+
+def _document_preview_to_dict(preview: DocumentPreview | None) -> dict[str, Any] | None:
+    if preview is None:
+        return None
+    return {
+        "document_type": preview.document_type,
+        "title": preview.title,
+        "seller": preview.seller,
+        "buyer": preview.buyer,
+        "po_no": preview.po_no,
+        "pi_no": preview.pi_no,
+        "invoice_no": preview.invoice_no,
+        "ship_to": preview.ship_to,
+        "seller_info": preview.seller_info,
+        "to_label": preview.to_label,
+        "terms": preview.terms,
+        "column_labels": preview.column_labels,
+        "lines": preview.lines,
+        "totals": preview.totals,
+        "notes": preview.notes,
+        "source_entries": preview.source_entries,
+        "layout": preview.layout,
+        "resolved_values": preview.resolved_values,
+    }
 
 
 def _build_document_request(
@@ -370,6 +435,96 @@ def open_session(req: OpenSessionRequest) -> dict[str, Any]:
         for p in inspection.po_list
     ]
     return {"ok": True, "session_id": session.session_id, "po_list": po_list}
+
+
+@app.get("/api/invoices")
+def get_invoice_groups(
+    x_session_id: str = Header(..., alias="X-Session-Id"),
+) -> dict[str, Any]:
+    session = _get_session(x_session_id)
+    if session is None:
+        raise HTTPException(
+            400,
+            detail={"code": "INVALID_SESSION", "message": f"session {x_session_id!r} 无效或已过期"},
+        )
+    snapshot = get_cache_manager().get_snapshot(session.base_file)
+    return {"invoices": [asdict(item) for item in snapshot.invoice_summary]}
+
+
+@app.get("/api/invoice/{invoice_group_key}/inspection")
+def inspect_invoice_group(
+    invoice_group_key: str,
+    x_session_id: str = Header(..., alias="X-Session-Id"),
+) -> dict[str, Any]:
+    session = _get_session(x_session_id)
+    if session is None:
+        raise HTTPException(
+            400,
+            detail={"code": "INVALID_SESSION", "message": f"session {x_session_id!r} 无效或已过期"},
+        )
+    snapshot = get_cache_manager().get_snapshot(session.base_file)
+    result = inspect_invoice_group_from_snapshot(snapshot, invoice_group_key)
+    return _invoice_inspection_to_dict(result)
+
+
+@app.post("/api/invoice/{invoice_group_key}/preview")
+def preview_invoice_group(
+    invoice_group_key: str,
+    req: InvoicePreviewRequest,
+    x_session_id: str = Header(..., alias="X-Session-Id"),
+) -> dict[str, Any]:
+    session = _get_session(x_session_id)
+    if session is None:
+        raise HTTPException(
+            400,
+            detail={"code": "INVALID_SESSION", "message": f"session {x_session_id!r} 无效或已过期"},
+        )
+    snapshot = get_cache_manager().get_snapshot(session.base_file)
+    result = preview_invoice_group_from_snapshot(
+        snapshot,
+        invoice_group_key,
+        seller=req.seller,
+        document=req.document,
+    )
+    summary = next(
+        (item for item in snapshot.invoice_summary if item.invoice_group_key == invoice_group_key),
+        None,
+    )
+    return {
+        "status": result.status,
+        "invoice_group_key": invoice_group_key,
+        "display_invoice_no": summary.display_invoice_no if summary else "",
+        "seller_invoice_no": (summary.seller_invoice_numbers.get(req.seller) if summary else None),
+        "po_nos": list(summary.po_nos) if summary else [],
+        "preview": _document_preview_to_dict(result.preview),
+        "errors": [_msg_to_dict(message) for message in result.errors],
+        "warnings": [_msg_to_dict(message) for message in result.warnings],
+        "missing_inputs": list(result.missing_inputs),
+        "options": _preview_options_to_dict(result.options),
+    }
+
+
+@app.post("/api/invoice/{invoice_group_key}/export")
+def export_invoice_group(
+    invoice_group_key: str,
+    req: InvoiceExportRequest,
+    x_session_id: str = Header(..., alias="X-Session-Id"),
+) -> dict[str, Any]:
+    session = _get_session(x_session_id)
+    if session is None:
+        raise HTTPException(
+            400,
+            detail={"code": "INVALID_SESSION", "message": f"session {x_session_id!r} 无效或已过期"},
+        )
+    snapshot = get_cache_manager().get_snapshot(session.base_file)
+    result = export_invoice_group_from_snapshot(
+        snapshot,
+        invoice_group_key,
+        seller=req.seller,
+        documents=tuple(req.documents),
+        output_dir=session.temp_dir,
+    )
+    return _result_to_dict(result)
 
 
 @app.get("/api/po/{po_no}")

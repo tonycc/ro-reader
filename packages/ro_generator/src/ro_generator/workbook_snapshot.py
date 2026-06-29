@@ -19,12 +19,18 @@ from pathlib import Path
 from ro_generator.base_schema import base_schema
 from ro_generator.document_model import invoice_no_for_line
 from ro_generator.errors import WorkbookOpenError
+from ro_generator.invoice_groups import (
+    InvoiceGroupBuild,
+    InvoiceHeaderContext,
+    InvoiceInspection,
+    build_invoice_groups,
+)
 from ro_generator.models import OrderLine, Product
 from ro_generator.resolver import build_product_index_from_rows, resolve_po_rows
 from ro_generator.schema import SELLERS, SHEET_CUSTOMER_PO, SHEET_DATA_BASE, SHEET_PO_RECORD
-from ro_generator.seller_filter import factory_seller_for_line, has_factory_categories
+from ro_generator.seller_filter import factory_seller_for_line, has_factory_categories, int_or_none
 from ro_generator.validator import validate_workbook_structure
-from ro_generator.workbook_reader import WorkbookReader
+from ro_generator.workbook_reader import ROW_NUMBER_KEY, WorkbookReader
 
 _bs = base_schema()
 
@@ -99,6 +105,9 @@ class WorkbookSnapshot:
     po_rows: tuple[dict[str, object], ...] = ()
     po_index: dict[str, tuple[int, ...]] = field(default_factory=dict)
     po_summary: tuple[PoInspection, ...] = ()
+    invoice_summary: tuple[InvoiceInspection, ...] = ()
+    invoice_index: dict[str, tuple[int, ...]] = field(default_factory=dict)
+    invoice_header_context: dict[str, InvoiceHeaderContext] = field(default_factory=dict)
     customer_po_rows: tuple[dict[str, object], ...] = ()
     customer_po_index: dict[str, tuple[int, ...]] = field(default_factory=dict)
     created_at: float = field(default_factory=time.time)
@@ -112,6 +121,10 @@ class WorkbookSnapshot:
         """返回指定 Purchasing Document 在客户PO sheet 中的行。"""
         indices = self.customer_po_index.get(purchasing_document, ())
         return tuple(self.customer_po_rows[i] for i in indices)
+
+    def invoice_rows_for_group(self, invoice_group_key: str) -> tuple[dict[str, object], ...]:
+        indices = self.invoice_index.get(invoice_group_key, ())
+        return tuple(self.po_rows[i] for i in indices)
 
 
 # —————————————————————————————————————
@@ -198,6 +211,13 @@ def build_workbook_snapshot(base_file: str) -> WorkbookSnapshot:
             cp_rows,
             cp_index,
         )
+        invoice_groups = _build_invoice_group_snapshot(
+            po_index,
+            po_rows,
+            product_index,
+            cp_rows,
+            cp_index,
+        )
 
         return WorkbookSnapshot(
             base_file=str(Path(base_file).resolve()),
@@ -208,6 +228,9 @@ def build_workbook_snapshot(base_file: str) -> WorkbookSnapshot:
             po_rows=po_rows,
             po_index=po_index,
             po_summary=po_summary,
+            invoice_summary=invoice_groups.summaries,
+            invoice_index=invoice_groups.index,
+            invoice_header_context=invoice_groups.header_context,
             customer_po_rows=cp_rows,
             customer_po_index=cp_index,
         )
@@ -262,6 +285,37 @@ def _build_po_summary(
             )
         )
     return tuple(summaries)
+
+
+def _build_invoice_group_snapshot(
+    po_index: dict[str, tuple[int, ...]],
+    po_rows: tuple[dict[str, object], ...],
+    products: dict[str, Product],
+    customer_po_rows: tuple[dict[str, object], ...],
+    customer_po_index: dict[str, tuple[int, ...]],
+) -> InvoiceGroupBuild:
+    row_index_by_source_row: dict[int, int] = {}
+    for index, row in enumerate(po_rows):
+        source_row = int_or_none(row.get(ROW_NUMBER_KEY))
+        if source_row is not None:
+            row_index_by_source_row[source_row] = index
+    lines_by_row: list[tuple[int, OrderLine]] = []
+    for po_no, indices in po_index.items():
+        rows = tuple(po_rows[index] for index in indices)
+        customer_rows = tuple(customer_po_rows[index] for index in customer_po_index.get(po_no, ()))
+        resolved = resolve_po_rows(
+            rows,
+            products,
+            po_no=po_no,
+            customer_po_rows=customer_rows,
+        )
+        for line in resolved.lines:
+            if line.source_row is None:
+                continue
+            raw_index = row_index_by_source_row.get(line.source_row)
+            if raw_index is not None:
+                lines_by_row.append((raw_index, line))
+    return build_invoice_groups(tuple(lines_by_row))
 
 
 def _build_invoice_options_by_seller(lines: tuple[OrderLine, ...]) -> dict[str, tuple[str, ...]]:
@@ -331,6 +385,7 @@ class BuildSnapshotError(Exception):
 __all__ = [
     "BuildSnapshotError",
     "FileSignature",
+    "InvoiceInspection",
     "PoInspection",
     "WorkbookSnapshot",
     "build_workbook_snapshot",

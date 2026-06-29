@@ -23,6 +23,7 @@ interface ExportDocEntry {
 
 const selectedDocs = ref<Set<string>>(new Set());
 const selectedInvoices = ref<Record<string, string | null>>({});
+const selectedInvoiceDocuments = ref<Set<"INVOICE" | "PL">>(new Set(["INVOICE", "PL"]));
 
 const exportGroups = computed(() => (
   (wb.poEntry?.sellers ?? []).map((seller) => ({
@@ -77,6 +78,23 @@ async function handleExport() {
   await wb.doExportGroups(selectedExportDocs.value);
 }
 
+async function handleInvoiceGroupExport() {
+  await wb.doExport(Array.from(selectedInvoiceDocuments.value));
+}
+
+function toggleInvoiceDocument(document: "INVOICE" | "PL") {
+  const next = new Set(selectedInvoiceDocuments.value);
+  if (next.has(document)) next.delete(document); else next.add(document);
+  selectedInvoiceDocuments.value = next;
+}
+
+function invoiceGroupFilename(document: "INVOICE" | "PL"): string {
+  const invoiceNo = wb.invoiceEntry?.seller_invoice_numbers[wb.selectedSeller]
+    ?? wb.invoiceEntry?.display_invoice_no
+    ?? "INVOICE";
+  return `${safeToken(wb.selectedSeller)}-RO-${document}-${safeToken(invoiceNo)}.xlsx`;
+}
+
 function buildExportEntry(seller: string, document: string): ExportDocEntry {
   return {
     id: `${safeToken(seller)}-${document}`,
@@ -128,7 +146,41 @@ function safeToken(value: string): string {
 
 <template>
   <div class="export-screen">
-    <div v-if="!wb.selectedPo" class="placeholder">选择左侧 PO 开始导出</div>
+    <div v-if="wb.previewScope === 'invoice' && !wb.selectedInvoiceGroup" class="placeholder">选择左侧 Invoice 开始导出</div>
+    <div v-else-if="wb.previewScope === 'invoice'" class="export-grid">
+      <div class="export-card">
+        <h3>{{ wb.invoiceEntry?.display_invoice_no }} · 导出内容确认</h3>
+        <section class="seller-section">
+          <h4>{{ wb.selectedSeller }}</h4>
+          <div
+            v-for="document in (['INVOICE', 'PL'] as const)"
+            :key="document"
+            class="check-line"
+            :data-testid="`invoice-export-${document}`"
+          >
+            <div>
+              <b>{{ invoiceGroupFilename(document) }}</b><br>
+              <span class="fname">{{ document === 'INVOICE' ? '商业发票' : '装箱单' }}</span>
+            </div>
+            <span
+              class="checkbox"
+              :class="{ on: selectedInvoiceDocuments.has(document) }"
+              @click="toggleInvoiceDocument(document)"
+            >{{ selectedInvoiceDocuments.has(document) ? '✓' : '' }}</span>
+          </div>
+        </section>
+      </div>
+      <div class="export-card">
+        <h3>输出设置</h3>
+        <div class="field" style="margin-bottom: 10px"><label>文件格式</label><div class="value">ZIP 包</div></div>
+        <div class="field" style="margin-bottom: 14px"><label>覆盖 PO</label><div class="value">{{ wb.invoiceEntry?.po_count ?? 0 }} 个</div></div>
+        <button class="primary-btn" :disabled="!selectedInvoiceDocuments.size || wb.exporting" @click="handleInvoiceGroupExport">
+          {{ wb.exporting ? '导出中…' : '确认导出' }}
+        </button>
+        <div v-if="wb.exportError" class="export-err">{{ wb.exportError }}</div>
+      </div>
+    </div>
+    <div v-else-if="!wb.selectedPo" class="placeholder">选择左侧 PO 开始导出</div>
     <div v-else class="export-grid">
       <div class="export-card">
         <h3>导出内容确认</h3>
@@ -191,7 +243,7 @@ function safeToken(value: string): string {
 .export-screen { padding: 18px 20px 22px; }
 .placeholder { padding: var(--space-8); text-align: center; color: var(--subtle); }
 .export-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; }
-.export-card { border: 1px solid var(--line); border-radius: 12px; background: white; padding: 16px; }
+.export-card { border: 1px solid var(--line); border-radius: 8px; background: white; padding: 16px; }
 .export-card h3 { margin: 0 0 14px; font-size: 14px; }
 .seller-section { padding: 12px 0; border-top: 1px solid var(--line); }
 .seller-section:first-of-type { border-top: 0; padding-top: 0; }
