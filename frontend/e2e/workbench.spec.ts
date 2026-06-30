@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-const BASE_FILE = "/Users/max/projects/ro-reader/tests/fixtures/synthetic_base.xlsx";
+const BASE_FILE = "tests/fixtures/synthetic_base.xlsx";
 
 /** Set base file path via window hook (bypasses prompt() for headless E2E). */
 async function openBaseFile(page: import("@playwright/test").Page) {

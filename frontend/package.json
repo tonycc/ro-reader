@@ -7,6 +7,9 @@
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
+    "lint": "echo 'lint not configured'",
+    "type-check": "vue-tsc --noEmit",
+    "test": "echo 'no unit tests configured'",
     "test:e2e": "playwright test"
   },
   "dependencies": {
