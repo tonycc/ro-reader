@@ -152,3 +152,4 @@ jobs:
         with:
           name: ro-workbench-${{ matrix.os }}
           path: dist/
+          retention-days: 3
