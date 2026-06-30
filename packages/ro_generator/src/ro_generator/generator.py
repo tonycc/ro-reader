@@ -507,6 +507,20 @@ def export_invoice_group_from_snapshot(
             rendered_paths.append(Path(rendered.output_path))
             filenames.append(filename)
 
+    if len(rendered_paths) == 1:
+        return GenerationResult(
+            status="success",
+            summary={
+                "invoice_group_key": invoice_group_key,
+                "display_invoice_no": summary.display_invoice_no,
+                "po_nos": list(summary.po_nos),
+                "seller": seller,
+            },
+            files=tuple(filenames),
+            output_file=str(rendered_paths[0]),
+            warnings=tuple(warnings),
+        )
+
     zip_path = package_zip(
         files=tuple(rendered_paths),
         output_dir=output_root,

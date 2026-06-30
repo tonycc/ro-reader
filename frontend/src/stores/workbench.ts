@@ -142,7 +142,7 @@ export const useWorkbench = defineStore("workbench", () => {
     if (previewScope.value === "invoice" && !selectedInvoiceGroup.value) return;
     const requestedDocument = docType || previewDocType.value;
     const dt = previewScope.value === "invoice"
-      ? (isInvoicePlDocument(requestedDocument) ? requestedDocument : "INVOICE")
+      ? (isInvoicePlDocument(requestedDocument) ? requestedDocument : "INVOICE_PL")
       : (["PI", "PO"].includes(requestedDocument) ? requestedDocument : "PI");
     const requestSeller = selectedSeller.value;
     previewLoading.value = true;
@@ -154,7 +154,7 @@ export const useWorkbench = defineStore("workbench", () => {
     warnings.value = [];
     try {
       previewDocType.value = dt;
-      const docs = [dt];
+      const docs = dt === "INVOICE_PL" ? ["INVOICE", "PL"] : [dt];
       const results = await Promise.all(docs.map(async (document) => {
         try {
           const result = previewScope.value === "invoice"
@@ -253,6 +253,32 @@ export const useWorkbench = defineStore("workbench", () => {
     } finally { exporting.value = false; }
   }
 
+  async function doExportInvoiceGroups(groups: BatchExportGroup[]) {
+    if (!selectedInvoiceGroup.value || !groups.length) return;
+    exporting.value = true;
+    exportError.value = "";
+    lastExportFile.value = "";
+    try {
+      const result = await api.exportInvoiceDocumentGroups(
+        selectedInvoiceGroup.value,
+        groups.map((group) => ({
+          seller: group.seller,
+          documents: group.documents,
+        })),
+      );
+      if (result.status !== "success") {
+        exportError.value = formatExportFailure(result);
+        lastExportFile.value = "";
+        return result;
+      }
+      lastExportFile.value = result.output_file ?? "";
+      triggerDownload(result, "export.zip");
+      return result;
+    } catch (e) {
+      exportError.value = e instanceof ApiError ? e.message : `导出失败：${e}`;
+    } finally { exporting.value = false; }
+  }
+
   async function exportOneGroup(group: ExportGroup) {
     const exportDocuments = group.documents;
     if (!exportDocuments.length) return;
@@ -295,7 +321,7 @@ export const useWorkbench = defineStore("workbench", () => {
   function selectInvoice(inv: string | null) { selectedInvoiceNo.value = inv; return refreshPreview(); }
 
   function isInvoicePlDocument(document: string): boolean {
-    return document === "INVOICE" || document === "PL";
+    return document === "INVOICE" || document === "PL" || document === "INVOICE_PL";
   }
 
   async function selectPreviewScope(scope: PreviewScope) {
@@ -303,7 +329,7 @@ export const useWorkbench = defineStore("workbench", () => {
     if (scope === "invoice") {
       const entry = invoiceEntry.value;
       selectedSeller.value = selectedInvoiceSeller.value || entry?.sellers[0] || "";
-      previewDocType.value = isInvoicePlDocument(previewDocType.value) ? previewDocType.value : "INVOICE";
+      previewDocType.value = isInvoicePlDocument(previewDocType.value) ? previewDocType.value : "INVOICE_PL";
     } else {
       selectedSeller.value = selectedPoSeller.value || poEntry.value?.sellers[0] || "";
       previewDocType.value = ["PI", "PO"].includes(previewDocType.value) ? previewDocType.value : "PI";
@@ -415,7 +441,7 @@ export const useWorkbench = defineStore("workbench", () => {
     poIssues, issuesLoading, issuesError,
     previewError, exportError,
     poEntry, poStatus, invoiceEntry, invoiceStatus,
-    openSession, selectPo, refreshPreview, editCell, doExport, doExportGroups,
+    openSession, selectPo, refreshPreview, editCell, doExport, doExportGroups, doExportInvoiceGroups,
     selectSeller, selectInvoice, selectPreviewScope, selectInvoiceGroup,
     refreshPoIssues, refreshInvoiceInspection,
   };

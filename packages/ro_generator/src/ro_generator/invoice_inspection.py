@@ -20,7 +20,6 @@ if TYPE_CHECKING:
 
 CODE_INVOICE_GROUP_NOT_FOUND: Final = "INVOICE_GROUP_NOT_FOUND"
 CODE_INVOICE_GROUP_HEADER_CONFLICT: Final = "INVOICE_GROUP_HEADER_CONFLICT"
-CODE_INVOICE_IDENTIFIER_CONFLICT: Final = "INVOICE_IDENTIFIER_CONFLICT"
 
 _bs = base_schema()
 
@@ -111,6 +110,7 @@ def resolve_invoice_group_from_snapshot(
             snapshot.product_index,
             po_no=po_no,
             customer_po_rows=snapshot.customer_po_rows_for_po(po_no),
+            require_customer_po=False,
         )
         lines.extend(
             line for line in resolved.lines if line.ship_qty is not None and line.ship_qty > 0
@@ -122,26 +122,6 @@ def resolve_invoice_group_from_snapshot(
 
     context = snapshot.invoice_header_context.get(invoice_group_key)
     blocking_errors.extend(_header_conflict_messages(context, summary.po_nos, tuple(lines)))
-    if summary.conflict_count > summary.blocking_count:
-        identifiers = sorted(
-            {
-                value.strip()
-                for line in lines
-                for value in (line.invoice_no, line.sk_ym_invoice_no)
-                if value and value.strip()
-            }
-        )
-        warnings.append(
-            ValidationMessage(
-                kind="warning",
-                code=CODE_INVOICE_IDENTIFIER_CONFLICT,
-                message=(
-                    f"票据组 {summary.display_invoice_no!r} 包含多个发票标识："
-                    f"{', '.join(identifiers)}"
-                ),
-                severity="high",
-            )
-        )
     return InvoiceGroupResolution(
         summary=summary,
         lines=tuple(lines),
@@ -182,6 +162,14 @@ def inspect_invoice_group_from_snapshot(
     )
 
 
+# source sheet and column for header fields checked in invoice group cross-PO consistency
+_HEADER_FIELD_SOURCE: dict[str, tuple[str, str]] = {
+    "ship_to": ("客户PO", "ship to"),
+    "final_destination": ("客户PO", "final destination"),
+    "manufacturer_address": ("客户PO", "manufacturer"),
+}
+
+
 def _header_conflict_messages(
     context: InvoiceHeaderContext | None,
     po_nos: tuple[str, ...],
@@ -191,7 +179,6 @@ def _header_conflict_messages(
         return ()
     messages: list[ValidationMessage] = []
     for field_name in context.conflicts:
-        values = context.values.get(field_name, ())
         source_rows = sorted(
             {
                 line.source_row
@@ -201,15 +188,17 @@ def _header_conflict_messages(
                 and str(value).strip()
             }
         )
+        sheet, column = _HEADER_FIELD_SOURCE.get(field_name, ("?", field_name))
         messages.append(
             ValidationMessage(
                 kind="blocking_error",
                 code=CODE_INVOICE_GROUP_HEADER_CONFLICT,
                 message=(
-                    f"票据组跨 PO 的 {field_name} 不一致：{', '.join(values)}；"
+                    f'票据组跨 PO 的”{sheet}”sheet”{column}”列不一致；'
                     f"涉及 PO：{', '.join(po_nos)}；"
                     f"源行：{', '.join(str(row) for row in source_rows)}"
                 ),
+                sheet=sheet,
                 field=field_name,
             )
         )
@@ -245,7 +234,6 @@ def _sellers_for_line(line: OrderLine) -> tuple[str, ...]:
 __all__ = [
     "CODE_INVOICE_GROUP_HEADER_CONFLICT",
     "CODE_INVOICE_GROUP_NOT_FOUND",
-    "CODE_INVOICE_IDENTIFIER_CONFLICT",
     "InvoiceGroupInspection",
     "InvoiceGroupResolution",
     "InvoiceInspectionRow",

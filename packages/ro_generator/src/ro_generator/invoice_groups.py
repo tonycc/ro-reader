@@ -83,18 +83,16 @@ def build_invoice_groups(
         )
         identifiers = tuple(sorted({value for _, _, values in entries for value in values}))
         group_key = build_invoice_group_key(identifiers)
-        seller_numbers, seller_conflicts = _seller_invoice_numbers(entries)
+        seller_numbers, _seller_conflicts = _seller_invoice_numbers(entries)
         context = _build_header_context(entries)
-        identifier_conflicts = max(0, len(raw_numbers) - 1) + max(0, len(factory_numbers) - 1)
-        identifier_conflicts += seller_conflicts
         blocking_count = len(context.conflicts)
-        conflict_count = identifier_conflicts + blocking_count
+        conflict_count = blocking_count
         po_nos = tuple(sorted({line.po_no for _, line, _ in entries if line.po_no}))
         display_number = raw_numbers[0] if raw_numbers else factory_numbers[0]
         summary = InvoiceInspection(
             invoice_group_key=group_key,
             display_invoice_no=display_number,
-            status="blocked" if blocking_count else ("partial" if conflict_count else "ready"),
+            status="blocked" if blocking_count else "ready",
             po_nos=po_nos,
             po_count=len(po_nos),
             sellers=tuple(seller for seller in SELLERS if seller in seller_numbers),
@@ -120,7 +118,7 @@ def _build_header_context(
     values: dict[str, tuple[str, ...]] = {}
     source_rows: dict[str, tuple[int, ...]] = {}
     conflicts: list[str] = []
-    for attribute in ("ship_to", "final_destination", "manufacturer_address"):
+    for attribute in ():
         field_values = tuple(
             sorted(
                 {
@@ -144,8 +142,13 @@ def _build_header_context(
 
 
 def _identifiers_for_line(line: OrderLine) -> tuple[str, ...]:
-    values = {_clean(line.invoice_no), _clean(line.sk_ym_invoice_no)}
-    return tuple(sorted(value for value in values if value))
+    inv = _clean(line.invoice_no)
+    if inv:
+        return (inv,)
+    factory = _clean(line.sk_ym_invoice_no)
+    if factory:
+        return (factory,)
+    return ()
 
 
 def _seller_invoice_numbers(

@@ -9,7 +9,13 @@ const docLabels: Record<string, string> = {
   PO: "采购订单（PO）",
 };
 
+const invoiceDocLabels: Record<string, string> = {
+  INVOICE: "商业发票（Invoice）",
+  PL: "装箱单（PL）",
+};
+
 const docOrder = ["PI", "PO"];
+const invoiceDocOrder = ["INVOICE", "PL"];
 
 interface ExportDocEntry {
   id: string
@@ -21,7 +27,7 @@ interface ExportDocEntry {
 }
 
 const selectedDocs = ref<Set<string>>(new Set());
-const selectedInvoiceDocuments = ref<Set<"INVOICE" | "PL">>(new Set(["INVOICE", "PL"]));
+const selectedInvoiceDocs = ref<Set<string>>(new Set());
 
 const exportGroups = computed(() => (
   (wb.poEntry?.sellers ?? []).map((seller) => ({
@@ -29,6 +35,13 @@ const exportGroups = computed(() => (
     entries: docOrder
       .filter((document) => document !== "PO" || (seller !== "SK" && seller !== "YM"))
       .map((document) => buildExportEntry(seller, document)),
+  }))
+));
+
+const invoiceExportGroups = computed(() => (
+  (wb.invoiceEntry?.sellers ?? []).map((seller) => ({
+    seller,
+    entries: invoiceDocOrder.map((document) => buildInvoiceExportEntry(seller, document)),
   }))
 ));
 
@@ -43,9 +56,26 @@ const selectedExportDocs = computed(() => (
     .filter((group) => group.documents.length > 0)
 ));
 
+const selectedInvoiceExportDocs = computed(() => (
+  invoiceExportGroups.value
+      .map((group) => ({
+      seller: group.seller,
+      documents: group.entries
+        .filter((entry) => selectedInvoiceDocs.value.has(entry.id))
+        .flatMap((entry) => entry.documents),
+    }))
+    .filter((group) => group.documents.length > 0)
+));
+
 const selectedDocCount = computed(() => (
   exportGroups.value.flatMap((group) => group.entries)
     .filter((entry) => selectedDocs.value.has(entry.id))
+    .length
+));
+
+const selectedInvoiceDocCount = computed(() => (
+  invoiceExportGroups.value.flatMap((group) => group.entries)
+    .filter((entry) => selectedInvoiceDocs.value.has(entry.id))
     .length
 ));
 
@@ -55,12 +85,25 @@ watch(exportGroups, (groups) => {
   )));
 }, { immediate: true });
 
+watch(invoiceExportGroups, (groups) => {
+  selectedInvoiceDocs.value = new Set(groups.flatMap((group) => (
+    group.entries.filter((entry) => !entry.disabled).map((entry) => entry.id)
+  )));
+}, { immediate: true });
+
 function toggleDoc(id: string) {
-  const entry = exportGroups.value.flatMap((group) => group.entries).find((item) => item.id === id);
+  const allEntries = [
+    ...exportGroups.value.flatMap((group) => group.entries),
+    ...invoiceExportGroups.value.flatMap((group) => group.entries),
+  ];
+  const entry = allEntries.find((item) => item.id === id);
   if (entry?.disabled) return;
-  const next = new Set(selectedDocs.value);
+  const targetSet = invoiceExportGroups.value.flatMap((group) => group.entries).some((item) => item.id === id)
+    ? selectedInvoiceDocs
+    : selectedDocs;
+  const next = new Set(targetSet.value);
   if (next.has(id)) next.delete(id); else next.add(id);
-  selectedDocs.value = next;
+  targetSet.value = next;
 }
 
 async function handleExport() {
@@ -68,20 +111,25 @@ async function handleExport() {
 }
 
 async function handleInvoiceGroupExport() {
-  await wb.doExport(Array.from(selectedInvoiceDocuments.value));
+  await wb.doExportInvoiceGroups(selectedInvoiceExportDocs.value);
 }
 
-function toggleInvoiceDocument(document: "INVOICE" | "PL") {
-  const next = new Set(selectedInvoiceDocuments.value);
-  if (next.has(document)) next.delete(document); else next.add(document);
-  selectedInvoiceDocuments.value = next;
+function buildInvoiceExportEntry(seller: string, document: string): ExportDocEntry {
+  return {
+    id: `${safeToken(seller)}-${document}`,
+    seller,
+    document,
+    documents: [document],
+    label: invoiceDocLabels[document] || document,
+    disabled: false,
+  };
 }
 
-function invoiceGroupFilename(document: "INVOICE" | "PL"): string {
-  const invoiceNo = wb.invoiceEntry?.seller_invoice_numbers[wb.selectedSeller]
+function invoiceGroupFilename(seller: string, document: string): string {
+  const invoiceNo = wb.invoiceEntry?.seller_invoice_numbers[seller]
     ?? wb.invoiceEntry?.display_invoice_no
     ?? "INVOICE";
-  return `${safeToken(wb.selectedSeller)}-RO-${document}-${safeToken(invoiceNo)}.xlsx`;
+  return `${safeToken(seller)}-RO-${document}-${safeToken(invoiceNo)}.xlsx`;
 }
 
 function buildExportEntry(seller: string, document: string): ExportDocEntry {
@@ -113,33 +161,43 @@ function safeToken(value: string): string {
     <div v-if="wb.previewScope === 'invoice' && !wb.selectedInvoiceGroup" class="placeholder">选择左侧 Invoice 开始导出</div>
     <div v-else-if="wb.previewScope === 'invoice'" class="export-grid">
       <div class="export-card">
-        <h3>{{ wb.invoiceEntry?.display_invoice_no }} · 导出内容确认</h3>
-        <section class="seller-section">
-          <h4>{{ wb.selectedSeller }}</h4>
+        <h3>导出内容确认</h3>
+        <section v-for="group in invoiceExportGroups" :key="group.seller" class="seller-section">
+          <h4>{{ group.seller }}</h4>
           <div
-            v-for="document in (['INVOICE', 'PL'] as const)"
-            :key="document"
+            v-for="entry in group.entries"
+            :key="entry.id"
             class="check-line"
-            :data-testid="`invoice-export-${document}`"
+            :class="{ disabled: entry.disabled }"
+            :data-testid="`export-doc-${entry.id}`"
           >
             <div>
-              <b>{{ invoiceGroupFilename(document) }}</b><br>
-              <span class="fname">{{ document === 'INVOICE' ? '商业发票' : '装箱单' }}</span>
+              <b>{{ invoiceGroupFilename(entry.seller, entry.document) }}</b><br>
+              <span class="fname">{{ entry.label }}</span>
             </div>
             <span
               class="checkbox"
-              :class="{ on: selectedInvoiceDocuments.has(document) }"
-              @click="toggleInvoiceDocument(document)"
-            >{{ selectedInvoiceDocuments.has(document) ? '✓' : '' }}</span>
+              :class="{ on: selectedInvoiceDocs.has(entry.id), disabled: entry.disabled }"
+              @click="toggleDoc(entry.id)"
+            >
+              {{ selectedInvoiceDocs.has(entry.id) ? '✓' : '' }}
+            </span>
           </div>
         </section>
       </div>
+
       <div class="export-card">
         <h3>输出设置</h3>
-        <div class="field" style="margin-bottom: 10px"><label>文件格式</label><div class="value">ZIP 包</div></div>
-        <div class="field" style="margin-bottom: 14px"><label>覆盖 PO</label><div class="value">{{ wb.invoiceEntry?.po_count ?? 0 }} 个</div></div>
-        <button class="primary-btn" :disabled="!selectedInvoiceDocuments.size || wb.exporting" @click="handleInvoiceGroupExport">
-          {{ wb.exporting ? '导出中…' : '确认导出' }}
+        <div class="field" style="margin-bottom: 10px">
+          <label>文件格式</label>
+          <div class="value">{{ selectedInvoiceDocCount > 1 ? 'ZIP 包' : 'XLSX 文件' }}</div>
+        </div>
+        <div class="field" style="margin-bottom: 14px">
+          <label>已选单据</label>
+          <div class="value">{{ selectedInvoiceDocCount }} 份</div>
+        </div>
+        <button class="primary-btn" :disabled="!selectedInvoiceDocCount || wb.exporting" @click="handleInvoiceGroupExport">
+          {{ wb.exporting ? "导出中…" : "确认导出" }}
         </button>
         <div v-if="wb.exportError" class="export-err">{{ wb.exportError }}</div>
       </div>

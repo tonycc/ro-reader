@@ -48,6 +48,7 @@ from ro_generator.source_index import SourceIndex
 from ro_generator.workbench_service import (
     ExportDocumentGroup,
     export_document_groups,
+    export_invoice_document_groups,
     get_customer_po_data,
     get_po_data,
     get_po_issues,
@@ -207,6 +208,10 @@ class InvoicePreviewRequest(BaseModel):
 class InvoiceExportRequest(BaseModel):
     seller: str
     documents: list[Literal["INVOICE", "PL"]]
+
+
+class InvoiceBatchExportRequest(BaseModel):
+    groups: list[ExportGroupRequest]
 
 
 class ExportGroupRequest(BaseModel):
@@ -527,6 +532,36 @@ def export_invoice_group(
     return _result_to_dict(result)
 
 
+@app.post("/api/invoice/{invoice_group_key}/export-batch")
+def export_invoice_group_batch(
+    invoice_group_key: str,
+    req: InvoiceBatchExportRequest,
+    x_session_id: str = Header(..., alias="X-Session-Id"),
+) -> dict[str, Any]:
+    session = _get_session(x_session_id)
+    if session is None:
+        raise HTTPException(
+            400,
+            detail={"code": "INVALID_SESSION", "message": f"session {x_session_id!r} 无效或已过期"},
+        )
+    snapshot = get_cache_manager().get_snapshot(session.base_file)
+    groups = tuple(
+        ExportDocumentGroup(
+            seller=group.seller,
+            documents=_normalize_documents(group.documents),
+            invoice_no=group.invoice_no,
+        )
+        for group in req.groups
+    )
+    result = export_invoice_document_groups(
+        snapshot=snapshot,
+        invoice_group_key=invoice_group_key,
+        groups=groups,
+        output_dir=session.temp_dir,
+    )
+    return _result_to_dict(result)
+
+
 @app.get("/api/po/{po_no}")
 def get_po_data_endpoint(po_no: str, base_file: str = Query(...)) -> dict[str, Any]:
     """返回 PO 行数据视图（grid 数据）。复用缓存快照。"""
@@ -692,7 +727,7 @@ def export_documents(
         po_no=po_no,
         documents=documents,
         output_dir=session.temp_dir,
-        output_format="zip",
+        output_format="xlsx",
     )
     result = generate(request)
     return _result_to_dict(result)

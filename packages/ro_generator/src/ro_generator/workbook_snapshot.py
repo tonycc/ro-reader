@@ -308,6 +308,7 @@ def _build_invoice_group_snapshot(
             products,
             po_no=po_no,
             customer_po_rows=customer_rows,
+            require_customer_po=False,
         )
         for line in resolved.lines:
             if line.source_row is None:

@@ -42,7 +42,7 @@ test.describe("RO Workbench E2E", () => {
 
     const table = page.getByTestId("invoice-inspection-table");
     await expect(table).toBeVisible();
-    await expect(table.locator("tbody tr")).toHaveCount(2);
+    await expect(table.locator("tbody tr")).toHaveCount(3);
     await expect(table).toContainText("4500030844");
     await expect(table).toContainText("SHIP QTY");
     await expect(page.getByTestId("cell-edit-input")).toHaveCount(0);
@@ -89,8 +89,8 @@ test.describe("RO Workbench E2E", () => {
     await groups.filter({ hasText: "INV-2603-001" }).click();
 
     await expect(page.getByTestId("invoice-scope-title")).toContainText("INV-2603-001");
-    await expect(page.getByTestId("invoice-document-INVOICE")).toBeVisible();
-    await expect(page.locator(".document-card")).toBeVisible({ timeout: 5000 });
+    await expect(page.getByTestId("invoice-document-INVOICE_PL")).toBeVisible();
+    await expect(page.locator(".document-card").first()).toBeVisible({ timeout: 5000 });
   });
 
   test("select PO shows data view and preview", async ({ page }) => {
@@ -142,7 +142,7 @@ test.describe("RO Workbench E2E", () => {
     await page.locator(".tab").filter({ hasText: "单据预览" }).click();
     await selectGsSeller(page);
 
-    await expect(page.getByRole("button", { name: "导出 Invoice / PL", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "导出 Invoice & Packing List", exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "导出 PI", exact: true })).toBeVisible();
     await expect(page.locator(".preview-doc-title")).toContainText("PROFORMA INVOICE");
   });
@@ -243,19 +243,19 @@ test.describe("RO Workbench E2E", () => {
 
     const statusBar = page.locator("footer");
     await expect(statusBar).toContainText("已导出");
-    await expect(statusBar).toContainText(".zip");
+    await expect(statusBar).toContainText(".xlsx");
   });
 
   test("invoice export uses the selected group contract", async ({ page }) => {
     const exportRequests: unknown[] = [];
-    await page.route("**/api/invoice/*/export", async (route) => {
+    await page.route("**/api/invoice/*/export-batch", async (route) => {
       exportRequests.push(route.request().postDataJSON());
       await route.fulfill({
         json: {
           status: "success",
           summary: {},
           files: ["GS_PTE-RO-INVOICE-INV_2603_001.xlsx"],
-          output_file: "RO-INV_2603_001.zip",
+          output_file: "GS_PTE-RO-INVOICE-INV_2603_001.xlsx",
           errors: [],
           warnings: [],
           missing_inputs: [],
@@ -270,9 +270,9 @@ test.describe("RO Workbench E2E", () => {
     await page.locator(".invoice-card").filter({ hasText: "INV-2603-001" }).click();
 
     await page.locator(".tab").filter({ hasText: "导出确认" }).click();
-    await expect(page.getByTestId("invoice-export-INVOICE")).toContainText("RO-INVOICE");
-    await expect(page.getByTestId("invoice-export-PL")).toContainText("RO-PL");
-    await toggleExportByTestId(page, "invoice-export-PL");
+    await expect(page.getByTestId("export-doc-GS_PTE-INVOICE")).toContainText("RO-INVOICE");
+    await expect(page.getByTestId("export-doc-GS_PTE-PL")).toContainText("RO-PL");
+    await toggleExportByTestId(page, "export-doc-GS_PTE-PL");
 
     const exportBtn = page.locator("button").filter({ hasText: "确认导出" });
     await expect(exportBtn).toBeEnabled();
@@ -280,9 +280,10 @@ test.describe("RO Workbench E2E", () => {
 
     await expect.poll(() => exportRequests.length).toBe(1);
     expect(exportRequests[0]).toMatchObject({
-      documents: ["INVOICE"],
+      groups: expect.arrayContaining([
+        expect.objectContaining({ seller: "GS PTE", documents: ["INVOICE"] }),
+      ]),
     });
-    expect(exportRequests[0]).not.toHaveProperty("base_file");
   });
 
   test("export screen disables documents that are not exportable for seller", async ({ page }) => {
@@ -381,19 +382,17 @@ test.describe("RO Workbench E2E", () => {
     await expect(warningPanel).toBeHidden();
   });
 
-  test("invoice and PL previews switch within invoice scope", async ({ page }) => {
+  test("invoice and PL previews render together in combined tab", async ({ page }) => {
     await openBaseFile(page);
     await page.locator(".tab").filter({ hasText: "单据预览" }).click();
     await page.getByTestId("preview-scope-invoice").click();
     await page.locator(".invoice-card").filter({ hasText: "INV-2603-001" }).click();
 
-    await expect(page.getByTestId("invoice-document-INVOICE")).toBeVisible();
-    await expect(page.getByTestId("invoice-document-PL")).toBeVisible();
-    await expect(page.locator(".preview-doc-section")).toHaveCount(1, { timeout: 8000 });
+    await expect(page.getByTestId("invoice-document-INVOICE_PL")).toBeVisible();
+    await expect(page.locator(".preview-doc-section")).toHaveCount(2, { timeout: 8000 });
+    await expect(page.locator(".preview-doc-title").first()).toContainText(/Invoice|COMMERCIAL INVOICE/);
+    await expect(page.locator(".preview-doc-title").last()).toContainText(/PL|PACKING LIST/);
     await expect(page.locator(".preview-body > .alert")).toHaveCount(0);
-    await page.getByTestId("invoice-document-PL").click();
-    await expect(page.locator(".preview-doc-section")).toHaveCount(1, { timeout: 8000 });
-    await expect(page.locator(".preview-doc-title")).toContainText(/PL|PACKING LIST/);
   });
 
   test("data check ignores preview blocking issues for ready PO", async ({ page }) => {

@@ -2278,7 +2278,7 @@ class TestInvoiceGroupPreview:
         assert result.preview.invoice_no == "INV-001"
         assert len(result.preview.lines) == 2
 
-    def test_preview_blocks_conflicting_cross_po_headers(self, tmp_path):
+    def test_preview_allows_cross_po_ship_to_differences(self, tmp_path):
         rows = [
             basic_po_row(**{"PO NO.": "PO-1"}),
             basic_po_row(**{"PO NO.": "PO-2", "ITEM LINE#": "20"}),
@@ -2312,10 +2312,9 @@ class TestInvoiceGroupPreview:
             document="INVOICE",
         )
 
-        assert result.status == "error"
-        assert any(error.code == "INVOICE_GROUP_HEADER_CONFLICT" for error in result.errors)
+        assert result.status == "success"
 
-    def test_export_invoice_group_returns_zip_without_po_filename(self, tmp_path):
+    def test_export_invoice_group_returns_combined_xlsx(self, tmp_path):
         path = make_base_file(
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],
@@ -2337,6 +2336,5 @@ class TestInvoiceGroupPreview:
 
         assert result.status == "success", result.errors
         assert result.output_file is not None
-        assert Path(result.output_file).name == "RO-INV-001.zip"
-        with ZipFile(result.output_file) as archive:
-            assert archive.namelist() == ["GS_PTE-RO-INVOICE&PL-INV-001.xlsx"]
+        assert Path(result.output_file).suffix == ".xlsx"
+        assert result.files == ("GS_PTE-RO-INVOICE&PL-INV-001.xlsx",)

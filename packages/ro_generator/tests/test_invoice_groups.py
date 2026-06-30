@@ -101,7 +101,7 @@ def test_factory_reel_group_is_available_to_sk() -> None:
     assert summary.seller_invoice_numbers == {"SK": "SK-001"}
 
 
-def test_header_conflict_blocks_group_summary_and_records_context() -> None:
+def test_header_context_no_conflicts_when_no_attributes_checked() -> None:
     result = build_invoice_groups(
         (
             (4, _line(po_no="PO-1", invoice_no="INV-001", ship_to="Kansas City")),
@@ -111,9 +111,7 @@ def test_header_conflict_blocks_group_summary_and_records_context() -> None:
 
     summary = result.summaries[0]
     context = result.header_context[summary.invoice_group_key]
-    assert summary.status == "blocked"
-    assert summary.blocking_count == 1
-    assert summary.conflict_count == 1
-    assert context.conflicts == ("ship_to",)
-    assert context.values["ship_to"] == ("Chicago", "Kansas City")
-    assert context.source_rows["ship_to"] == (4, 9)
+    assert summary.status == "ready"
+    assert summary.blocking_count == 0
+    assert summary.conflict_count == 0
+    assert context.conflicts == ()

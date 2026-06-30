@@ -8,7 +8,6 @@ from decimal import Decimal
 from ro_generator.invoice_groups import InvoiceHeaderContext, InvoiceInspection
 from ro_generator.invoice_inspection import (
     CODE_INVOICE_GROUP_HEADER_CONFLICT,
-    CODE_INVOICE_IDENTIFIER_CONFLICT,
     dedupe_messages,
     inspect_invoice_group_from_snapshot,
 )
@@ -204,22 +203,6 @@ def test_dedupe_messages_preserves_first_seen_order() -> None:
     other = ValidationMessage(kind="warning", code="OTHER", message="Other")
 
     assert dedupe_messages((duplicate, other, duplicate)) == (duplicate, other)
-
-
-def test_identifier_conflict_is_reported_as_high_warning() -> None:
-    snapshot = _snapshot()
-    summary = replace(snapshot.invoice_summary[0], status="partial", conflict_count=1)
-    snapshot = replace(snapshot, invoice_summary=(summary,))
-
-    result = inspect_invoice_group_from_snapshot(snapshot, GROUP_KEY)
-
-    warning = next(
-        message for message in result.warnings if message.code == CODE_INVOICE_IDENTIFIER_CONFLICT
-    )
-    assert warning.severity == "high"
-    assert "INV-001" in warning.message
-    assert "SK-001" in warning.message
-    assert "YM-001" in warning.message
 
 
 def test_each_header_conflict_is_reported_as_blocking() -> None:

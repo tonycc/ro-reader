@@ -176,19 +176,16 @@ def test_get_po_issues_returns_blocking_details() -> None:
     assert data["blocking_errors"][0]["message"]
 
 
-def test_export_uses_zip_output_format(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+def test_export_uses_xlsx_output_format(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     captured: dict[str, Any] = {}
 
     def fake_generate(request: DocumentRequest) -> GenerationResult:
         captured["output_format"] = request.output_format
-        output = tmp_path / "RO-4500099999-2601.zip"
-        output.write_bytes(b"fake zip")
+        output = tmp_path / "YM-RO-PI-4500099999.xlsx"
+        output.write_bytes(b"fake xlsx")
         return GenerationResult(
             status="success",
-            files=(
-                "YM-RO-INVOICE&PL-4500099999-2601.xlsx",
-                "SK-RO-INVOICE&PL-4500099999-2601.xlsx",
-            ),
+            files=("YM-RO-PI-4500099999.xlsx",),
             output_file=str(output),
         )
 
@@ -203,14 +200,14 @@ def test_export_uses_zip_output_format(monkeypatch: MonkeyPatch, tmp_path: Path)
             "base_file": str(FIXTURE),
             "po_no": "4500099999",
             "seller": "YM",
-            "document": "INVOICE",
+            "document": "PI",
         },
         headers={"X-Session-Id": sid},
     )
 
     assert resp.status_code == 200
-    assert captured["output_format"] == "zip"
-    assert resp.json()["output_file"].endswith(".zip")
+    assert captured["output_format"] == "xlsx"
+    assert resp.json()["output_file"].endswith(".xlsx")
 
 
 def test_export_invoice_pl_requests_combined_documents(
@@ -247,7 +244,7 @@ def test_export_invoice_pl_requests_combined_documents(
 
     assert resp.status_code == 200
     assert captured["documents"] == ("INVOICE", "PL")
-    assert captured["output_format"] == "zip"
+    assert captured["output_format"] == "xlsx"
     data = _response_json(resp)
     assert data["files"] == ["SK-RO-INVOICE&PL-4500099999.xlsx"]
     assert data["output_file"].endswith(".xlsx")
@@ -283,7 +280,7 @@ def test_invoice_inspection_returns_rows_and_issue_counts() -> None:
     data = resp.json()
     assert data["invoice_group_key"] == group["invoice_group_key"]
     assert data["display_invoice_no"] == "INV-2601-001"
-    assert data["line_count"] == len(data["rows"]) == 2
+    assert data["line_count"] == len(data["rows"]) == 3
     assert data["blocking_count"] == len(data["blocking_errors"])
     assert data["warnings_count"] == len(data["warnings"])
     assert all(row["ship_qty"] > 0 for row in data["rows"])
@@ -332,7 +329,7 @@ def test_export_invoice_group_returns_zip() -> None:
 
     assert resp.status_code == 200
     assert resp.json()["status"] == "success"
-    assert resp.json()["output_file"].endswith(".zip")
+    assert resp.json()["output_file"].endswith(".xlsx")
 
 
 def test_invoice_group_endpoints_reject_invalid_session() -> None:

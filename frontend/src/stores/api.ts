@@ -108,6 +108,10 @@ export interface BatchExportRequest {
   groups: BatchExportGroup[]
 }
 
+export interface InvoiceBatchExportRequest {
+  groups: BatchExportGroup[]
+}
+
 export interface DryRunResult {
   status: string; summary: Record<string, unknown>; files: string[]
   output_file: string | null; errors: ValidationIssue[]; warnings: ValidationIssue[]
@@ -248,6 +252,11 @@ export const api = {
     documents: Array<"INVOICE" | "PL">,
   ): Promise<DryRunResult> =>
     request("POST", `/invoice/${encodeURIComponent(invoice_group_key)}/export`, { seller, documents }),
+  exportInvoiceDocumentGroups: (
+    invoice_group_key: string,
+    groups: BatchExportGroup[],
+  ): Promise<DryRunResult> =>
+    request("POST", `/invoice/${encodeURIComponent(invoice_group_key)}/export-batch`, { groups }),
   getDataView: (base_file: string, po_no: string): Promise<{ po_no: string; headers: string[]; rows: Record<string, unknown>[] }> =>
     request("GET", `/po/${po_no}?base_file=${encodeURIComponent(base_file)}`),
   getPoIssues: (base_file: string, po_no: string): Promise<PoIssuesResponse> =>

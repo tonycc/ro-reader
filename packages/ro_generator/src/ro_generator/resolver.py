@@ -116,14 +116,15 @@ def resolve_po_rows(
     po_no: str | None = None,
     *,
     customer_po_rows: tuple[dict[str, object], ...] = (),
+    require_customer_po: bool = True,
 ) -> ResolveResult:
     """从已过滤的 PO record 行解析 OrderLine 列表。
 
     缓存路径入口：调用方通过 snapshot 获取预过滤的 rows 和 products，
     不再经过 WorkbookReader。
 
-    当 rows 为空且传入 po_no 时，返回 PO_NOT_FOUND blocking error。
-    当 rows 为空且未传 po_no 时，返回空结果（由调用方处理空行逻辑）。
+    当 require_customer_po=False 时，客户 PO 缺失不阻断行解析，
+    适用于仅需 INV#、SHIP QTY 等字段的发票分组场景。
     """
     if not rows:
         if po_no is not None:
@@ -144,7 +145,7 @@ def resolve_po_rows(
     messages: list[ValidationMessage] = []
     customer_po_lookup = _build_customer_po_lookup(customer_po_rows)
     for row in rows:
-        line, row_msgs = _resolve_row(row, products, customer_po_lookup)
+        line, row_msgs = _resolve_row(row, products, customer_po_lookup, require_customer_po)
         messages.extend(row_msgs)
         if line is not None:
             lines.append(line)
@@ -255,6 +256,7 @@ def _resolve_row(
     row: dict[str, object],
     products: dict[str, Product],
     customer_po_lookup: CustomerPoLookup,
+    require_customer_po: bool = True,
 ) -> tuple[OrderLine | None, list[ValidationMessage]]:
     row_number = int_or_none(row.get(ROW_NUMBER_KEY))
     messages: list[ValidationMessage] = []
@@ -294,31 +296,45 @@ def _resolve_row(
         customer_po_lookup=customer_po_lookup,
     )
     if qty_msg is not None:
-        messages.append(qty_msg)
-        return None, messages
-    quantity = qty_raw
-    if not isinstance(quantity, Decimal):
-        quantity = _decimal_or_none(
-            qty_raw,
-            decimal_places=(
-                row_decimal_places(qty_row, _cp("order_quantity")) if qty_row is not None else None
-            ),
-        )
-        if quantity is None:
-            messages.append(
-                ValidationMessage(
-                    kind="blocking_error",
-                    code=CODE_QTY_INVALID,
-                    message=(
-                        f"客户PO row {_row_label(qty_row)}（Material {sap}）的 "
-                        f"Order Quantity 不是有效数字：{qty_raw!r}"
-                    ),
-                    sheet=SHEET_CUSTOMER_PO,
-                    row=_row_number(qty_row),
-                    field=_cp("order_quantity"),
-                )
-            )
+        if require_customer_po:
+            messages.append(qty_msg)
             return None, messages
+        messages.append(
+            ValidationMessage(
+                kind="warning",
+                code=qty_msg.code,
+                message=f"客户 PO 缺失，quantity 按 0 处理：{qty_msg.message}",
+                sheet=qty_msg.sheet,
+                row=qty_msg.row,
+                field=qty_msg.field,
+                severity="low",
+            )
+        )
+        quantity: Decimal = Decimal("0")
+    else:
+        quantity = qty_raw
+        if not isinstance(quantity, Decimal):
+            quantity = _decimal_or_none(
+                qty_raw,
+                decimal_places=(
+                    row_decimal_places(qty_row, _cp("order_quantity")) if qty_row is not None else None
+                ),
+            )
+            if quantity is None:
+                messages.append(
+                    ValidationMessage(
+                        kind="blocking_error",
+                        code=CODE_QTY_INVALID,
+                        message=(
+                            f"客户PO row {_row_label(qty_row)}（Material {sap}）的 "
+                            f"Order Quantity 不是有效数字：{qty_raw!r}"
+                        ),
+                        sheet=SHEET_CUSTOMER_PO,
+                        row=_row_number(qty_row),
+                        field=_cp("order_quantity"),
+                    )
+                )
+                return None, messages
 
     # 价格与小计：从 DATA BASE 按主体 + Category 价格列读取
     prices, subtotals, price_msgs = _collect_prices(product, quantity)

@@ -13,12 +13,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ro_generator.errors import WorkbookOpenError
-from ro_generator.generator import generate
+from ro_generator.generator import export_invoice_group_from_snapshot, generate
 from ro_generator.models import DocumentRequest, DocumentType, GenerationResult, ValidationMessage
-from ro_generator.packager import build_zip_filename, package_zip
+from ro_generator.packager import build_invoice_group_zip_filename, build_zip_filename, package_zip
 from ro_generator.resolver import resolve_po_rows
 from ro_generator.workbook_cache import get_cache_manager
-from ro_generator.workbook_snapshot import BuildSnapshotError, PoInspection
+from ro_generator.workbook_snapshot import BuildSnapshotError, PoInspection, WorkbookSnapshot
 
 
 @dataclass(frozen=True)
@@ -209,6 +209,21 @@ def export_document_groups(
 
         rendered_files.extend(_generated_file_paths(result))
 
+    if len(rendered_files) == 1:
+        return GenerationResult(
+            status="success",
+            summary={
+                "po_no": po_no,
+                "groups": [
+                    {"seller": group.seller, "documents": list(group.documents)}
+                    for group in groups
+                ],
+            },
+            files=(rendered_files[0].name,),
+            output_file=str(rendered_files[0]),
+            warnings=tuple(warnings),
+        )
+
     zip_path = package_zip(
         files=tuple(rendered_files),
         output_dir=output_root,
@@ -237,11 +252,98 @@ def _generated_file_paths(result: GenerationResult) -> tuple[Path, ...]:
     return (output,)
 
 
+def export_invoice_document_groups(
+    *,
+    snapshot: WorkbookSnapshot,
+    invoice_group_key: str,
+    groups: tuple[ExportDocumentGroup, ...],
+    output_dir: str,
+) -> GenerationResult:
+    """批量导出票据组下多个 seller 的单据，多文件时打包为 ZIP。"""
+    if not groups:
+        return GenerationResult(
+            status="error",
+            errors=(
+                ValidationMessage(
+                    kind="blocking_error",
+                    code="NO_EXPORT_DOCUMENTS",
+                    message="未选择任何导出单据",
+                ),
+            ),
+            warnings=(),
+        )
+
+    output_root = Path(output_dir)
+    output_root.mkdir(parents=True, exist_ok=True)
+    rendered_files: list[Path] = []
+    all_warnings: list[ValidationMessage] = []
+
+    for index, group in enumerate(groups, start=1):
+        group_dir = output_root / f"group-{index}"
+        result = export_invoice_group_from_snapshot(
+            snapshot,
+            invoice_group_key,
+            seller=group.seller,
+            documents=group.documents,
+            output_dir=str(group_dir),
+        )
+        all_warnings.extend(result.warnings)
+        if result.status != "success":
+            return GenerationResult(
+                status=result.status,
+                errors=result.errors,
+                warnings=tuple(all_warnings),
+                missing_inputs=result.missing_inputs,
+                options=result.options,
+            )
+        rendered_files.extend(_generated_file_paths(result))
+
+    if len(rendered_files) == 1:
+        return GenerationResult(
+            status="success",
+            summary={
+                "invoice_group_key": invoice_group_key,
+                "groups": [
+                    {"seller": group.seller, "documents": list(group.documents)}
+                    for group in groups
+                ],
+            },
+            files=(rendered_files[0].name,),
+            output_file=str(rendered_files[0]),
+            warnings=tuple(all_warnings),
+        )
+
+    summary = next(
+        (item for item in snapshot.invoice_summary if item.invoice_group_key == invoice_group_key),
+        None,
+    )
+    invoice_no = summary.display_invoice_no if summary else "unknown"
+    zip_path = package_zip(
+        files=tuple(rendered_files),
+        output_dir=output_root,
+        zip_name=build_invoice_group_zip_filename(invoice_no=invoice_no),
+    )
+    return GenerationResult(
+        status="success",
+        summary={
+            "invoice_group_key": invoice_group_key,
+            "groups": [
+                {"seller": group.seller, "documents": list(group.documents)}
+                for group in groups
+            ],
+        },
+        files=tuple(path.name for path in rendered_files),
+        output_file=str(zip_path),
+        warnings=tuple(all_warnings),
+    )
+
+
 __all__ = [
     "ExportDocumentGroup",
     "FileInspectionResult",
     "WorkbookInspectionResult",
     "export_document_groups",
+    "export_invoice_document_groups",
     "get_customer_po_data",
     "get_po_data",
     "get_po_issues",

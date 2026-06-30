@@ -19,8 +19,7 @@ const issuePanelOpen = ref(false);
 const sellers = ["SK", "YM", "GS PTE", "EMAX PTE"] as const;
 const docTypes = computed(() => wb.previewScope === "invoice"
   ? [
-      { key: "INVOICE" as const, label: "Invoice" },
-      { key: "PL" as const, label: "PL" },
+      { key: "INVOICE_PL" as const, label: "Invoice & Packing List" },
     ]
   : [
       { key: "PI" as const, label: "PI" },
@@ -31,10 +30,11 @@ const docTypeLabelMap: Record<string, string> = {
   PO: "PO",
   INVOICE: "Invoice / PL",
   PL: "PL",
+  INVOICE_PL: "Invoice & Packing List",
 };
 
 const pd = computed(() => wb.previewData);
-const isInvoicePlMode = computed(() => wb.previewDocType === "INVOICE" || wb.previewDocType === "PL");
+const isInvoicePlMode = computed(() => wb.previewDocType === "INVOICE" || wb.previewDocType === "PL" || wb.previewDocType === "INVOICE_PL");
 const previewDocs = computed(() => {
   if (wb.previewDocuments.length) return wb.previewDocuments;
   if (!pd.value) return [];
@@ -52,7 +52,7 @@ const previewDocs = computed(() => {
 const hasData = computed(() => previewDocs.value.some((doc) => doc.preview?.lines?.length));
 const errors = computed(() => wb.blockingErrors as { code?: string; message?: string }[]);
 const currentDocLabel = computed(() => (
-  isInvoicePlMode.value ? "Invoice / PL" : docTypeLabelMap[wb.previewDocType] || wb.previewDocType || "当前单据"
+  isInvoicePlMode.value ? "Invoice & Packing List" : docTypeLabelMap[wb.previewDocType] || wb.previewDocType || "当前单据"
 ));
 const issueErrors = computed<ValidationIssue[]>(() => wb.poIssues?.blocking_errors ?? []);
 const issueCount = computed(() => wb.poIssues?.blocking_count ?? wb.poEntry?.blocking_count ?? errors.value.length);
