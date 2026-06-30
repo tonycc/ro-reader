@@ -118,7 +118,7 @@ def _build_header_context(
     values: dict[str, tuple[str, ...]] = {}
     source_rows: dict[str, tuple[int, ...]] = {}
     conflicts: list[str] = []
-    for attribute in ():
+    for attribute in ():  # type: ignore[var-annotated]  # no attributes currently checked
         field_values = tuple(
             sorted(
                 {

@@ -16,7 +16,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
-from typing import Final
+from typing import Final, cast
 
 from ro_generator.base_schema import base_schema
 from ro_generator.line_rules import resolve_line_field_spec
@@ -312,7 +312,7 @@ def _resolve_row(
         )
         quantity: Decimal = Decimal("0")
     else:
-        quantity = qty_raw
+        quantity = cast(Decimal, qty_raw)
         if not isinstance(quantity, Decimal):
             quantity = _decimal_or_none(
                 qty_raw,
