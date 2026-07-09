@@ -215,8 +215,7 @@ def export_document_groups(
             summary={
                 "po_no": po_no,
                 "groups": [
-                    {"seller": group.seller, "documents": list(group.documents)}
-                    for group in groups
+                    {"seller": group.seller, "documents": list(group.documents)} for group in groups
                 ],
             },
             files=(rendered_files[0].name,),
@@ -304,8 +303,7 @@ def export_invoice_document_groups(
             summary={
                 "invoice_group_key": invoice_group_key,
                 "groups": [
-                    {"seller": group.seller, "documents": list(group.documents)}
-                    for group in groups
+                    {"seller": group.seller, "documents": list(group.documents)} for group in groups
                 ],
             },
             files=(rendered_files[0].name,),
@@ -328,8 +326,7 @@ def export_invoice_document_groups(
         summary={
             "invoice_group_key": invoice_group_key,
             "groups": [
-                {"seller": group.seller, "documents": list(group.documents)}
-                for group in groups
+                {"seller": group.seller, "documents": list(group.documents)} for group in groups
             ],
         },
         files=tuple(path.name for path in rendered_files),

@@ -194,7 +194,7 @@ def _header_conflict_messages(
                 kind="blocking_error",
                 code=CODE_INVOICE_GROUP_HEADER_CONFLICT,
                 message=(
-                    f'票据组跨 PO 的”{sheet}”sheet”{column}”列不一致；'
+                    f"票据组跨 PO 的”{sheet}”sheet”{column}”列不一致；"
                     f"涉及 PO：{', '.join(po_nos)}；"
                     f"源行：{', '.join(str(row) for row in source_rows)}"
                 ),
