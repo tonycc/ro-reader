@@ -31,5 +31,8 @@ jobs:
       - name: Type check (mypy)
         run: uv run mypy packages
 
+      - name: Generate test fixture
+        run: uv run python tests/fixtures/generate_synthetic_base.py
+
       - name: Test (pytest)
         run: uv run pytest
