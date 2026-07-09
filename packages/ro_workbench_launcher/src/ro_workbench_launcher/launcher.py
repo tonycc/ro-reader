@@ -106,8 +106,8 @@ def _wait_until_ready(port: int, timeout: float = 30.0) -> bool:
 def _run_tray(port: int) -> None:
     """系统托盘，提供退出入口。"""
     try:
-        import pystray  # type: ignore[import-not-found]
-        from PIL import Image, ImageDraw  # type: ignore[import-not-found]
+        import pystray  # type: ignore[import-untyped]
+        from PIL import Image, ImageDraw
     except ImportError:
         print(f"赛肯单据生成工具运行中: http://127.0.0.1:{port}", file=sys.stderr)
         print("按 Ctrl+C 退出", file=sys.stderr)

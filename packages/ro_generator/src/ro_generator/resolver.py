@@ -317,7 +317,9 @@ def _resolve_row(
             quantity = _decimal_or_none(
                 qty_raw,
                 decimal_places=(
-                    row_decimal_places(qty_row, _cp("order_quantity")) if qty_row is not None else None
+                    row_decimal_places(qty_row, _cp("order_quantity"))
+                    if qty_row is not None
+                    else None
                 ),
             )
             if quantity is None:
@@ -736,8 +738,6 @@ def _str_or_none(value: object) -> str | None:
 
 def _str_or_empty(value: object) -> str:
     return _str_or_none(value) or ""
-
-
 
 
 def _decimal_from_row(row: dict[str, object], field_name: str) -> Decimal | None:
