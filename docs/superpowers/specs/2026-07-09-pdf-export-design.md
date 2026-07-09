@@ -1,37 +1,76 @@
 # PDF 导出功能设计
 
+> **修订记录（2026-07-09，v2）**：初版把格式分派放在 API 路由层、并给 `GenerationResult` 挂 `preview` 字段。经对照现有代码修正三处：
+> 1. **格式分派下沉核心包**——复用已存在的 `DocumentRequest.output_format`，而非在 `app.py` 里写 `if format == "pdf"`（违反架构纪律，见产品方案 §7.1）。
+> 2. **不再新增平行的 `format` 字段、不再改 `GenerationResult`**——核心包内按 `output_format` 分派渲染器，xlsx 导出零负担。
+> 3. **补齐 invoice-group 导出路径**——预览页有 `po` / `invoice` 两种作用域，SK/YM 发票组走 `/api/invoice/{key}/export`，初版只覆盖了 `/api/po/{po_no}/export`。
+
 ## 概述
 
-在单据预览页面增加导出 PDF 功能。用户可在预览页一键导出当前预览的单份单据为 PDF 文件，下载流程与现有 `.xlsx` 导出一致。
+在单据预览页面增加导出 PDF 功能。用户可在预览页一键把当前预览的单据导出为 PDF 文件，下载流程与现有 `.xlsx` 导出一致。预览页的两种作用域（PO 单据 / SK·YM 发票组）都支持。
 
 ## 约束
 
 - **离线可用**：不依赖外部服务，PDF 渲染在用户本地完成。
 - **PyInstaller 兼容**：新增依赖必须是纯 Python 包，无原生库依赖。
-- **架构纪律**：PDF 渲染逻辑放在核心包 `ro_generator`，CLI / API / 前端为薄壳。
-- **范围**：仅预览页单份单据导出（不含批量导出、不含 ExportScreen）。
+- **架构纪律**：PDF 渲染逻辑与**格式分派**都放在核心包 `ro_generator`；CLI / API / 前端为薄壳，路由处理器里**不得**出现 `if format == ...` 这类业务分派（产品方案 §7.1）。
+- **范围**：仅预览页导出（含 PO 单据与 SK·YM 发票组）。不含导出确认页（ExportScreen）的批量 zip、不含 CLI 新增 flag（CLI 可自然获得，见下）。
 
 ## 技术方案
 
 采用 **reportlab**（纯 Python，无原生依赖）在后端渲染 PDF，通过现有 `/api/download` 通道下载。不转换 `.xlsx` 文件本身。
 
-**关键决策：复用现有预览构建逻辑。** PDF 渲染器消费 `document_preview.build_preview()` 产出的 `DocumentPreview`（前端预览页用的同一套结构化数据），而非从 `DocumentModel` 另造一套展示布局。原因：
+### 关键决策 1：复用已有的 `output_format` 轴，分派写在核心包
+
+核心包 `DocumentRequest` **已有** `output_format` 字段（`models.py`）：
+
+```python
+output_format: Literal["xlsx", "zip"] = "xlsx"   # 现状
+```
+
+且 API 层已通过 `_build_document_request(output_format=...)` 在传递它（`app.py`）。因此**扩展这个已有字段**，而不是另造一个平行的 `format`：
+
+```python
+output_format: Literal["xlsx", "zip", "pdf"] = "xlsx"   # 修改后
+```
+
+格式分派放进核心包 `generate()` 的下游装配函数（`_generate_one` / 发票组装配路径）：`output_format == "pdf"` 时走 PDF 渲染器，否则走现有 Excel 渲染器。**API 端点只是把 `output_format` 透传下去**，不含任何格式判断——完全符合"薄壳"纪律。这样 `generate()` 是**渲染 PDF 而非 xlsx**（分支，不是额外多渲染一个），因此不会产生没人要的中间 xlsx 文件。
+
+### 关键决策 2：PDF 渲染器消费 `DocumentPreview`
+
+PDF 渲染器消费 `document_preview.build_preview()` 产出的 `DocumentPreview`（前端预览页用的同一套结构化数据），而非从 `DocumentModel` 另造展示布局。原因：
 
 - `DocumentModel` 只含领域数据（seller/buyer/lines/totals），**不含**表头字段标签与列标签；这些展示信息由 `build_preview()` 结合 `mapping` 生成。
-- 用户要求"基于现有预览"——复用 `DocumentPreview` 可保证**纸面 = 预览页**，且不重复实现展示映射逻辑（DRY），避免 PDF 与预览出现差异。
+- 复用 `DocumentPreview` 保证**纸面 = 预览页**，且不重复实现展示映射逻辑（DRY）。
+
+装配路径内，`build_document_model()` 的产物（`BuildDocumentResult`）已在手，直接 `build_preview(build)` 即可拿到 `DocumentPreview`，无需读取额外数据、无需给 `GenerationResult` 增加字段。
+
+### 数据源一致性（已由现有机制保证）
+
+预览端点读**内存快照**（`cache.get_snapshot()`），导出走 `generate()` 读**磁盘 base 文件**——但编辑端点 `/api/po/{po_no}/edit` 写回 base 后会 `get_cache_manager().invalidate()` 使快照失效，下次预览重新读盘。因此快照与磁盘内容始终一致，PDF（走 `generate()`）与屏幕预览（走快照）数据相同。此点无需额外设计，仅作记录。
 
 ## 架构与数据流
 
 ```text
-用户点击 [导出 PDF]（PreviewScreen.vue）
-  → POST /api/po/{po_no}/export  { ..., format: "pdf" }
-    → generator.generate(request)  →  GenerationResult 携带 preview: DocumentPreview（新增字段）
-    → pdf_renderer.render_pdf(preview, output_path)
-    → 返回 { output_file: "/tmp/session-xxx/GS-INVOICE-PO-MONTH.pdf", ... }
-  → GET /api/download?path=...  (现有端点，新增 pdf media type)
+【PO 单据作用域】
+用户点击 [导出 PDF]（PreviewScreen.vue，previewScope==="po"）
+  → POST /api/po/{po_no}/export  { ..., output_format: "pdf" }
+    → generate(request)  （request.output_format=="pdf"）
+        → _generate_one() 内：build_preview(build) → pdf_renderer.render_pdf([preview], output_path)
+    → GenerationResult(status, output_file="/tmp/session-xxx/GS-RO-INVOICE-....pdf")
+  → GET /api/download?path=...   （现有端点，新增 pdf media type）
+
+【SK·YM 发票组作用域】
+用户点击 [导出 PDF]（PreviewScreen.vue，previewScope==="invoice"）
+  → POST /api/invoice/{key}/export  { ..., output_format: "pdf" }
+    → 发票组装配路径（output_format=="pdf"）
+        → 组内每份单据 build_preview → pdf_renderer.render_pdf([preview1, preview2], output_path)
+          （INVOICE+PL / CI+RO_PL 合并为一份多节 PDF，对齐现有"一个 workbook 两个 sheet"的 bundle 行为）
+    → GenerationResult(status, output_file=".../SK-RO-INVOICE-....pdf")
+  → GET /api/download?path=...
 ```
 
-**无新增端点**。导出现有端点复用，通过 `format` 字段区分输出格式。`build_preview()` 已在预览端点使用；导出时复用同一函数，PDF 与预览页共享一份构建逻辑。
+**无新增端点**。两个导出端点复用，通过 `output_format` 字段区分输出格式。
 
 ## 文件改动清单
 
@@ -39,28 +78,32 @@
 
 | 文件 | 说明 |
 |------|------|
-| `packages/ro_generator/src/ro_generator/pdf_renderer.py` | PDF 渲染器，从 DocumentPreview 生成 PDF |
+| `packages/ro_generator/src/ro_generator/pdf_renderer.py` | PDF 渲染器，从 `list[DocumentPreview]` 生成单份（可多节）PDF |
 
 ### 修改
 
 | 文件 | 变更 |
 |------|------|
-| `packages/ro_generator/src/ro_generator/generator.py` | `GenerationResult` 新增 `preview: DocumentPreview \| None` 字段（由 `_generate_one()` 复用 `build_preview()` 填充） |
+| `packages/ro_generator/src/ro_generator/models.py` | `DocumentRequest.output_format` 扩展为 `Literal["xlsx", "zip", "pdf"]` |
+| `packages/ro_generator/src/ro_generator/generator.py` | `_generate_one()` 及发票组装配路径：`output_format == "pdf"` 时调用 `build_preview()` + `pdf_renderer.render_pdf()`，文件名后缀 `.pdf`；返回值仍为标准 `GenerationResult`（**不新增字段**） |
 | `packages/ro_generator/pyproject.toml` | 新增依赖 `reportlab>=4.0` |
-| `packages/ro_workbench_api/src/ro_workbench_api/app.py` | `DryRunRequest` 新增 `format` 字段；导出端点增加 PDF 分派；下载端点增加 `application/pdf` |
+| `packages/ro_workbench_api/src/ro_workbench_api/app.py` | ①`DryRunRequest` / 发票组导出请求模型新增 `output_format: Literal["xlsx", "pdf"] = "xlsx"`；②`export_documents` / `export_invoice_group` 停止硬编码 `output_format="xlsx"`，改为透传 `req.output_format`（**无 if 分派**）；③下载端点 media type 增加 `application/pdf` |
 | `frontend/src/components/preview/PreviewScreen.vue` | 新增"导出 PDF"按钮 |
-| `frontend/src/stores/workbench.ts` | 新增 `doExportPdf()` action |
+| `frontend/src/stores/workbench.ts` | 新增 `doExportPdf()` action（保留 `previewScope` 的 `po`/`invoice` 分叉，与 `doExport()` 同构） |
+
+> **CLI 无需改动即获得能力**：`ro-generate` 走同一个 `generate()`，`output_format` 已是 `DocumentRequest` 字段。如需暴露 flag 属另一迭代，不在本范围。
 
 ## 核心模块：pdf_renderer.py
 
 ```python
-def render_pdf(preview: DocumentPreview, output_path: Path) -> PdfRenderResult:
+def render_pdf(previews: list[DocumentPreview], output_path: Path) -> PdfRenderResult:
+    """把一份或多份预览渲染为单个 PDF（多份 = 多节/多页）。"""
     ...
 ```
 
 ### 输入
 
-- `DocumentPreview`：`build_preview()` 产出的结构化预览数据，包含 `title`、`seller`/`buyer`、`seller_info`、`to_label`、`terms`、`layout`、`column_labels`、`lines`、`totals`、`notes` — 与前端预览页用同一份数据。
+- `previews`：`build_preview()` 产出的结构化预览数据列表。单份单据传长度 1；发票组 bundle（INVOICE+PL / CI+RO_PL）传长度 2，顺序即页面顺序。每个 `DocumentPreview` 含 `title`、`seller`/`seller_info`、`to_label`、`terms`、`layout`、`column_labels`、`lines`、`totals`、`notes`——与前端预览页同源。
 
 ### 输出
 
@@ -68,30 +111,37 @@ def render_pdf(preview: DocumentPreview, output_path: Path) -> PdfRenderResult:
 
 ### 页面布局（reportlab Platypus）
 
-渲染逻辑按 `DocumentPreview` 中的结构化块逐块展开：
+每份 preview 渲染为一节，按 `DocumentPreview` 结构逐块展开：
 
-1. **标题区**：`preview.title`（已构建好的单据标题），可辅以 `preview.seller` / `preview.seller_info`
-2. **头信息区**：`preview.layout["top"]` + `preview.layout["info"]` 按位置顺序渲染 key-value 对，配合 `preview.to_label` / `preview.terms`
-3. **明细行表格**：`preview.column_labels` 为表头，`preview.lines` 为数据行，列宽根据列数自动适配 A4 竖版/横版
-4. **合计区**：`preview.totals` 中的标准合计字段（quantity/amount/net_weight/gross_weight/cbm）右对齐展示
-5. **备注区**：`preview.notes` 列表逐行渲染（如 `PACKED IN n CTNS`）
+1. **标题区**：`preview.title`，辅以 `preview.seller` / `preview.seller_info`。
+2. **头信息区**：按 `preview.layout` 的 `top.left` / `top.center` / `top.right` 区块**还原左右分栏**（注意：`layout` 是二维区域结构，不能简单线性平铺成一列 key-value，否则版面与预览页不符），配合 `preview.to_label` / `preview.terms`。
+3. **明细行表格**：`preview.column_labels` 为表头，`preview.lines` 为数据行，列宽按列数自动适配 A4 竖/横版。
+4. **合计区**：`preview.totals` 标准合计字段（quantity/amount/net_weight/gross_weight/cbm）右对齐。
+5. **备注区**：`preview.notes` 逐行渲染（如 `PACKED IN n CTNS`）。
 
-金额使用 `preview.totals` 中已格式化的值，不做重算或业务逻辑。
+金额使用 `preview.totals` 中已格式化的值，**不做重算或业务逻辑**。多份 preview 之间用分页符分隔。
 
 ## 后端接口改动
 
-### DryRunRequest 新增字段
+### 请求模型新增字段
 
 ```python
-format: Literal["xlsx", "pdf"] = "xlsx"
+# DryRunRequest（PO 导出）与发票组导出请求模型
+output_format: Literal["xlsx", "pdf"] = "xlsx"
 ```
 
-### 导出端点逻辑
+字段名与核心包 `DocumentRequest.output_format` 一致，直接映射，不引入平行概念。
 
+### 导出端点逻辑（薄壳，无业务 if）
+
+```python
+# export_documents / export_invoice_group
+request = _build_document_request(..., output_format=req.output_format)  # 透传
+result = generate(request)          # 或发票组装配入口
+return _result_to_dict(result)      # 无需改动，GenerationResult 结构不变
 ```
-format == "xlsx" → 走现有 generate() 流程（行为不变）
-format == "pdf"  → generate() 拿 GenerationResult.preview → pdf_renderer.render_pdf() → 返回 pdf 路径
-```
+
+格式分派全部发生在核心包内部，路由处理器不含格式判断。
 
 ### 下载端点
 
@@ -103,10 +153,13 @@ media_type = (
 )
 ```
 
+（现有 session 目录路径穿越防护保持不变。）
+
 ### 文件命名
 
 沿用现有 `packager.py` 命名规则，后缀改为 `.pdf`。例如：
 - `GS-RO-INVOICE-4500030844-2601.pdf`
+- `SK-RO-INVOICE-4500030844-2601.pdf`（发票组 bundle，单份 PDF 含 INVOICE + PL 两节）
 - `GS-RO-PI-4500030844.pdf`
 
 ## 前端改动
@@ -119,31 +172,36 @@ media_type = (
 [导出 INVOICE (.xlsx)]  [导出 PDF]  [查看字段来源]
 ```
 
-- 同样受 `disabled`（无数据/导出中/预览加载中）控制
-- `@click="wb.doExportPdf()"`
+- 同样受 `disabled`（`!hasData || exporting || previewLoading`）控制。
+- `@click="wb.doExportPdf()"`。
 
 ### workbench.ts
 
 ```typescript
 async function doExportPdf() {
-  // 与 doExport() 结构相同，请求体加 format: "pdf"
+  // 与 doExport() 完全同构，包括 previewScope 的 po / invoice 分叉：
+  //   - previewScope === "invoice" → api.exportInvoiceGroup(key, seller, docs, { output_format: "pdf" })
+  //   - previewScope === "po"      → exportOneGroup({ ..., output_format: "pdf" })
   // 下载文件名后缀 .pdf
 }
 ```
 
+> 关键：**必须复用 `doExport()` 的 `previewScope` 分支**，否则 SK/YM 发票组预览下点"导出 PDF"会走错端点。
+
 ### api.ts
 
-无需改动——现有 `exportDocuments()` 请求体已可接受额外字段。
+`exportDocuments()` / `exportInvoiceGroup()` 请求体已可接受额外字段，透传 `output_format` 即可，无需改签名。
 
 ## 测试
 
 | 层级 | 测试内容 |
 |------|----------|
-| 单元 | `test_pdf_renderer.py`：验证报表输出路径、无异常、基本内容验证 |
-| 集成 | `test_app.py`：`/export` 端点 `format=pdf` 返回 pdf 路径、download 返回正确 content-type |
-| E2E | `workbench.spec.ts`：新增一个场景：preview 页下载 PDF，验证响应为 PDF 格式 |
+| 单元 | `test_pdf_renderer.py`：单份 preview → 单节 PDF、多份 preview → 多节 PDF、输出路径存在、无异常、基本内容断言 |
+| 单元 | `test_generator.py`：`generate()` 在 `output_format=="pdf"` 下返回 `.pdf` 的 `output_file` 且**不产生 .xlsx**；发票组路径 pdf 分派正确 |
+| 集成 | `test_app.py`：`/api/po/{po}/export` 与 `/api/invoice/{key}/export` 在 `output_format=pdf` 下返回 pdf 路径；`/api/download` 对 `.pdf` 返回 `application/pdf` |
+| E2E | `workbench.spec.ts`：PO 作用域与 invoice 作用域各一个场景，预览页下载 PDF，验证响应为 PDF |
 
 ## 依赖与打包
 
 - `reportlab` 为纯 Python 包（无 C 扩展），PyInstaller 可直接打包。
-- 预估 PDF 渲染器约 200-300 行 Python。
+- 预估 PDF 渲染器约 250-350 行 Python（含发票组多节布局）。
