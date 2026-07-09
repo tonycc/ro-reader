@@ -6,16 +6,28 @@ const wb = useWorkbench();
 const poSearch = ref("");
 const invoiceSearch = ref("");
 const dropdownOpen = ref(false);
+const invoiceDropdownOpen = ref(false);
 const selectedPos = ref<Set<string>>(new Set());
+const selectedInvoices = ref<Set<string>>(new Set());
+const dateFrom = ref("");
+const dateTo = ref("");
 const dropdownRef = ref<HTMLElement | null>(null);
+const invoiceDropdownRef = ref<HTMLElement | null>(null);
 
 function initSelectAll() {
   selectedPos.value = new Set(wb.poList.map((p) => p.po_no));
 }
 
+function initSelectAllInvoices() {
+  selectedInvoices.value = new Set(wb.invoiceList.map((i) => i.invoice_group_key));
+}
+
 function onDocClick(e: MouseEvent) {
   if (dropdownRef.value && !dropdownRef.value.contains(e.target as Node)) {
     dropdownOpen.value = false;
+  }
+  if (invoiceDropdownRef.value && !invoiceDropdownRef.value.contains(e.target as Node)) {
+    invoiceDropdownOpen.value = false;
   }
 }
 onMounted(() => document.addEventListener("click", onDocClick));
@@ -55,6 +67,57 @@ function togglePo(po_no: string) {
   selectedPos.value = next;
 }
 
+// --- invoice 多选 ---
+function toggleInvoiceDropdown() {
+  invoiceDropdownOpen.value = !invoiceDropdownOpen.value;
+}
+
+function isAllInvoicesSelected(): boolean {
+  const visible = dropdownFilteredInvoices.value;
+  return visible.length > 0 && visible.every((i) => selectedInvoices.value.has(i.invoice_group_key));
+}
+
+function toggleAllInvoices() {
+  const visible = dropdownFilteredInvoices.value;
+  if (isAllInvoicesSelected()) {
+    const next = new Set(selectedInvoices.value);
+    for (const i of visible) next.delete(i.invoice_group_key);
+    selectedInvoices.value = next;
+  } else {
+    const next = new Set(selectedInvoices.value);
+    for (const i of visible) next.add(i.invoice_group_key);
+    selectedInvoices.value = next;
+  }
+}
+
+function toggleInvoice(key: string) {
+  const next = new Set(selectedInvoices.value);
+  if (next.has(key)) {
+    next.delete(key);
+  } else {
+    next.add(key);
+  }
+  selectedInvoices.value = next;
+}
+
+const invoiceSelectionLabel = computed(() => {
+  if (wb.invoiceList.length === 0) return "无 Invoice";
+  if (invoiceSearch.value) {
+    const n = dropdownFilteredInvoices.value.length;
+    if (n === 0) return "无匹配";
+    if (isAllInvoicesSelected()) return `已选 ${n} 项（全部）`;
+    return `已选 ${selectedInvoices.value.size} / ${n}`;
+  }
+  if (isAllInvoicesSelected()) return `${wb.invoiceList.length} Invoices（全部）`;
+  return `已选 ${selectedInvoices.value.size} / ${wb.invoiceList.length}`;
+});
+
+const dropdownFilteredInvoices = computed(() => {
+  if (!invoiceSearch.value) return wb.invoiceList;
+  const q = invoiceSearch.value.toLowerCase();
+  return wb.invoiceList.filter((i) => i.display_invoice_no.toLowerCase().includes(q));
+});
+
 const selectionLabel = computed(() => {
   if (wb.poList.length === 0) return "无 PO";
   if (poSearch.value) {
@@ -73,19 +136,36 @@ const dropdownFiltered = computed(() => {
   return wb.poList.filter((p) => p.po_no.toLowerCase().includes(q));
 });
 
+function inDateRange(date: string | null): boolean {
+  if (!dateFrom.value && !dateTo.value) return true;
+  if (!date) return false;
+  if (dateFrom.value && date < dateFrom.value) return false;
+  if (dateTo.value && date > dateTo.value) return false;
+  return true;
+}
+
 const filtered = computed(() => {
   let list = wb.poList.filter((p) => selectedPos.value.has(p.po_no));
   if (poSearch.value) {
     const q = poSearch.value.toLowerCase();
     list = list.filter((p) => p.po_no.toLowerCase().includes(q));
   }
+  if (dateFrom.value || dateTo.value) {
+    list = list.filter((p) => inDateRange(p.date));
+  }
   return list;
 });
 
 const filteredInvoices = computed(() => {
+  let list = wb.invoiceList.filter((i) => selectedInvoices.value.has(i.invoice_group_key));
   const query = invoiceSearch.value.trim().toLowerCase();
-  if (!query) return wb.invoiceList;
-  return wb.invoiceList.filter((item) => item.display_invoice_no.toLowerCase().includes(query));
+  if (query) {
+    list = list.filter((i) => i.display_invoice_no.toLowerCase().includes(query));
+  }
+  if (dateFrom.value || dateTo.value) {
+    list = list.filter((i) => inDateRange(i.date));
+  }
+  return list;
 });
 
 const statusLabel: Record<string, string> = { ready: "就绪", partial: "待补全", blocked: "阻断", done: "已导出" };
@@ -93,6 +173,9 @@ const statusBadgeClass: Record<string, string> = { ready: "ready", partial: "fix
 
 watch(() => wb.poList.length, (n) => {
   if (n > 0) initSelectAll();
+});
+watch(() => wb.invoiceList.length, (n) => {
+  if (n > 0) initSelectAllInvoices();
 });
 </script>
 
@@ -113,9 +196,12 @@ watch(() => wb.poList.length, (n) => {
           @click="wb.selectPreviewScope('invoice')"
         >Invoice 视角</button>
       </div>
-      <div class="section-title">
-        <h2>{{ wb.previewScope === 'po' ? 'PO 工作队列' : 'Invoice 列表' }}</h2>
-        <span>{{ wb.previewScope === 'po' ? wb.poList.length : wb.invoiceList.length }} total</span>
+      <div class="section-title" />
+
+      <div class="date-filter">
+        <input type="date" v-model="dateFrom" class="date-input" aria-label="开始日期" />
+        <span class="date-sep">—</span>
+        <input type="date" v-model="dateTo" class="date-input" aria-label="结束日期" />
       </div>
 
       <!-- 下拉多选（内嵌搜索） -->
@@ -148,9 +234,34 @@ watch(() => wb.poList.length, (n) => {
           <div v-if="!dropdownFiltered.length" class="dropdown-item empty-item">无匹配 PO</div>
         </div>
       </div>
-      <div v-else class="invoice-search">
-        <span class="search-icon">⌕</span>
-        <input v-model="invoiceSearch" placeholder="搜索 Invoice 号…" />
+      <div v-else ref="invoiceDropdownRef" class="po-select">
+        <div class="select-trigger" @click="toggleInvoiceDropdown">
+          <span class="search-icon">⌕</span>
+          <input
+            v-model="invoiceSearch"
+            class="trigger-input"
+            placeholder="搜索 Invoice 号…"
+            @focus="invoiceDropdownOpen = true"
+            @click.stop
+          />
+          <span class="arrow" :class="{ open: invoiceDropdownOpen }">▾</span>
+        </div>
+        <div v-if="invoiceDropdownOpen" class="select-dropdown">
+          <label class="dropdown-item all" @click.stop="toggleAllInvoices">
+            <input type="checkbox" :checked="isAllInvoicesSelected()" />
+            <span>全选（{{ invoiceSelectionLabel }}）</span>
+          </label>
+          <label
+            v-for="inv in dropdownFilteredInvoices" :key="inv.invoice_group_key"
+            class="dropdown-item"
+            @click.stop="toggleInvoice(inv.invoice_group_key)"
+          >
+            <input type="checkbox" :checked="selectedInvoices.has(inv.invoice_group_key)" />
+            <span class="item-po-no">{{ inv.display_invoice_no }}</span>
+            <span class="badge" :class="statusBadgeClass[inv.status]">{{ statusLabel[inv.status] }}</span>
+          </label>
+          <div v-if="!dropdownFilteredInvoices.length" class="dropdown-item empty-item">无匹配 Invoice</div>
+        </div>
       </div>
 
     </div>
@@ -213,13 +324,17 @@ watch(() => wb.poList.length, (n) => {
 .section-title { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
 .section-title h2 { margin: 0; font-size: 16px; }
 .section-title span { color: var(--subtle); font-size: 12px; }
+.date-filter { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+.date-input {
+  flex: 1; height: 34px;
+  border: 1px solid var(--line); border-radius: 8px;
+  padding: 0 8px; font: inherit; font-size: 12px;
+  color: var(--text); background: var(--panel-soft);
+}
+.date-input:focus { border-color: var(--blue); outline: none; background: white; }
+.date-sep { color: var(--subtle); font-size: 12px; flex-shrink: 0; }
 
 .po-select { position: relative; margin-bottom: 12px; }
-.invoice-search {
-  display: flex; align-items: center; gap: 5px; height: 34px; padding: 0 9px;
-  border: 1px solid var(--line); border-radius: 6px; background: var(--panel-soft);
-}
-.invoice-search input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; font: inherit; }
 .select-trigger {
   display: flex; align-items: center; gap: 4px;
   width: 100%; height: 34px;
@@ -228,7 +343,6 @@ watch(() => wb.poList.length, (n) => {
   background: var(--panel-soft);
   cursor: pointer;
 }
-.po-select { position: relative; margin-bottom: 12px; }
 .select-trigger:hover { border-color: var(--subtle); }
 .trigger-input {
   flex: 1; height: 100%;

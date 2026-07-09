@@ -101,6 +101,8 @@ _DOC_TITLE_DEFAULTS: dict[str, str] = {
     "PO": "PURCHASE ORDER",
     "INVOICE": "COMMERCIAL INVOICE",
     "PL": "PACKING LIST",
+    "CI": "COMMERCIAL INVOICE",
+    "RO_PL": "PACKING LIST",
 }
 
 _DEFAULT_LAYOUT: dict[str, Any] = {

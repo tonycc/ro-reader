@@ -101,10 +101,11 @@ _Segment = tuple[str, str]
 
 _PRICE_SEGMENT_OVERRIDES: Final[dict[tuple[str, str], _Segment]] = {
     ("PO", "GS PTE"): ("YM", "GS PTE"),
+    ("PO", "EMAX PTE"): ("GS PTE", "EMAX PTE"),
 }
 _INVOICE_NO_FROM_SK_YM_SELLERS: Final[frozenset[str]] = frozenset({"SK", "YM"})
 _INVOICE_NO_SUFFIX_SELLERS: Final[frozenset[str]] = frozenset({"EMAX PTE"})
-_INVOICE_NO_CONTEXT_DOCS: Final[frozenset[str]] = frozenset({"INVOICE", "PL"})
+_INVOICE_NO_CONTEXT_DOCS: Final[frozenset[str]] = frozenset({"INVOICE", "PL", "CI", "RO_PL"})
 
 
 def _price_segment(document_type: str, seller: str, buyer: str) -> _Segment:
@@ -176,6 +177,13 @@ def _first_matching_invoice_no(
         ):
             return inv
     return None
+
+
+def _packing_weight(per_unit: Decimal | None, ctns: Decimal | None) -> Decimal | None:
+    """PL 装箱重量 = 单箱重量 × 箱数。"""
+    if per_unit is None or ctns is None:
+        return None
+    return (per_unit * ctns).quantize(Decimal("0.01"))
 
 
 def _assemble_lines(
@@ -288,8 +296,12 @@ def _assemble_lines(
                 amount=amount,
                 source_row=original_line.source_row,
                 carton_count=original_line.carton_count if packing else None,
-                net_weight=original_line.net_weight if packing else None,
-                gross_weight=original_line.gross_weight if packing else None,
+                net_weight=_packing_weight(original_line.net_weight, original_line.carton_count)
+                if packing
+                else None,
+                gross_weight=_packing_weight(original_line.gross_weight, original_line.carton_count)
+                if packing
+                else None,
                 cbm=original_line.total_cbm if packing else None,
                 confirmed_ex_factory_date=ex_factory_date,
                 po_ex_factory_date=original_line.po_ex_factory_date,

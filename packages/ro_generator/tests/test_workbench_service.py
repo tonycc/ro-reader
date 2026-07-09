@@ -98,8 +98,8 @@ def test_export_document_groups_returns_single_zip(tmp_path: Path) -> None:
     assert result.output_file is not None
     assert result.output_file.endswith(".zip")
     assert result.files == (
-        "GS_PTE-RO-PI-4500099999.xlsx",
-        "EMAX_PTE-RO-PI-4500099999.xlsx",
+        "GS_PTE-GS-PI-4500099999.xlsx",
+        "EMAX_PTE-GS-PI-4500099999.xlsx",
     )
     with ZipFile(result.output_file) as zf:
         assert sorted(zf.namelist()) == sorted(result.files)

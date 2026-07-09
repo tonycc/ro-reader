@@ -50,6 +50,7 @@ class PoInspection:
     invoice_options_by_seller: dict[str, tuple[str, ...]]
     exportable_documents_by_seller: dict[str, tuple[str, ...]]
     blocking_count: int
+    date: str | None
 
 
 # —————————————————————————————————————
@@ -270,6 +271,13 @@ def _build_po_summary(
         invoice_options_by_seller = _build_invoice_options_by_seller(resolve_result.lines)
         exportable_documents_by_seller = _build_exportable_documents_by_seller(resolve_result.lines)
 
+        earliest = None
+        for line in resolve_result.lines:
+            d = line.etd_on_board
+            if d is not None and (earliest is None or d < earliest):
+                earliest = d
+        po_date = earliest.isoformat() if earliest is not None else None
+
         has_lines = len(resolve_result.lines) > 0
         status = "blocked" if blocking else ("ready" if has_lines else "partial")
         summaries.append(
@@ -282,6 +290,7 @@ def _build_po_summary(
                 invoice_options_by_seller=invoice_options_by_seller,
                 exportable_documents_by_seller=exportable_documents_by_seller,
                 blocking_count=len(blocking),
+                date=po_date,
             )
         )
     return tuple(summaries)
@@ -354,6 +363,7 @@ def _exportable_documents_for_seller(
         if _has_factory_pi_number(seller_lines, seller):
             documents.append("PI")
         documents.append("INVOICE_PL")
+        documents.append("CI_PL")
         return tuple(documents)
     return ("PI", "PO", "INVOICE_PL")
 

@@ -456,8 +456,8 @@ class TestErrorPath:
     @pytest.mark.parametrize(
         ("seller", "invoice_no", "expected_file", "invoice_sheet"),
         [
-            ("GS PTE", "INV-001", "GS_PTE-RO-INVOICE&PL-4500030844-INV-001.xlsx", "INV"),
-            ("EMAX PTE", "INV-001-P", "EMAX_PTE-RO-INVOICE&PL-4500030844-INV-001-P.xlsx", "CI"),
+            ("GS PTE", "INV-001", "GS_PTE-GS-INVOICE&PL-4500030844-INV-001.xlsx", "INV"),
+            ("EMAX PTE", "INV-001-P", "EMAX_PTE-GS-INVOICE&PL-4500030844-INV-001-P.xlsx", "CI"),
         ],
     )
     def test_non_factory_invoice_pl_generates_single_workbook_with_two_sheets(
@@ -1290,7 +1290,7 @@ class TestPreviewFunction:
         assert unit_price_entry["value"] == "$88.80"
         assert amount_entry["value"] == "$21,312.00"
 
-    def test_emax_po_unit_price_uses_emax_pte_fob_column(self, tmp_path):
+    def test_emax_po_unit_price_uses_emax_gs_pte_fob_column(self, tmp_path):
         path = make_base_file(
             tmp_path,
             data_base_rows=[
@@ -1323,12 +1323,12 @@ class TestPreviewFunction:
         p = result.preview
         assert p is not None
         first_line = p.lines[0]
-        assert first_line["unit_price"] == "$88.80"
+        assert first_line["unit_price"] == "$32.80"
 
         entries = getattr(p, "source_entries", [])
         unit_price_entry = next(e for e in entries if e["preview_field"] == "line[0].unit_price")
         assert unit_price_entry["sheet"] == "DATA BASE"
-        assert unit_price_entry["field"] == "EMAX PTE COMBO FOB 2026"
+        assert unit_price_entry["field"] == "EMAX-GS PTE COMBO FOB 2026"
 
     def test_gs_po_unit_price_uses_gs_sk_ym_fob_column(self, tmp_path):
         path = make_base_file(
@@ -1622,7 +1622,7 @@ class TestPreviewFunction:
         assert len(result.files) == 1
         assert result.output_file is not None
         assert result.output_file.endswith(".xlsx")
-        assert result.files[0].startswith(f"{seller}-RO-INVOICE&PL-")
+        assert result.files[0].startswith(f"{seller}-GS-INVOICE&PL-")
         wb = load_workbook(result.output_file)
         assert wb.sheetnames == ["Standard Invoice format", "PL"]
         assert wb["Standard Invoice format"]["D15"].value == expected_sap
@@ -1825,8 +1825,8 @@ class TestPreviewFunction:
         totals = getattr(p, "totals", {})
         labels = totals.get("_labels", {})
         assert totals["total_quantity"] == "100"
-        assert totals["total_net_weight"] == "8.5"
-        assert totals["total_gross_weight"] == "10.1"
+        assert totals["total_net_weight"] == "42.50"
+        assert totals["total_gross_weight"] == "50.50"
         assert totals["total_cbm"] == "0.36"
         assert totals["total_carton_count"] == "5"
         assert labels["total_quantity"] == "Total Qty"
@@ -1838,8 +1838,8 @@ class TestPreviewFunction:
         footer_items = totals.get("_footer_items", [])
         assert footer_items == [
             {"key": "quantity", "label": "Total Qty", "value": "100 PCS"},
-            {"key": "net_weight", "label": "Total N/W (KGS)", "value": "8.5"},
-            {"key": "gross_weight", "label": "Total G/W (KGS)", "value": "10.1"},
+            {"key": "net_weight", "label": "Total N/W (KGS)", "value": "42.50"},
+            {"key": "gross_weight", "label": "Total G/W (KGS)", "value": "50.50"},
             {"key": "cbm", "label": "Total CBM", "value": "0.36 CBM"},
             {"key": "carton_count", "label": "Total CTNS", "value": "5"},
         ]
@@ -2337,4 +2337,4 @@ class TestInvoiceGroupPreview:
         assert result.status == "success", result.errors
         assert result.output_file is not None
         assert Path(result.output_file).suffix == ".xlsx"
-        assert result.files == ("GS_PTE-RO-INVOICE&PL-INV-001.xlsx",)
+        assert result.files == ("GS_PTE-GS-INVOICE&PL-INV-001.xlsx",)

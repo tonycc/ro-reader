@@ -385,7 +385,7 @@ class TestWorkbookSnapshot:
 
         summary = snap.po_summary[0]
         assert summary.exportable_documents_by_seller["SK"] == ()
-        assert summary.exportable_documents_by_seller["YM"] == ("PI", "INVOICE_PL")
+        assert summary.exportable_documents_by_seller["YM"] == ("PI", "INVOICE_PL", "CI_PL")
         assert summary.exportable_documents_by_seller["GS PTE"] == ("PI", "PO", "INVOICE_PL")
         assert summary.exportable_documents_by_seller["EMAX PTE"] == ("PI", "PO", "INVOICE_PL")
 
@@ -415,7 +415,7 @@ class TestWorkbookSnapshot:
         snap = build_workbook_snapshot(path)
 
         summary = snap.po_summary[0]
-        assert summary.exportable_documents_by_seller["YM"] == ("INVOICE_PL",)
+        assert summary.exportable_documents_by_seller["YM"] == ("INVOICE_PL", "CI_PL")
 
     def test_po_summary_blocked_missing_sap(self, tmp_path):
         path = make_base_file(

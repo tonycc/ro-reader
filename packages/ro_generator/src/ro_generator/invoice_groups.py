@@ -22,6 +22,7 @@ class InvoiceInspection:
     seller_invoice_numbers: dict[str, str]
     blocking_count: int
     conflict_count: int
+    date: str | None
 
 
 @dataclass(frozen=True)
@@ -89,6 +90,12 @@ def build_invoice_groups(
         conflict_count = blocking_count
         po_nos = tuple(sorted({line.po_no for _, line, _ in entries if line.po_no}))
         display_number = raw_numbers[0] if raw_numbers else factory_numbers[0]
+        group_earliest = None
+        for _, line, _ in entries:
+            d = line.etd_on_board
+            if d is not None and (group_earliest is None or d < group_earliest):
+                group_earliest = d
+        group_date = group_earliest.isoformat() if group_earliest is not None else None
         summary = InvoiceInspection(
             invoice_group_key=group_key,
             display_invoice_no=display_number,
@@ -99,6 +106,7 @@ def build_invoice_groups(
             seller_invoice_numbers=seller_numbers,
             blocking_count=blocking_count,
             conflict_count=conflict_count,
+            date=group_date,
         )
         summaries.append(summary)
         index[group_key] = tuple(sorted(row_index for row_index, _, _ in entries))

@@ -32,7 +32,7 @@ class TestFilenameRules:
                 document_type="INVOICE",
                 invoice_no="INV/001",
             )
-            == "GS_PTE-RO-INVOICE-INV_001.xlsx"
+            == "GS_PTE-GS-INVOICE-INV_001.xlsx"
         )
 
     def test_invoice_group_bundle_filename_has_no_po_token(self) -> None:
@@ -42,16 +42,16 @@ class TestFilenameRules:
                 document_type="INVOICE_PL",
                 invoice_no="SKYM-001",
             )
-            == "YM-RO-INVOICE&PL-SKYM-001.xlsx"
+            == "YM-GS-INVOICE&PL-SKYM-001.xlsx"
         )
 
     def test_pi_no_month_suffix(self) -> None:
         name = build_document_filename(seller="GS PTE", document_type="PI", po_no="4500030844")
-        assert name == "GS_PTE-RO-PI-4500030844.xlsx"
+        assert name == "GS_PTE-GS-PI-4500030844.xlsx"
 
     def test_po_no_month_suffix(self) -> None:
         name = build_document_filename(seller="GS PTE", document_type="PO", po_no="4500030844")
-        assert name == "GS_PTE-RO-PO-4500030844.xlsx"
+        assert name == "GS_PTE-GS-PO-4500030844.xlsx"
 
     def test_invoice_with_month(self) -> None:
         name = build_document_filename(
@@ -60,7 +60,7 @@ class TestFilenameRules:
             po_no="4500030844",
             invoice_no="2601",
         )
-        assert name == "GS_PTE-RO-INVOICE-4500030844-2601.xlsx"
+        assert name == "GS_PTE-GS-INVOICE-4500030844-2601.xlsx"
 
     def test_pl_with_month(self) -> None:
         name = build_document_filename(
@@ -69,7 +69,7 @@ class TestFilenameRules:
             po_no="4500030844",
             invoice_no="2602",
         )
-        assert name == "EMAX_PTE-RO-PL-4500030844-2602.xlsx"
+        assert name == "EMAX_PTE-GS-PL-4500030844-2602.xlsx"
 
     def test_invoice_without_month_drops_suffix(self) -> None:
         name = build_document_filename(
@@ -77,7 +77,7 @@ class TestFilenameRules:
             document_type="INVOICE",
             po_no="4500030844",
         )
-        assert name == "GS_PTE-RO-INVOICE-4500030844.xlsx"
+        assert name == "GS_PTE-GS-INVOICE-4500030844.xlsx"
 
     def test_pi_ignores_passed_month(self) -> None:
         # PI 永不带月份后缀
@@ -87,7 +87,7 @@ class TestFilenameRules:
             po_no="P",
             invoice_no="2601",
         )
-        assert name == "GS_PTE-RO-PI-P.xlsx"
+        assert name == "GS_PTE-GS-PI-P.xlsx"
 
     def test_seller_with_slash_sanitized(self) -> None:
         # SK/YM 主体常出现，斜杠是文件系统不友好字符
@@ -96,7 +96,7 @@ class TestFilenameRules:
         )
         # SK/YM → SK_YM
         assert "/" not in name
-        assert name.startswith("SK_YM-RO-INVOICE-")
+        assert name.startswith("SK_YM-GS-INVOICE-")
 
 
 class TestZipFilename:

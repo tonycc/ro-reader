@@ -10,12 +10,20 @@ const docLabels: Record<string, string> = {
 };
 
 const invoiceDocLabels: Record<string, string> = {
-  INVOICE: "商业发票（Invoice）",
-  PL: "装箱单（PL）",
+  INVOICE: "商业发票（Invoice - GS版）",
+  PL: "装箱单（PL - GS版）",
+  CI: "商业发票（CI - RO版）",
+  RO_PL: "装箱单（PL - RO版）",
 };
 
 const docOrder = ["PI", "PO"];
-const invoiceDocOrder = ["INVOICE", "PL"];
+
+function invoiceDocOrderForSeller(seller: string): string[] {
+  if (seller === "SK" || seller === "YM") {
+    return ["INVOICE", "PL", "CI", "RO_PL"];
+  }
+  return ["INVOICE", "PL"];
+}
 
 interface ExportDocEntry {
   id: string
@@ -41,7 +49,7 @@ const exportGroups = computed(() => (
 const invoiceExportGroups = computed(() => (
   (wb.invoiceEntry?.sellers ?? []).map((seller) => ({
     seller,
-    entries: invoiceDocOrder.map((document) => buildInvoiceExportEntry(seller, document)),
+    entries: invoiceDocOrderForSeller(seller).map((document) => buildInvoiceExportEntry(seller, document)),
   }))
 ));
 
@@ -56,16 +64,24 @@ const selectedExportDocs = computed(() => (
     .filter((group) => group.documents.length > 0)
 ));
 
-const selectedInvoiceExportDocs = computed(() => (
-  invoiceExportGroups.value
-      .map((group) => ({
-      seller: group.seller,
-      documents: group.entries
-        .filter((entry) => selectedInvoiceDocs.value.has(entry.id))
-        .flatMap((entry) => entry.documents),
-    }))
-    .filter((group) => group.documents.length > 0)
-));
+const selectedInvoiceExportDocs = computed(() => {
+  const isRO = (doc: string) => doc === "CI" || doc === "RO_PL";
+  const result: { seller: string; documents: string[] }[] = [];
+  for (const group of invoiceExportGroups.value) {
+    const gsDocs: string[] = [];
+    const roDocs: string[] = [];
+    for (const entry of group.entries) {
+      if (!selectedInvoiceDocs.value.has(entry.id)) continue;
+      for (const doc of entry.documents) {
+        if (isRO(doc)) roDocs.push(doc);
+        else gsDocs.push(doc);
+      }
+    }
+    if (gsDocs.length > 0) result.push({ seller: group.seller, documents: gsDocs });
+    if (roDocs.length > 0) result.push({ seller: group.seller, documents: roDocs });
+  }
+  return result;
+});
 
 const selectedDocCount = computed(() => (
   exportGroups.value.flatMap((group) => group.entries)
@@ -129,7 +145,8 @@ function invoiceGroupFilename(seller: string, document: string): string {
   const invoiceNo = wb.invoiceEntry?.seller_invoice_numbers[seller]
     ?? wb.invoiceEntry?.display_invoice_no
     ?? "INVOICE";
-  return `${safeToken(seller)}-RO-${document}-${safeToken(invoiceNo)}.xlsx`;
+  const version = document === "CI" || document === "RO_PL" ? "RO" : "GS";
+  return `${safeToken(seller)}-${version}-${document}-${safeToken(invoiceNo)}.xlsx`;
 }
 
 function buildExportEntry(seller: string, document: string): ExportDocEntry {

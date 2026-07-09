@@ -164,7 +164,7 @@ class OrderLine:
 # —————————————————————————————————————
 
 # 单据类型
-DocumentType = Literal["PI", "PO", "INVOICE", "PL"]
+DocumentType = Literal["PI", "PO", "INVOICE", "PL", "CI", "RO_PL"]
 
 
 @dataclass(frozen=True)

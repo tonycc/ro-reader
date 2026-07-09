@@ -202,12 +202,12 @@ class DryRunRequest(BaseModel):
 
 class InvoicePreviewRequest(BaseModel):
     seller: str
-    document: Literal["INVOICE", "PL"]
+    document: Literal["INVOICE", "PL", "CI", "RO_PL"]
 
 
 class InvoiceExportRequest(BaseModel):
     seller: str
-    documents: list[Literal["INVOICE", "PL"]]
+    documents: list[Literal["INVOICE", "PL", "CI", "RO_PL"]]
 
 
 class InvoiceBatchExportRequest(BaseModel):
@@ -304,7 +304,7 @@ def _invoice_inspection_to_dict(result: InvoiceGroupInspection) -> dict[str, Any
 
 def _normalize_document(raw: str | None) -> DocumentType:
     doc = (raw or "INVOICE").upper()
-    if doc not in {"PI", "PO", "INVOICE", "PL"}:
+    if doc not in {"PI", "PO", "INVOICE", "PL", "CI", "RO_PL"}:
         raise HTTPException(
             400,
             detail={"code": "INVALID_DOCUMENT", "message": f"不支持的单据类型: {doc}"},
@@ -318,6 +318,9 @@ def _normalize_documents(raw_documents: Iterable[str | None]) -> tuple[DocumentT
         doc = (raw or "INVOICE").upper()
         if doc in {"INVOICE_PL", "INVOICE&PL"}:
             documents.extend(["INVOICE", "PL"])
+            continue
+        if doc in {"CI_PL"}:
+            documents.extend(["CI", "RO_PL"])
             continue
         documents.append(_normalize_document(doc))
     return tuple(documents)
@@ -436,6 +439,7 @@ def open_session(req: OpenSessionRequest) -> dict[str, Any]:
                 for seller, documents in p.exportable_documents_by_seller.items()
             },
             "blocking_count": p.blocking_count,
+            "date": p.date,
         }
         for p in inspection.po_list
     ]

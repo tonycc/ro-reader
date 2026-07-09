@@ -102,7 +102,7 @@ class TemplateMapping:
 # —————————————————————————————————————
 
 
-VALID_DOCUMENT_TYPES: Final[set[str]] = {"PI", "PO", "INVOICE", "PL"}
+VALID_DOCUMENT_TYPES: Final[set[str]] = {"PI", "PO", "INVOICE", "PL", "CI", "RO_PL"}
 VALID_TOTAL_VALUE_MODES: Final[set[str]] = {"model_total", "fixed", "current_date"}
 TEMPLATE_FOOTER_ROW_SLACK: Final[int] = 32
 

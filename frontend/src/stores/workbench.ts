@@ -154,14 +154,16 @@ export const useWorkbench = defineStore("workbench", () => {
     warnings.value = [];
     try {
       previewDocType.value = dt;
-      const docs = dt === "INVOICE_PL" ? ["INVOICE", "PL"] : [dt];
+      const docs = dt === "INVOICE_PL" ? ["INVOICE", "PL"]
+                : dt === "CI_PL" ? ["CI", "RO_PL"]
+                : [dt];
       const results = await Promise.all(docs.map(async (document) => {
         try {
           const result = previewScope.value === "invoice"
             ? await api.previewInvoiceGroup(
                 selectedInvoiceGroup.value,
                 requestSeller,
-                document as "INVOICE" | "PL",
+                document as "INVOICE" | "PL" | "CI" | "RO_PL",
               )
             : await api.preview({
                 base_file: baseFile.value, po_no: selectedPo.value,
@@ -200,8 +202,14 @@ export const useWorkbench = defineStore("workbench", () => {
     exportError.value = "";
     try {
       if (previewScope.value === "invoice") {
-        const invoiceDocuments = (documents?.length ? documents : ["INVOICE", "PL"])
-          .filter((document): document is "INVOICE" | "PL" => document === "INVOICE" || document === "PL");
+        const defaultInvoiceDocs = previewDocType.value === "CI_PL"
+          ? ["CI", "RO_PL"]
+          : previewDocType.value === "CI" ? ["CI"]
+          : previewDocType.value === "RO_PL" ? ["RO_PL"]
+          : ["INVOICE", "PL"];
+        const invoiceDocuments = (documents?.length ? documents : defaultInvoiceDocs)
+          .filter((document): document is "INVOICE" | "PL" | "CI" | "RO_PL" =>
+            document === "INVOICE" || document === "PL" || document === "CI" || document === "RO_PL");
         const result = await api.exportInvoiceGroup(
           selectedInvoiceGroup.value,
           selectedSeller.value,
@@ -321,7 +329,8 @@ export const useWorkbench = defineStore("workbench", () => {
   function selectInvoice(inv: string | null) { selectedInvoiceNo.value = inv; return refreshPreview(); }
 
   function isInvoicePlDocument(document: string): boolean {
-    return document === "INVOICE" || document === "PL" || document === "INVOICE_PL";
+    return document === "INVOICE" || document === "PL" || document === "INVOICE_PL"
+        || document === "CI" || document === "RO_PL" || document === "CI_PL";
   }
 
   async function selectPreviewScope(scope: PreviewScope) {
@@ -368,6 +377,8 @@ export const useWorkbench = defineStore("workbench", () => {
   function documentLabel(document: string): string {
     if (document === "INVOICE") return "Invoice";
     if (document === "PL") return "PL";
+    if (document === "CI") return "CI";
+    if (document === "RO_PL") return "RO PL";
     return document;
   }
 

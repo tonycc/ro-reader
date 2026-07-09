@@ -129,6 +129,7 @@ def _snapshot() -> WorkbookSnapshot:
         seller_invoice_numbers={},
         blocking_count=0,
         conflict_count=0,
+        date=None,
     )
     return WorkbookSnapshot(
         base_file="base.xlsx",

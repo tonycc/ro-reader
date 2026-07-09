@@ -289,6 +289,40 @@ _HEADER_CONTEXT_OVERRIDES: Final[dict[tuple[str, str, str], HeaderFieldOverride]
         "rule": '客户PO Z列 "final destination"',
         "model_attr": "final_destination",
     },
+    ("CI", "SK", "invoice_no"): {
+        "source_sheet": SHEET_PO_RECORD,
+        "source_field": "SK/YM INVOICE NO.",
+        "rule": 'PO record 的 "SK/YM INVOICE NO." 列',
+    },
+    ("RO_PL", "SK", "invoice_no"): {
+        "source_sheet": SHEET_PO_RECORD,
+        "source_field": "SK/YM INVOICE NO.",
+        "rule": '引用 Commercial Invoice，最终来自 PO record 的 "SK/YM INVOICE NO." 列',
+    },
+    ("CI", "YM", "invoice_no"): {
+        "source_sheet": SHEET_PO_RECORD,
+        "source_field": "SK/YM INVOICE NO.",
+        "rule": 'PO record 的 "SK/YM INVOICE NO." 列',
+    },
+    ("RO_PL", "YM", "invoice_no"): {
+        "source_sheet": SHEET_PO_RECORD,
+        "source_field": "SK/YM INVOICE NO.",
+        "rule": '引用 Commercial Invoice，最终来自 PO record 的 "SK/YM INVOICE NO." 列',
+    },
+    ("CI", "SK", "to"): {
+        "source_type": "base_field",
+        "source_sheet": SHEET_CUSTOMER_PO,
+        "source_field": "final destination",
+        "rule": '客户PO Z列 "final destination"',
+        "model_attr": "final_destination",
+    },
+    ("CI", "YM", "to"): {
+        "source_type": "base_field",
+        "source_sheet": SHEET_CUSTOMER_PO,
+        "source_field": "final destination",
+        "rule": '客户PO Z列 "final destination"',
+        "model_attr": "final_destination",
+    },
     ("PI", "GS PTE", "manufacturer"): {
         "source_type": "base_field",
         "source_sheet": SHEET_CUSTOMER_PO,

@@ -73,7 +73,9 @@ PL_TOTAL_MAPPING_KEYS: Final[tuple[str, ...]] = (
 
 
 def preview_total_specs(document_type: str) -> tuple[TotalFieldSpec, ...]:
-    mapping_keys = PL_TOTAL_MAPPING_KEYS if document_type == "PL" else STANDARD_TOTAL_MAPPING_KEYS
+    mapping_keys = (
+        PL_TOTAL_MAPPING_KEYS if document_type in ("PL", "RO_PL") else STANDARD_TOTAL_MAPPING_KEYS
+    )
     return tuple(TOTAL_FIELD_SPECS[key] for key in mapping_keys)
 
 
@@ -109,7 +111,7 @@ def build_preview_totals(
 
     if "total_quantity" not in totals:
         totals["total_quantity"] = "0"
-    if model.document_type != "PL":
+    if model.document_type not in ("PL", "RO_PL"):
         totals.setdefault("total_amount", "$0.00")
         totals["currency"] = "USD"
 

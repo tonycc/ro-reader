@@ -18,9 +18,14 @@ const issuePanelOpen = ref(false);
 
 const sellers = ["SK", "YM", "GS PTE", "EMAX PTE"] as const;
 const docTypes = computed(() => wb.previewScope === "invoice"
-  ? [
-      { key: "INVOICE_PL" as const, label: "Invoice & Packing List" },
-    ]
+  ? (wb.selectedSeller === "SK" || wb.selectedSeller === "YM"
+    ? [
+        { key: "INVOICE_PL" as const, label: "INV & PL" },
+        { key: "CI_PL" as const, label: "CI & PL" },
+      ]
+    : [
+        { key: "INVOICE_PL" as const, label: "INV & PL" },
+      ])
   : [
       { key: "PI" as const, label: "PI" },
       { key: "PO" as const, label: "PO" },
@@ -28,13 +33,15 @@ const docTypes = computed(() => wb.previewScope === "invoice"
 const docTypeLabelMap: Record<string, string> = {
   PI: "PI",
   PO: "PO",
-  INVOICE: "Invoice / PL",
+  INVOICE: "INV / PL",
   PL: "PL",
-  INVOICE_PL: "Invoice & Packing List",
+  INVOICE_PL: "INV & PL",
+  CI: "CI",
+  RO_PL: "RO PL",
+  CI_PL: "CI & PL",
 };
 
 const pd = computed(() => wb.previewData);
-const isInvoicePlMode = computed(() => wb.previewDocType === "INVOICE" || wb.previewDocType === "PL" || wb.previewDocType === "INVOICE_PL");
 const previewDocs = computed(() => {
   if (wb.previewDocuments.length) return wb.previewDocuments;
   if (!pd.value) return [];
@@ -52,16 +59,13 @@ const previewDocs = computed(() => {
 const hasData = computed(() => previewDocs.value.some((doc) => doc.preview?.lines?.length));
 const errors = computed(() => wb.blockingErrors as { code?: string; message?: string }[]);
 const currentDocLabel = computed(() => (
-  isInvoicePlMode.value ? "Invoice & Packing List" : docTypeLabelMap[wb.previewDocType] || wb.previewDocType || "当前单据"
+  docTypeLabelMap[wb.previewDocType] || wb.previewDocType || "当前单据"
 ));
 const issueErrors = computed<ValidationIssue[]>(() => wb.poIssues?.blocking_errors ?? []);
 const issueCount = computed(() => wb.poIssues?.blocking_count ?? wb.poEntry?.blocking_count ?? errors.value.length);
 const hasSelectedObject = computed(() => wb.previewScope === "invoice"
   ? Boolean(wb.selectedInvoiceGroup)
   : Boolean(wb.selectedPo));
-const scopeTitle = computed(() => wb.previewScope === "invoice"
-  ? wb.invoiceEntry?.display_invoice_no ?? ""
-  : wb.selectedPo);
 const sellerDisabled = (seller: string) => wb.previewScope === "invoice"
   && !wb.invoiceEntry?.sellers.includes(seller);
 
@@ -198,10 +202,6 @@ onUnmounted(() => {
       <!-- Filter bar -->
       <div class="preview-filterbar">
         <div class="filter-left">
-          <div v-if="wb.previewScope === 'invoice'" class="scope-heading" data-testid="invoice-scope-title">
-            <strong>{{ scopeTitle }}</strong>
-            <span>{{ wb.invoiceEntry?.po_count ?? 0 }} 个 PO</span>
-          </div>
           <div class="filter-group">
             <span class="filter-label">公司主体</span>
             <button

@@ -254,8 +254,8 @@ test.describe("RO Workbench E2E", () => {
         json: {
           status: "success",
           summary: {},
-          files: ["GS_PTE-RO-INVOICE-INV_2603_001.xlsx"],
-          output_file: "GS_PTE-RO-INVOICE-INV_2603_001.xlsx",
+          files: ["GS_PTE-GS-INVOICE-INV_2603_001.xlsx"],
+          output_file: "GS_PTE-GS-INVOICE-INV_2603_001.xlsx",
           errors: [],
           warnings: [],
           missing_inputs: [],

@@ -181,11 +181,11 @@ def test_export_uses_xlsx_output_format(monkeypatch: MonkeyPatch, tmp_path: Path
 
     def fake_generate(request: DocumentRequest) -> GenerationResult:
         captured["output_format"] = request.output_format
-        output = tmp_path / "YM-RO-PI-4500099999.xlsx"
+        output = tmp_path / "YM-GS-PI-4500099999.xlsx"
         output.write_bytes(b"fake xlsx")
         return GenerationResult(
             status="success",
-            files=("YM-RO-PI-4500099999.xlsx",),
+            files=("YM-GS-PI-4500099999.xlsx",),
             output_file=str(output),
         )
 
@@ -218,11 +218,11 @@ def test_export_invoice_pl_requests_combined_documents(
     def fake_generate(request: DocumentRequest) -> GenerationResult:
         captured["documents"] = request.documents
         captured["output_format"] = request.output_format
-        output = tmp_path / "SK-RO-INVOICE&PL-4500099999.xlsx"
+        output = tmp_path / "SK-GS-INVOICE&PL-4500099999.xlsx"
         output.write_bytes(b"fake xlsx")
         return GenerationResult(
             status="success",
-            files=("SK-RO-INVOICE&PL-4500099999.xlsx",),
+            files=("SK-GS-INVOICE&PL-4500099999.xlsx",),
             output_file=str(output),
         )
 
@@ -246,7 +246,7 @@ def test_export_invoice_pl_requests_combined_documents(
     assert captured["documents"] == ("INVOICE", "PL")
     assert captured["output_format"] == "xlsx"
     data = _response_json(resp)
-    assert data["files"] == ["SK-RO-INVOICE&PL-4500099999.xlsx"]
+    assert data["files"] == ["SK-GS-INVOICE&PL-4500099999.xlsx"]
     assert data["output_file"].endswith(".xlsx")
 
 
@@ -354,8 +354,8 @@ def test_export_batch_returns_single_zip(monkeypatch: MonkeyPatch, tmp_path: Pat
         return GenerationResult(
             status="success",
             files=(
-                "GS_PTE-RO-PI-4500099999.xlsx",
-                "EMAX_PTE-RO-INVOICE&PL-4500099999-INV-2603-001-P.xlsx",
+                "GS_PTE-GS-PI-4500099999.xlsx",
+                "EMAX_PTE-GS-INVOICE&PL-4500099999-INV-2603-001-P.xlsx",
             ),
             output_file=str(output),
         )
@@ -391,8 +391,8 @@ def test_export_batch_returns_single_zip(monkeypatch: MonkeyPatch, tmp_path: Pat
     data = _response_json(resp)
     assert data["output_file"].endswith(".zip")
     assert data["files"] == [
-        "GS_PTE-RO-PI-4500099999.xlsx",
-        "EMAX_PTE-RO-INVOICE&PL-4500099999-INV-2603-001-P.xlsx",
+        "GS_PTE-GS-PI-4500099999.xlsx",
+        "EMAX_PTE-GS-INVOICE&PL-4500099999-INV-2603-001-P.xlsx",
     ]
 
 

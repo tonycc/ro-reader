@@ -104,14 +104,20 @@ LINE_FIELD_SPECS: Final[dict[str, LineFieldSpec]] = {
         fixed_value=True,
     ),
     "net_weight": LineFieldSpec(
-        rule="PO record 或 DATA BASE 中的 N/W 列",
-        source_field="N/W",
+        rule="单箱净重（PO record 或 DATA BASE 中的 N/W 列） × CTNS（箱数）",
+        source_sheet=None,
+        source_field=None,
+        source_type="computed",
+        computed=True,
         skip_if_none=True,
         display_decimal_places=2,
     ),
     "gross_weight": LineFieldSpec(
-        rule="PO record 或 DATA BASE 中的 G/W 列",
-        source_field="G/W",
+        rule="单箱毛重（PO record 或 DATA BASE 中的 G/W 列） × CTNS（箱数）",
+        source_sheet=None,
+        source_field=None,
+        source_type="computed",
+        computed=True,
         skip_if_none=True,
         display_decimal_places=2,
     ),
@@ -171,6 +177,8 @@ _PL_ONLY_OVERRIDES: Final[dict[str, LineFieldOverride]] = {
 _DOC_FAMILY_OVERRIDES: Final[dict[str, dict[str, LineFieldOverride]]] = {
     "INVOICE": _INVOICE_PL_OVERRIDES,
     "PL": _PL_ONLY_OVERRIDES,
+    "CI": _INVOICE_PL_OVERRIDES,
+    "RO_PL": _PL_ONLY_OVERRIDES,
 }
 
 # —————————————————————————————————————
@@ -206,6 +214,7 @@ _CONTEXT_LINE_OVERRIDES: Final[dict[tuple[str, str, str], LineFieldOverride]] = 
 
 _UNIT_PRICE_SOURCE_SELLER_OVERRIDES: Final[dict[tuple[str, str], str]] = {
     ("PO", "GS PTE"): "YM",
+    ("PO", "EMAX PTE"): "GS PTE",
 }
 
 

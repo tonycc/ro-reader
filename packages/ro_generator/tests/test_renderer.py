@@ -201,7 +201,10 @@ def build_emax_po() -> DocumentModel:
             gs_model="Q1",
             quantity=100,
             source_row=5,
-            unit_prices={(ENTITY_EMAX_PTE, ENTITY_PF): Decimal("32.8")},
+            unit_prices={
+                (ENTITY_EMAX_PTE, ENTITY_PF): Decimal("32.8"),
+                (ENTITY_GS_PTE, ENTITY_EMAX_PTE): Decimal("32.8"),
+            },
             confirmed_ex_factory_date=date(2026, 3, 15),
         ),
     )

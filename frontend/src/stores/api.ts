@@ -47,6 +47,7 @@ export interface PoListItem {
   invoice_options_by_seller?: Record<string, string[]>
   exportable_documents_by_seller?: Record<string, string[]>
   blocking_count: number
+  date: string | null
 }
 
 export type PreviewScope = "po" | "invoice"
@@ -61,6 +62,7 @@ export interface InvoiceListItem {
   seller_invoice_numbers: Record<string, string>
   blocking_count: number
   conflict_count: number
+  date: string | null
 }
 
 export interface InvoiceListResponse {
@@ -243,13 +245,13 @@ export const api = {
   previewInvoiceGroup: (
     invoice_group_key: string,
     seller: string,
-    document: "INVOICE" | "PL",
+    document: "INVOICE" | "PL" | "CI" | "RO_PL",
   ): Promise<InvoicePreviewResponse> =>
     request("POST", `/invoice/${encodeURIComponent(invoice_group_key)}/preview`, { seller, document }),
   exportInvoiceGroup: (
     invoice_group_key: string,
     seller: string,
-    documents: Array<"INVOICE" | "PL">,
+    documents: Array<"INVOICE" | "PL" | "CI" | "RO_PL">,
   ): Promise<DryRunResult> =>
     request("POST", `/invoice/${encodeURIComponent(invoice_group_key)}/export`, { seller, documents }),
   exportInvoiceDocumentGroups: (

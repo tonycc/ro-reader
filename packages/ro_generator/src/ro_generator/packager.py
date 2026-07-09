@@ -38,8 +38,9 @@ def build_document_filename(
 ) -> str:
     seller_token = _sanitize(seller)
     po_token = _sanitize(po_no)
-    base = f"{seller_token}-RO-{document_type}-{po_token}"
-    if document_type in ("INVOICE", "PL") and invoice_no:
+    version = "RO" if document_type in ("CI", "RO_PL") else "GS"
+    base = f"{seller_token}-{version}-{document_type}-{po_token}"
+    if document_type in ("INVOICE", "PL", "CI", "RO_PL") and invoice_no:
         base = f"{base}-{_sanitize(invoice_no)}"
     return f"{base}.xlsx"
 
@@ -52,7 +53,7 @@ def build_invoice_pl_filename(
 ) -> str:
     seller_token = _sanitize(seller)
     po_token = _sanitize(po_no)
-    base = f"{seller_token}-RO-INVOICE&PL-{po_token}"
+    base = f"{seller_token}-GS-INVOICE&PL-{po_token}"
     if invoice_no:
         base = f"{base}-{_sanitize(invoice_no)}"
     return f"{base}.xlsx"
@@ -61,11 +62,22 @@ def build_invoice_pl_filename(
 def build_invoice_group_document_filename(
     *,
     seller: str,
-    document_type: Literal["INVOICE", "PL", "INVOICE_PL"],
+    document_type: Literal["INVOICE", "PL", "INVOICE_PL", "CI", "RO_PL", "CI_PL"],
     invoice_no: str,
 ) -> str:
-    document_token = "INVOICE&PL" if document_type == "INVOICE_PL" else document_type
-    return f"{_sanitize(seller)}-RO-{document_token}-{_sanitize(invoice_no)}.xlsx"
+    if document_type == "INVOICE_PL":
+        document_token = "INVOICE&PL"
+        version = "GS"
+    elif document_type == "CI_PL":
+        document_token = "CI&PL"
+        version = "RO"
+    elif document_type in ("CI", "RO_PL"):
+        document_token = document_type
+        version = "RO"
+    else:
+        document_token = document_type
+        version = "GS"
+    return f"{_sanitize(seller)}-{version}-{document_token}-{_sanitize(invoice_no)}.xlsx"
 
 
 def build_invoice_group_zip_filename(*, invoice_no: str) -> str:

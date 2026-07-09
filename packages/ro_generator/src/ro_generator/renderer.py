@@ -320,7 +320,6 @@ def _write_lines_and_totals(
             builder,
             document_type=model.document_type,
             seller=model.seller,
-            po_no=model.po_no,
         )
         # Write row_fixed values (e.g., Country of The Origin = "China")
         for col_letter, fixed_val in mapping.lines.row_fixed.items():
@@ -415,7 +414,6 @@ def _write_data_row(
     *,
     document_type: str,
     seller: str,
-    po_no: str = "",
 ) -> None:
     """数据驱动的行写入：遍历 YAML columns 中声明的所有列，按共享 line spec 写入。"""
     src_row = doc_line.source_row  # 可能为 None（合成数据 / 测试场景）
@@ -433,19 +431,6 @@ def _write_data_row(
         if spec.fixed_value:
             if fixed_unit_label:
                 ws[addr] = fixed_unit_label
-            continue
-
-        # — po_no 特殊处理：用调用方传入的 po_no 而非 doc_line.po_no
-        if key == "po_no":
-            ws[addr] = po_no
-            builder.add(
-                addr,
-                SourceLocation(
-                    spec.source_sheet or SHEET_PO_RECORD,
-                    src_row if uses_po_record_row(spec) else None,
-                    spec.source_field or "PO NO.",
-                ),
-            )
             continue
 
         val = getattr(doc_line, key, None)

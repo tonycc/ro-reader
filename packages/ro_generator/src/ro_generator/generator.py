@@ -136,6 +136,8 @@ def builtin_mapping_path(seller: str, document: str) -> Path | None:
         "PO": "po.yaml",
         "INVOICE": "invoice.yaml",
         "PL": "pl.yaml",
+        "CI": "ci.yaml",
+        "RO_PL": "ro_pl.yaml",
     }.get(document)
     if doc_file is None:
         return None
@@ -247,6 +249,17 @@ def preview_from_snapshot(
             ),
         )
     rows = prefilter_raw_rows(rows, seller=request.seller, documents=documents)
+    if not rows:
+        return PreviewResult(
+            status="error",
+            errors=(
+                ValidationMessage(
+                    kind="blocking_error",
+                    code=CODE_NO_LINES_FOR_SELLER,
+                    message=f"PO {request.po_no!r} 中没有属于 {request.seller} 主体的 CATEGORY 行",
+                ),
+            ),
+        )
 
     # 解析订单行
     resolve_result = resolve_po_rows(
@@ -290,7 +303,7 @@ def preview_from_snapshot(
 
     # Invoice/PL 需要 INV#
     invoice_no = request.invoice_no
-    if doc_type in ("INVOICE", "PL"):
+    if doc_type in ("INVOICE", "PL", "CI", "RO_PL"):
         distinct_invs = _collect_distinct_invoice_nos(
             lines,
             seller=seller,
@@ -357,7 +370,7 @@ def preview_invoice_group_from_snapshot(
     from ro_generator.document_preview import build_preview
 
     doc_type = document.upper()
-    if doc_type not in {"INVOICE", "PL"}:
+    if doc_type not in {"INVOICE", "PL", "CI", "RO_PL"}:
         return _invoice_group_preview_error(
             CODE_UNSUPPORTED_DOCUMENT,
             f"Invoice 视角不支持单据类型 {document!r}",
@@ -415,7 +428,7 @@ def export_invoice_group_from_snapshot(
     """Render Invoice/PL documents for one cross-PO invoice group."""
     normalized_documents = tuple(document.upper() for document in documents)
     if not normalized_documents or any(
-        document not in {"INVOICE", "PL"} for document in normalized_documents
+        document not in {"INVOICE", "PL", "CI", "RO_PL"} for document in normalized_documents
     ):
         return _error_result(
             ValidationMessage(
@@ -479,10 +492,13 @@ def export_invoice_group_from_snapshot(
 
     rendered_paths: list[Path] = []
     filenames: list[str] = []
-    if set(normalized_documents) == {"INVOICE", "PL"}:
+    if set(normalized_documents) in ({"INVOICE", "PL"}, {"CI", "RO_PL"}):
+        combined_label: Literal["INVOICE_PL", "CI_PL"] = (
+            "CI_PL" if set(normalized_documents) == {"CI", "RO_PL"} else "INVOICE_PL"
+        )
         filename = build_invoice_group_document_filename(
             seller=seller,
-            document_type="INVOICE_PL",
+            document_type=combined_label,
             invoice_no=invoice_no,
         )
         output_path = resolve_output_path(output_root, filename)
@@ -498,7 +514,7 @@ def export_invoice_group_from_snapshot(
         for document, build in zip(normalized_documents, builds, strict=True):
             filename = build_invoice_group_document_filename(
                 seller=seller,
-                document_type=cast(Literal["INVOICE", "PL"], document),
+                document_type=cast(Literal["INVOICE", "PL", "CI", "RO_PL"], document),
                 invoice_no=invoice_no,
             )
             output_path = resolve_output_path(output_root, filename)
@@ -595,9 +611,16 @@ def _generate(request: DocumentRequest) -> GenerationResult:
 
     # Invoice/PL 需要 INV# — 如果多行有不同 INV#，要求用户选择
     invoice_no = request.invoice_no
-    invoiced_docs = [d for d in documents if d in ("INVOICE", "PL")]
+    invoiced_docs = [d for d in documents if d in ("INVOICE", "PL", "CI", "RO_PL")]
     if invoiced_docs:
-        invoice_context_doc = "INVOICE" if "INVOICE" in invoiced_docs else "PL"
+        if "INVOICE" in invoiced_docs:
+            invoice_context_doc = "INVOICE"
+        elif "CI" in invoiced_docs:
+            invoice_context_doc = "CI"
+        elif "PL" in invoiced_docs:
+            invoice_context_doc = "PL"
+        else:
+            invoice_context_doc = "RO_PL"
         distinct_invs = _collect_distinct_invoice_nos(
             lines,
             seller=seller,
@@ -638,7 +661,7 @@ def _generate(request: DocumentRequest) -> GenerationResult:
         single_documents = tuple(
             doc_type
             for doc_type in documents
-            if not (combine_invoice_pl and doc_type in ("INVOICE", "PL"))
+            if not (combine_invoice_pl and doc_type in ("INVOICE", "PL", "CI", "RO_PL"))
         )
 
         for doc_type in single_documents:
@@ -811,6 +834,22 @@ def build_document_model(
             po_no=po_no,
             invoice_no=invoice_no,
         )
+    elif doc_type == "CI":
+        build_result = build_invoice_model(
+            lines,
+            seller=seller,
+            buyer=buyer,
+            po_no=po_no,
+            invoice_no=invoice_no,
+        )
+    elif doc_type == "RO_PL":
+        build_result = build_pl_model(
+            lines,
+            seller=seller,
+            buyer=buyer,
+            po_no=po_no,
+            invoice_no=invoice_no,
+        )
     else:
         build_result = build_invoice_model(
             lines,
@@ -886,7 +925,9 @@ def _generate_one(
 
 
 def _should_combine_invoice_pl(seller: str, documents: tuple[str, ...]) -> bool:
-    return "INVOICE" in documents and "PL" in documents
+    return ("INVOICE" in documents and "PL" in documents) or (
+        "CI" in documents and "RO_PL" in documents
+    )
 
 
 def _build_generation_plan(
@@ -912,9 +953,12 @@ def _generate_invoice_pl_bundle(
     invoice_no: str | None,
     request: DocumentRequest,
 ) -> GenerationResult:
+    has_ro = "CI" in request.documents and "RO_PL" in request.documents
+    combined_docs = cast(tuple[DocumentType, ...], ("CI", "RO_PL") if has_ro else ("INVOICE", "PL"))
+    combined_documents = ["CI", "RO_PL"] if has_ro else ["INVOICE", "PL"]
     builds: list[BuildDocumentResult] = []
     warnings: list[ValidationMessage] = []
-    for doc_type in cast(tuple[DocumentType, ...], ("INVOICE", "PL")):
+    for doc_type in combined_docs:
         build = build_document_model(
             lines,
             seller=seller,
@@ -953,7 +997,7 @@ def _generate_invoice_pl_bundle(
         warnings=tuple(warnings),
         source_index=render_result.source_index,
         summary={
-            "combined_documents": ["INVOICE", "PL"],
+            "combined_documents": combined_documents,
             "sheets": [build.mapping.sheet for build in builds if build.mapping is not None],
         },
     )

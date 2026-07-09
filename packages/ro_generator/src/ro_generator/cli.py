@@ -32,7 +32,7 @@ EXIT_ERROR = 1
 EXIT_USAGE = 2
 EXIT_NEEDS_INPUT = 3
 
-VALID_DOCUMENT_TYPES = {"PI", "PO", "INVOICE", "PL"}
+VALID_DOCUMENT_TYPES = {"PI", "PO", "INVOICE", "PL", "CI", "RO_PL"}
 VALID_OUTPUT_FORMATS = {"xlsx", "zip"}
 VALID_ON_CONFLICT = {"overwrite", "rename", "abort"}
 
