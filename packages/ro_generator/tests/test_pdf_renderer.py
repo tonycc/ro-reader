@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from pypdf import PdfReader
 from ro_generator.document_preview import DocumentPreview
 from ro_generator.pdf_renderer import PdfRenderResult, render_pdf
 
 
-def _sample_preview(**overrides) -> DocumentPreview:
-    base = dict(
+def _sample_preview(**overrides: Any) -> DocumentPreview:
+    base: dict[str, Any] = dict(
         document_type="INVOICE",
         title="COMMERCIAL INVOICE",
         seller="GS PTE",

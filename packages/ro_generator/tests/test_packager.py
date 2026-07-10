@@ -282,20 +282,34 @@ def test_filenames_accept_pdf_extension():
         build_invoice_pl_filename,
     )
 
-    assert build_document_filename(
-        seller="GS PTE", document_type="INVOICE", po_no="4500030844",
-        invoice_no="INV-001", extension="pdf",
-    ) == "GS_PTE-GS-INVOICE-4500030844-INV-001.pdf"
+    assert (
+        build_document_filename(
+            seller="GS PTE",
+            document_type="INVOICE",
+            po_no="4500030844",
+            invoice_no="INV-001",
+            extension="pdf",
+        )
+        == "GS_PTE-GS-INVOICE-4500030844-INV-001.pdf"
+    )
 
     assert build_invoice_pl_filename(
-        seller="GS PTE", po_no="4500030844", invoice_no="INV-001", extension="pdf",
+        seller="GS PTE",
+        po_no="4500030844",
+        invoice_no="INV-001",
+        extension="pdf",
     ).endswith(".pdf")
 
     assert build_invoice_group_document_filename(
-        seller="SK", document_type="CI_PL", invoice_no="INV-001", extension="pdf",
+        seller="SK",
+        document_type="CI_PL",
+        invoice_no="INV-001",
+        extension="pdf",
     ).endswith(".pdf")
 
     # 默认仍为 xlsx
     assert build_document_filename(
-        seller="GS PTE", document_type="PI", po_no="4500030844",
+        seller="GS PTE",
+        document_type="PI",
+        po_no="4500030844",
     ).endswith(".xlsx")
