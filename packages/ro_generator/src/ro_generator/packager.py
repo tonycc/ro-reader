@@ -35,6 +35,7 @@ def build_document_filename(
     document_type: DocumentType,
     po_no: str,
     invoice_no: str | None = None,
+    extension: str = "xlsx",
 ) -> str:
     seller_token = _sanitize(seller)
     po_token = _sanitize(po_no)
@@ -42,7 +43,7 @@ def build_document_filename(
     base = f"{seller_token}-{version}-{document_type}-{po_token}"
     if document_type in ("INVOICE", "PL", "CI", "RO_PL") and invoice_no:
         base = f"{base}-{_sanitize(invoice_no)}"
-    return f"{base}.xlsx"
+    return f"{base}.{extension}"
 
 
 def build_invoice_pl_filename(
@@ -50,13 +51,14 @@ def build_invoice_pl_filename(
     seller: str,
     po_no: str,
     invoice_no: str | None = None,
+    extension: str = "xlsx",
 ) -> str:
     seller_token = _sanitize(seller)
     po_token = _sanitize(po_no)
     base = f"{seller_token}-GS-INVOICE&PL-{po_token}"
     if invoice_no:
         base = f"{base}-{_sanitize(invoice_no)}"
-    return f"{base}.xlsx"
+    return f"{base}.{extension}"
 
 
 def build_invoice_group_document_filename(
@@ -64,6 +66,7 @@ def build_invoice_group_document_filename(
     seller: str,
     document_type: Literal["INVOICE", "PL", "INVOICE_PL", "CI", "RO_PL", "CI_PL"],
     invoice_no: str,
+    extension: str = "xlsx",
 ) -> str:
     if document_type == "INVOICE_PL":
         document_token = "INVOICE&PL"
@@ -77,7 +80,7 @@ def build_invoice_group_document_filename(
     else:
         document_token = document_type
         version = "GS"
-    return f"{_sanitize(seller)}-{version}-{document_token}-{_sanitize(invoice_no)}.xlsx"
+    return f"{_sanitize(seller)}-{version}-{document_token}-{_sanitize(invoice_no)}.{extension}"
 
 
 def build_invoice_group_zip_filename(*, invoice_no: str) -> str:
