@@ -96,6 +96,7 @@ export interface InvoiceInspectionResponse {
 export interface DryRunRequest {
   base_file: string; po_no: string; seller: string
   invoice_no?: string | null; document?: string; documents?: string[]
+  output_format?: "xlsx" | "pdf"
 }
 
 export interface BatchExportGroup {
@@ -252,8 +253,9 @@ export const api = {
     invoice_group_key: string,
     seller: string,
     documents: Array<"INVOICE" | "PL" | "CI" | "RO_PL">,
+    output_format: "xlsx" | "pdf" = "xlsx",
   ): Promise<DryRunResult> =>
-    request("POST", `/invoice/${encodeURIComponent(invoice_group_key)}/export`, { seller, documents }),
+    request("POST", `/invoice/${encodeURIComponent(invoice_group_key)}/export`, { seller, documents, output_format }),
   exportInvoiceDocumentGroups: (
     invoice_group_key: string,
     groups: BatchExportGroup[],

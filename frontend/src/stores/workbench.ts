@@ -194,7 +194,7 @@ export const useWorkbench = defineStore("workbench", () => {
 
   type ExportGroup = { seller: string; documents: string[] };
 
-  async function doExport(documents?: string[]) {
+  async function doExport(documents?: string[], outputFormat: "xlsx" | "pdf" = "xlsx") {
     if (!baseFile.value || !selectedSeller.value) return;
     if (previewScope.value === "po" && !selectedPo.value) return;
     if (previewScope.value === "invoice" && !selectedInvoiceGroup.value) return;
@@ -214,6 +214,7 @@ export const useWorkbench = defineStore("workbench", () => {
           selectedInvoiceGroup.value,
           selectedSeller.value,
           invoiceDocuments,
+          outputFormat,
         );
         if (result.status !== "success") {
           exportError.value = formatExportFailure(result);
@@ -227,10 +228,14 @@ export const useWorkbench = defineStore("workbench", () => {
       return await exportOneGroup({
         seller: selectedSeller.value,
         documents: exportDocuments,
-      });
+      }, outputFormat);
     } catch (e) {
       exportError.value = e instanceof ApiError ? e.message : `导出失败：${e}`;
     } finally { exporting.value = false; }
+  }
+
+  async function doExportPdf() {
+    return doExport(undefined, "pdf");
   }
 
   async function doExportGroups(groups: BatchExportGroup[]) {
@@ -287,7 +292,7 @@ export const useWorkbench = defineStore("workbench", () => {
     } finally { exporting.value = false; }
   }
 
-  async function exportOneGroup(group: ExportGroup) {
+  async function exportOneGroup(group: ExportGroup, outputFormat: "xlsx" | "pdf" = "xlsx") {
     const exportDocuments = group.documents;
     if (!exportDocuments.length) return;
     try {
@@ -295,6 +300,7 @@ export const useWorkbench = defineStore("workbench", () => {
         base_file: baseFile.value, po_no: selectedPo.value,
         seller: group.seller, invoice_no: invoiceNoForSeller(group.seller),
         document: exportDocuments[0], documents: exportDocuments,
+        output_format: outputFormat,
       };
       const result = await api.exportDocuments(payload);
       if (result.status !== "success") {
@@ -452,7 +458,7 @@ export const useWorkbench = defineStore("workbench", () => {
     poIssues, issuesLoading, issuesError,
     previewError, exportError,
     poEntry, poStatus, invoiceEntry, invoiceStatus,
-    openSession, selectPo, refreshPreview, editCell, doExport, doExportGroups, doExportInvoiceGroups,
+    openSession, selectPo, refreshPreview, editCell, doExport, doExportPdf, doExportGroups, doExportInvoiceGroups,
     selectSeller, selectInvoice, selectPreviewScope, selectInvoiceGroup,
     refreshPoIssues, refreshInvoiceInspection,
   };
