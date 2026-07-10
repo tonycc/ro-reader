@@ -73,6 +73,10 @@ async function exportCurrentDocument() {
   await wb.doExport();
 }
 
+async function exportCurrentDocumentPdf() {
+  await wb.doExportPdf();
+}
+
 async function toggleIssuePanel() {
   issuePanelOpen.value = !issuePanelOpen.value;
   if (wb.previewScope === "po" && issuePanelOpen.value && !wb.poIssues && !wb.issuesLoading) {
@@ -273,6 +277,14 @@ onUnmounted(() => {
             v-if="hasData"
           >
             {{ wb.exporting ? "导出中…" : `导出 ${currentDocLabel}` }}
+          </button>
+          <button
+            class="ghost-btn export-btn"
+            :disabled="!hasData || wb.exporting || wb.previewLoading"
+            @click="exportCurrentDocumentPdf"
+            v-if="hasData"
+          >
+            导出 PDF
           </button>
           <button
             class="ghost-btn"
