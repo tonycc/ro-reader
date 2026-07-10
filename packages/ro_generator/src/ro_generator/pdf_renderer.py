@@ -74,6 +74,35 @@ def _section_flowables(preview: DocumentPreview, styles: Any) -> list[Any]:
 
     # 标题
     flow.append(Paragraph(_xml_escape(preview.title or preview.document_type), styles["Title"]))
+    flow.append(Spacer(1, 4 * mm))
+
+    # 头信息区（top + info），左右分栏
+    header_rows: list[list[Any]] = []
+    for section in ("top", "info"):
+        left = _region_lines(preview, section, "left")
+        right = _region_lines(preview, section, "right")
+        center = _region_lines(preview, section, "center")
+        left_all = left + center
+        if not left_all and not right:
+            continue
+        header_rows.append(
+            [
+                Paragraph("<br/>".join(_xml_escape(x) for x in left_all), styles["Normal"]),
+                Paragraph("<br/>".join(_xml_escape(x) for x in right), styles["Normal"]),
+            ]
+        )
+    if header_rows:
+        htable = Table(header_rows, colWidths=["55%", "45%"])
+        htable.setStyle(
+            TableStyle(
+                [
+                    ("FONTSIZE", (0, 0), (-1, -1), 8),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ]
+            )
+        )
+        flow.append(htable)
     flow.append(Spacer(1, 6 * mm))
 
     # 明细表
@@ -122,3 +151,49 @@ def _totals_lines(preview: DocumentPreview) -> list[str]:
             continue
         lines.append(f"<b>{_xml_escape(str(label))}:</b> {_xml_escape(str(value))}")
     return lines
+
+
+_FIELD_LABELS = {
+    "po_no": "PO NO.",
+    "invoice_no": "INVOICE NO.",
+    "pi_no": "PI NO.",
+    "ship_to": "SHIP TO",
+    "buyer": "BUYER",
+}
+
+
+def _region_lines(preview: DocumentPreview, section: str, position: str) -> list[str]:
+    layout = preview.layout if isinstance(preview.layout, dict) else {}
+    sec = layout.get(section, {})
+    if not isinstance(sec, dict):
+        return []
+    fields = sec.get(position, [])
+    if not isinstance(fields, list):
+        return []
+    out: list[str] = []
+    for field in fields:
+        if isinstance(field, str):
+            out.extend(_field_lines(preview, field))
+    return out
+
+
+def _field_lines(preview: DocumentPreview, field: str) -> list[str]:
+    if field == "title":
+        return []  # 标题已单独渲染
+    if field == "seller_info":
+        return [str(x) for x in preview.seller_info]
+    if field == "to_label":
+        return [preview.to_label] if preview.to_label else []
+    if field == "terms":
+        return [f"{k}: {v}" for k, v in preview.terms.items()]
+    if field == "seller":
+        return [preview.seller] if preview.seller else []
+    # 其余字段：优先 resolved_values，其次直接属性
+    resolved = (
+        preview.resolved_values.get(field) if isinstance(preview.resolved_values, dict) else None
+    )
+    value = resolved if resolved else getattr(preview, field, None)
+    if not value:
+        return []
+    label = _FIELD_LABELS.get(field)
+    return [f"{label}: {value}" if label else str(value)]
