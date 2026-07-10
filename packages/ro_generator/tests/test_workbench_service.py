@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, cast
 from zipfile import ZipFile
 
+from pytest import MonkeyPatch
 from ro_generator.workbench_service import (
     ExportDocumentGroup,
     export_document_groups,
@@ -101,5 +102,34 @@ def test_export_document_groups_returns_single_zip(tmp_path: Path) -> None:
         "GS_PTE-GS-PI-4500099999.xlsx",
         "EMAX_PTE-GS-PI-4500099999.xlsx",
     )
+    with ZipFile(result.output_file) as zf:
+        assert sorted(zf.namelist()) == sorted(result.files)
+
+
+def test_export_document_groups_both_formats(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    """选 xlsx+pdf 时每份单据各产一份，一起打进 ZIP。伪造转换，无需 LibreOffice。"""
+
+    def _fake_convert(xlsx_path: Any, **_kwargs: Any) -> Path:
+        pdf_path = Path(xlsx_path).with_suffix(".pdf")
+        pdf_path.write_bytes(b"%PDF-1.4 fake\n")
+        return pdf_path
+
+    monkeypatch.setattr("ro_generator.generator.convert_to_pdf", _fake_convert)
+
+    result = export_document_groups(
+        base_file=str(FIXTURE),
+        po_no="4500099999",
+        output_dir=str(tmp_path),
+        groups=(ExportDocumentGroup(seller="GS PTE", documents=("PI",)),),
+        formats=("xlsx", "pdf"),
+    )
+
+    assert result.status == "success", result.errors
+    assert result.output_file is not None
+    assert result.output_file.endswith(".zip")
+    assert set(result.files) == {
+        "GS_PTE-GS-PI-4500099999.xlsx",
+        "GS_PTE-GS-PI-4500099999.pdf",
+    }
     with ZipFile(result.output_file) as zf:
         assert sorted(zf.namelist()) == sorted(result.files)

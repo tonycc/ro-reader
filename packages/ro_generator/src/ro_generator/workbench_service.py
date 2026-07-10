@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from ro_generator.errors import WorkbookOpenError
 from ro_generator.generator import export_invoice_group_from_snapshot, generate
@@ -65,6 +66,16 @@ class ExportDocumentGroup:
     seller: str
     documents: tuple[DocumentType, ...]
     invoice_no: str | None = None
+
+
+# 导出确认页支持的输出格式。pdf 由 LibreOffice 无头转换（见 pdf_convert.py）。
+ExportFormat = Literal["xlsx", "pdf"]
+
+
+def _normalize_formats(formats: tuple[ExportFormat, ...]) -> tuple[ExportFormat, ...]:
+    """去重并固定顺序（xlsx 在前），空则回退到仅 xlsx。"""
+    ordered: tuple[ExportFormat, ...] = tuple(fmt for fmt in ("xlsx", "pdf") if fmt in formats)
+    return ordered or ("xlsx",)
 
 
 def inspect_workbook(base_file: str) -> WorkbookInspectionResult:
@@ -161,11 +172,13 @@ def export_document_groups(
     po_no: str,
     output_dir: str,
     groups: tuple[ExportDocumentGroup, ...],
+    formats: tuple[ExportFormat, ...] = ("xlsx",),
 ) -> GenerationResult:
     """按主体批量导出，并把所有可生成文件合并成一个 ZIP。
 
-    这是工作台导出确认页的核心入口：API 只负责把前端选择转成 groups，
+    这是工作台导出确认页的核心入口：API 只负责把前端选择转成 groups + formats，
     真正的单据生成、阻断错误和 ZIP 打包都留在核心包。
+    `formats` 决定每份单据产出哪些格式（xlsx / pdf），两者都选则各产一份。
     """
     if not groups:
         return GenerationResult(
@@ -179,35 +192,38 @@ def export_document_groups(
             ),
         )
 
+    formats = _normalize_formats(formats)
     output_root = Path(output_dir)
     output_root.mkdir(parents=True, exist_ok=True)
     rendered_files: list[Path] = []
     warnings: list[ValidationMessage] = []
 
     for index, group in enumerate(groups, start=1):
-        group_dir = output_root / f"group-{index}"
-        request = DocumentRequest(
-            base_file=base_file,
-            po_no=po_no,
-            seller=group.seller,
-            invoice_no=group.invoice_no,
-            documents=group.documents,
-            output_format="xlsx",
-            output_dir=str(group_dir),
-        )
-        result = generate(request)
-        warnings.extend(result.warnings)
-
-        if result.status != "success":
-            return GenerationResult(
-                status=result.status,
-                errors=result.errors,
-                warnings=tuple(warnings),
-                missing_inputs=result.missing_inputs,
-                options=result.options,
+        for output_format in formats:
+            # 每种格式独立子目录：pdf 会先渲染再删中间 xlsx，若与 xlsx 同目录会互相覆盖/删除。
+            group_dir = output_root / f"group-{index}-{output_format}"
+            request = DocumentRequest(
+                base_file=base_file,
+                po_no=po_no,
+                seller=group.seller,
+                invoice_no=group.invoice_no,
+                documents=group.documents,
+                output_format=output_format,
+                output_dir=str(group_dir),
             )
+            result = generate(request)
+            warnings.extend(result.warnings)
 
-        rendered_files.extend(_generated_file_paths(result))
+            if result.status != "success":
+                return GenerationResult(
+                    status=result.status,
+                    errors=result.errors,
+                    warnings=tuple(warnings),
+                    missing_inputs=result.missing_inputs,
+                    options=result.options,
+                )
+
+            rendered_files.extend(_generated_file_paths(result))
 
     if len(rendered_files) == 1:
         return GenerationResult(
@@ -257,8 +273,12 @@ def export_invoice_document_groups(
     invoice_group_key: str,
     groups: tuple[ExportDocumentGroup, ...],
     output_dir: str,
+    formats: tuple[ExportFormat, ...] = ("xlsx",),
 ) -> GenerationResult:
-    """批量导出票据组下多个 seller 的单据，多文件时打包为 ZIP。"""
+    """批量导出票据组下多个 seller 的单据，多文件时打包为 ZIP。
+
+    `formats` 决定每份单据产出哪些格式（xlsx / pdf）。
+    """
     if not groups:
         return GenerationResult(
             status="error",
@@ -272,30 +292,34 @@ def export_invoice_document_groups(
             warnings=(),
         )
 
+    formats = _normalize_formats(formats)
     output_root = Path(output_dir)
     output_root.mkdir(parents=True, exist_ok=True)
     rendered_files: list[Path] = []
     all_warnings: list[ValidationMessage] = []
 
     for index, group in enumerate(groups, start=1):
-        group_dir = output_root / f"group-{index}"
-        result = export_invoice_group_from_snapshot(
-            snapshot,
-            invoice_group_key,
-            seller=group.seller,
-            documents=group.documents,
-            output_dir=str(group_dir),
-        )
-        all_warnings.extend(result.warnings)
-        if result.status != "success":
-            return GenerationResult(
-                status=result.status,
-                errors=result.errors,
-                warnings=tuple(all_warnings),
-                missing_inputs=result.missing_inputs,
-                options=result.options,
+        for output_format in formats:
+            # 每种格式独立子目录：pdf 会先渲染再删中间 xlsx，若与 xlsx 同目录会互相覆盖/删除。
+            group_dir = output_root / f"group-{index}-{output_format}"
+            result = export_invoice_group_from_snapshot(
+                snapshot,
+                invoice_group_key,
+                seller=group.seller,
+                documents=group.documents,
+                output_dir=str(group_dir),
+                output_format=output_format,
             )
-        rendered_files.extend(_generated_file_paths(result))
+            all_warnings.extend(result.warnings)
+            if result.status != "success":
+                return GenerationResult(
+                    status=result.status,
+                    errors=result.errors,
+                    warnings=tuple(all_warnings),
+                    missing_inputs=result.missing_inputs,
+                    options=result.options,
+                )
+            rendered_files.extend(_generated_file_paths(result))
 
     if len(rendered_files) == 1:
         return GenerationResult(

@@ -214,6 +214,7 @@ class InvoiceExportRequest(BaseModel):
 
 class InvoiceBatchExportRequest(BaseModel):
     groups: list[ExportGroupRequest]
+    output_formats: list[Literal["xlsx", "pdf"]] = ["xlsx"]
 
 
 class ExportGroupRequest(BaseModel):
@@ -226,6 +227,7 @@ class BatchExportRequest(BaseModel):
     base_file: str
     po_no: str
     groups: list[ExportGroupRequest]
+    output_formats: list[Literal["xlsx", "pdf"]] = ["xlsx"]
 
 
 class EditFieldRequest(BaseModel):
@@ -565,6 +567,7 @@ def export_invoice_group_batch(
         invoice_group_key=invoice_group_key,
         groups=groups,
         output_dir=session.temp_dir,
+        formats=tuple(req.output_formats),
     )
     return _result_to_dict(result)
 
@@ -767,6 +770,7 @@ def export_document_batch(
         po_no=po_no,
         output_dir=session.temp_dir,
         groups=groups,
+        formats=tuple(req.output_formats),
     )
     return _result_to_dict(result)
 

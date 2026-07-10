@@ -11,6 +11,7 @@ import type {
   PreviewResponse,
   ValidationIssue,
   BatchExportGroup,
+  ExportFileFormat,
   InvoiceListItem,
   InvoiceInspectionResponse,
   PreviewScope,
@@ -240,7 +241,7 @@ export const useWorkbench = defineStore("workbench", () => {
     return doExport(undefined, "pdf");
   }
 
-  async function doExportGroups(groups: BatchExportGroup[]) {
+  async function doExportGroups(groups: BatchExportGroup[], formats: ExportFileFormat[] = ["xlsx"]) {
     if (!baseFile.value || !selectedPo.value || !groups.length) return;
     exporting.value = true;
     exportError.value = "";
@@ -254,6 +255,7 @@ export const useWorkbench = defineStore("workbench", () => {
           documents: group.documents,
           invoice_no: group.invoice_no ?? null,
         })),
+        output_formats: formats,
       });
       if (result.status !== "success") {
         exportError.value = formatExportFailure(result);
@@ -268,7 +270,7 @@ export const useWorkbench = defineStore("workbench", () => {
     } finally { exporting.value = false; }
   }
 
-  async function doExportInvoiceGroups(groups: BatchExportGroup[]) {
+  async function doExportInvoiceGroups(groups: BatchExportGroup[], formats: ExportFileFormat[] = ["xlsx"]) {
     if (!selectedInvoiceGroup.value || !groups.length) return;
     exporting.value = true;
     exportError.value = "";
@@ -280,6 +282,7 @@ export const useWorkbench = defineStore("workbench", () => {
           seller: group.seller,
           documents: group.documents,
         })),
+        formats,
       );
       if (result.status !== "success") {
         exportError.value = formatExportFailure(result);
