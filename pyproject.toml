@@ -27,6 +27,7 @@ dev = [
     "types-PyYAML>=6.0",
     "pyinstaller>=6.20.0",
     "xlrd<2",
+    "pypdf>=4.0",
 ]
 
 [tool.ruff]
@@ -76,6 +77,10 @@ module = ["tests.*", "packages.*.tests.*"]
 disallow_untyped_defs = false
 disallow_untyped_calls = false
 check_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = ["reportlab.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["packages/*/tests", "tests"]
