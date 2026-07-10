@@ -113,3 +113,20 @@ def test_render_pdf_contains_header_layout_fields(tmp_path):
     assert "EMAX WAREHOUSE" in text
     assert "4500030844" in text
     assert "INV-001" in text
+
+
+def test_render_pdf_multi_preview_paginates(tmp_path):
+    inv = _sample_preview(title="COMMERCIAL INVOICE")
+    pl = _sample_preview(
+        document_type="PL",
+        title="PACKING LIST",
+        totals={"total_quantity": "100 PCS", "_labels": {"total_quantity": "TOTAL QTY"}},
+        notes=["PACKED IN 5 CTNS"],
+    )
+    out = tmp_path / "bundle.pdf"
+    render_pdf([inv, pl], out)
+    reader = PdfReader(str(out))
+    assert len(reader.pages) == 2
+    all_text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    assert "COMMERCIAL INVOICE" in all_text
+    assert "PACKING LIST" in all_text
