@@ -184,7 +184,7 @@ class DocumentRequest:
     documents: tuple[DocumentType, ...]
     seller: str | None = None
     invoice_no: str | None = None
-    output_format: Literal["xlsx", "zip"] = "xlsx"
+    output_format: Literal["xlsx", "zip", "pdf"] = "xlsx"
     output_dir: str = "outputs"
     on_conflict: Literal["overwrite", "rename", "abort"] = "overwrite"
 
