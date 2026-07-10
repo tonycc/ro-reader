@@ -198,6 +198,7 @@ class DryRunRequest(BaseModel):
     invoice_no: str | None = None
     document: str = "INVOICE"
     documents: list[str] | None = None
+    output_format: Literal["xlsx", "pdf"] = "xlsx"
 
 
 class InvoicePreviewRequest(BaseModel):
@@ -208,6 +209,7 @@ class InvoicePreviewRequest(BaseModel):
 class InvoiceExportRequest(BaseModel):
     seller: str
     documents: list[Literal["INVOICE", "PL", "CI", "RO_PL"]]
+    output_format: Literal["xlsx", "pdf"] = "xlsx"
 
 
 class InvoiceBatchExportRequest(BaseModel):
@@ -377,7 +379,7 @@ def _build_document_request(
     po_no: str,
     output_dir: str,
     documents: tuple[DocumentType, ...],
-    output_format: Literal["xlsx", "zip"] = "xlsx",
+    output_format: Literal["xlsx", "zip", "pdf"] = "xlsx",
 ) -> DocumentRequest:
     return DocumentRequest(
         base_file=req.base_file,
@@ -532,6 +534,7 @@ def export_invoice_group(
         seller=req.seller,
         documents=tuple(req.documents),
         output_dir=session.temp_dir,
+        output_format=req.output_format,
     )
     return _result_to_dict(result)
 
@@ -731,7 +734,7 @@ def export_documents(
         po_no=po_no,
         documents=documents,
         output_dir=session.temp_dir,
-        output_format="xlsx",
+        output_format=req.output_format,
     )
     result = generate(request)
     return _result_to_dict(result)
@@ -802,11 +805,13 @@ def download_file(
 
     if not p.exists():
         raise HTTPException(404, detail=f"file not found: {path}")
-    media_type = (
-        "application/zip"
-        if p.suffix.lower() == ".zip"
-        else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+    suffix = p.suffix.lower()
+    if suffix == ".zip":
+        media_type = "application/zip"
+    elif suffix == ".pdf":
+        media_type = "application/pdf"
+    else:
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     return FileResponse(str(p), media_type=media_type)
 
 

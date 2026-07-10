@@ -496,6 +496,53 @@ def test_check_path_unsupported_extension(tmp_path: Path) -> None:
     assert "不支持" in data["error"]
 
 
+def test_po_export_pdf_passthrough_and_download(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_generate(request: DocumentRequest) -> GenerationResult:
+        captured["output_format"] = request.output_format
+        output = Path(request.output_dir) / "GS-RO-INVOICE-4500099999-INV-001.pdf"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"%PDF-1.4 fake")
+        return GenerationResult(
+            status="success",
+            files=(output.name,),
+            output_file=str(output),
+        )
+
+    monkeypatch.setattr("ro_workbench_api.app.generate", fake_generate)
+    sid = _response_json(client.post("/api/session/open", json={"base_file": str(FIXTURE)}))[
+        "session_id"
+    ]
+
+    resp = client.post(
+        "/api/po/4500099999/export",
+        json={
+            "base_file": str(FIXTURE),
+            "po_no": "4500099999",
+            "seller": "GS PTE",
+            "invoice_no": "INV-001",
+            "documents": ["INVOICE"],
+            "output_format": "pdf",
+        },
+        headers={"X-Session-Id": sid},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert captured["output_format"] == "pdf"
+    assert body["output_file"].endswith(".pdf")
+
+    dl = client.get(
+        "/api/download",
+        params={"path": body["output_file"]},
+        headers={"X-Session-Id": sid},
+    )
+    assert dl.status_code == 200
+    assert dl.headers["content-type"] == "application/pdf"
+
+
 # --- Health ---
 
 
