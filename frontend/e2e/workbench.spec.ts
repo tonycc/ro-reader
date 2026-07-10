@@ -418,4 +418,27 @@ test.describe("RO Workbench E2E", () => {
     await expect(issuePanel).toContainText("阻断原因");
     await expect(issuePanel).toContainText("SAP");
   });
+
+  test("preview screen exports PDF", async ({ page }) => {
+    await openBaseFile(page);
+    await page.locator(".po-card").filter({ hasText: "4500099999" }).click();
+    await page.waitForTimeout(2000);
+
+    // Navigate to preview tab, pick seller + document
+    await page.locator(".tab").filter({ hasText: "单据预览" }).click();
+    await page.waitForTimeout(2000);
+    // select GS PTE seller (filter pills on preview)
+    await page.locator(".filter-pill").filter({ hasText: "GS PTE" }).click();
+    await page.waitForTimeout(1000);
+    // select PI document
+    await page.locator(".filter-pill").filter({ hasText: "PI" }).click();
+    await page.waitForTimeout(2000);
+
+    // Click the "导出 PDF" button and capture download
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("button", { name: "导出 PDF" }).click(),
+    ]);
+    expect(download.suggestedFilename()).toMatch(/\.pdf$/);
+  });
 });
