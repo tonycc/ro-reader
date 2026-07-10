@@ -48,6 +48,9 @@ jobs:
         with: { version: latest }
       - run: uv python install 3.11
       - run: uv sync --all-packages
+      # e2e 打开的是合成 base 文件（.gitignore，需生成）；后端 webServer 以仓库根为 cwd。
+      - run: uv run python tests/fixtures/generate_synthetic_base.py
+        working-directory: ${{ github.workspace }}
       - uses: pnpm/action-setup@v4
         with: { version: 9 }
       - uses: actions/setup-node@v4
