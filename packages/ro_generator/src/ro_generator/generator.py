@@ -894,17 +894,33 @@ def _generate_one(
     if build.model is None or build.mapping is None:
         return GenerationResult(status="error", errors=blocking, warnings=doc_warnings)
 
+    is_pdf = request.output_format == "pdf"
     filename = build_document_filename(
         seller=seller,
         document_type=doc_type,
         po_no=po_no,
         invoice_no=invoice_no,
+        extension="pdf" if is_pdf else "xlsx",
     )
     output_path = resolve_output_path(
         request.output_dir,
         filename,
         on_conflict=request.on_conflict,
     )
+
+    if is_pdf:
+        from ro_generator.document_preview import build_preview
+        from ro_generator.pdf_renderer import render_pdf
+
+        preview = build_preview(build)
+        pdf_result = render_pdf([preview], output_path)
+        return GenerationResult(
+            status="success",
+            files=(filename,),
+            output_file=str(pdf_result.output_path),
+            warnings=doc_warnings,
+        )
+
     render_result = render_document(build.model, build.mapping, output_path)
 
     return GenerationResult(
