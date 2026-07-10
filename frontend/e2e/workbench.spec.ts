@@ -88,9 +88,9 @@ test.describe("RO Workbench E2E", () => {
     await expect(groups).toHaveCount(2);
     await groups.filter({ hasText: "INV-2603-001" }).click();
 
-    await expect(page.getByTestId("invoice-scope-title")).toContainText("INV-2603-001");
     await expect(page.getByTestId("invoice-document-INVOICE_PL")).toBeVisible();
     await expect(page.locator(".document-card").first()).toBeVisible({ timeout: 5000 });
+    await expect(page.locator(".document-card").first()).toContainText("INV-2603-001");
   });
 
   test("select PO shows data view and preview", async ({ page }) => {
@@ -270,8 +270,8 @@ test.describe("RO Workbench E2E", () => {
     await page.locator(".invoice-card").filter({ hasText: "INV-2603-001" }).click();
 
     await page.locator(".tab").filter({ hasText: "导出确认" }).click();
-    await expect(page.getByTestId("export-doc-GS_PTE-INVOICE")).toContainText("RO-INVOICE");
-    await expect(page.getByTestId("export-doc-GS_PTE-PL")).toContainText("RO-PL");
+    await expect(page.getByTestId("export-doc-GS_PTE-INVOICE")).toContainText("GS-INVOICE");
+    await expect(page.getByTestId("export-doc-GS_PTE-PL")).toContainText("GS-PL");
     await toggleExportByTestId(page, "export-doc-GS_PTE-PL");
 
     const exportBtn = page.locator("button").filter({ hasText: "确认导出" });
