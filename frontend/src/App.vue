@@ -6,7 +6,10 @@ import QueueSidebar from "./components/po-list/QueueSidebar.vue";
 import DataCheckScreen from "./components/data-view/DataCheckScreen.vue";
 import PreviewScreen from "./components/preview/PreviewScreen.vue";
 import ExportScreen from "./components/export/ExportScreen.vue";
+import LibreOfficePrompt from "./components/common/LibreOfficePrompt.vue";
+import { useWorkbench } from "./stores/workbench";
 
+const wb = useWorkbench();
 const activeTab = ref<"check" | "preview" | "export">("check");
 
 function selectWorkflowTab(tab: "check" | "preview" | "export") {
@@ -38,6 +41,7 @@ function selectWorkflowTab(tab: "check" | "preview" | "export") {
       </section>
     </main>
     <StatusBar />
+    <LibreOfficePrompt v-if="wb.libreOfficeMissing" />
   </div>
 </template>
 

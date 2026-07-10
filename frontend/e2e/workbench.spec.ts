@@ -441,4 +441,55 @@ test.describe("RO Workbench E2E", () => {
     ]);
     expect(download.suggestedFilename()).toMatch(/\.pdf$/);
   });
+
+  test("shows LibreOffice prompt when converter is unavailable", async ({ page }) => {
+    // 拦截导出请求，模拟后端"未装 LibreOffice"阻断错误（与 CI 是否装了 soffice 无关）。
+    await page.route("**/api/po/*/export", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          status: "error",
+          summary: {},
+          files: [],
+          output_file: null,
+          errors: [
+            {
+              kind: "blocking_error",
+              code: "PDF_CONVERTER_UNAVAILABLE",
+              message: "未检测到 LibreOffice",
+              sheet: null,
+              row: null,
+              field: null,
+            },
+          ],
+          warnings: [],
+          missing_inputs: [],
+          source_index: [],
+        }),
+      }),
+    );
+
+    await openBaseFile(page);
+    await page.locator(".po-card").filter({ hasText: "4500099999" }).click();
+    await page.waitForTimeout(2000);
+    await page.locator(".tab").filter({ hasText: "单据预览" }).click();
+    await page.waitForTimeout(2000);
+    await selectGsSeller(page);
+    await page.waitForTimeout(1000);
+    await selectPiDocument(page);
+    await page.waitForTimeout(2000);
+
+    await page.getByRole("button", { name: "导出 PDF" }).click();
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toContainText("需要安装 LibreOffice");
+    await expect(dialog.getByRole("link", { name: "前往下载" })).toHaveAttribute(
+      "href",
+      /libreoffice\.org/,
+    );
+
+    await dialog.getByRole("button", { name: "关闭" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  });
 });
