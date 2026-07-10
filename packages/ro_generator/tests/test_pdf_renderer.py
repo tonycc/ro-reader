@@ -59,3 +59,37 @@ def test_render_pdf_contains_title_columns_totals_notes(tmp_path):
     assert "CB2500.B2" in text
     assert "$2,800.00" in text
     assert "PACKED IN 5 CTNS" in text
+
+
+def test_render_pdf_empty_previews_raises(tmp_path):
+    import pytest
+
+    with pytest.raises(ValueError):
+        render_pdf([], tmp_path / "x.pdf")
+
+
+def test_render_pdf_landscape_when_many_columns(tmp_path):
+    out = tmp_path / "wide.pdf"
+    column_labels = [{"key": f"c{i}", "label": f"COL {i}"} for i in range(8)]
+    lines = [{f"c{i}": str(i) for i in range(8)}]
+    render_pdf([_sample_preview(column_labels=column_labels, lines=lines)], out)
+    assert out.exists()
+    assert out.read_bytes()[:4] == b"%PDF"
+
+
+def test_render_pdf_escapes_special_chars(tmp_path):
+    out = tmp_path / "special.pdf"
+    preview = _sample_preview(
+        title="INVOICE M&M",
+        notes=["A & B <ok>"],
+        totals={
+            "total_amount": "A & B",
+            "_labels": {"total_amount": "TOTAL & AMOUNT"},
+        },
+    )
+    render_pdf([preview], out)
+    text = _text(out)
+    assert "M&M" in text
+    assert "A & B" in text
+    assert "ok" in text
+    assert "TOTAL & AMOUNT" in text

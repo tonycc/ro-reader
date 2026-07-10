@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from xml.sax.saxutils import escape as _xml_escape
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
@@ -72,7 +73,7 @@ def _section_flowables(preview: DocumentPreview, styles: Any) -> list[Any]:
     flow: list[Any] = []
 
     # 标题
-    flow.append(Paragraph(preview.title or preview.document_type, styles["Title"]))
+    flow.append(Paragraph(_xml_escape(preview.title or preview.document_type), styles["Title"]))
     flow.append(Spacer(1, 6 * mm))
 
     # 明细表
@@ -105,7 +106,7 @@ def _section_flowables(preview: DocumentPreview, styles: Any) -> list[Any]:
     if preview.notes:
         flow.append(Spacer(1, 4 * mm))
         for note in preview.notes:
-            flow.append(Paragraph(str(note), styles["Normal"]))
+            flow.append(Paragraph(_xml_escape(str(note)), styles["Normal"]))
 
     return flow
 
@@ -119,5 +120,5 @@ def _totals_lines(preview: DocumentPreview) -> list[str]:
         value = preview.totals.get(key)
         if value is None:
             continue
-        lines.append(f"<b>{label}:</b> {value}")
+        lines.append(f"<b>{_xml_escape(str(label))}:</b> {_xml_escape(str(value))}")
     return lines
