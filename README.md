@@ -8,6 +8,7 @@
 - [uv](https://docs.astral.sh/uv/)（Python 包管理）
 - Node.js 20+ + [pnpm](https://pnpm.io/) 9+（前端）
 - macOS / Windows / Linux
+- **导出 PDF 需预装 [LibreOffice](https://www.libreoffice.org/)**（仅 PDF 导出用到）。PDF 由"渲染 xlsx 模板 → LibreOffice 无头转换"生成，以保证版式与 Excel 模板逐格一致；未安装时 PDF 导出会返回明确的阻断错误（`PDF_CONVERTER_UNAVAILABLE`），Excel 导出不受影响。若 `soffice` 不在标准位置，可用环境变量 `RO_SOFFICE_PATH` 指定其路径。
 
 ## 快速启动（开发模式）
 

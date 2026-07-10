@@ -1,5 +1,10 @@
 # PDF 导出功能设计
 
+> **修订记录（2026-07-10，v3 — 渲染引擎推翻）**：v2 用 **reportlab** 从 `DocumentPreview` 重画 PDF，结果**版式与 Excel 模板不一致**（reportlab 只是照简化版预览另画一套，不读 `.xlsx` 模板，字体/列宽/合并单元格/边框/logo/打印区全部丢失）。改为 **LibreOffice 无头转换**：先用现有 renderer 把数据填进 `.xlsx` 模板，再由用户机器预装的 LibreOffice 把该 xlsx 转成 PDF，保证**纸面 = Excel 模板**。
+> - 这是一次**产品/分发形态的取舍**：放弃"纯 Python、离线自包含"约束，换取像素级还原。LibreOffice 由用户机器预装（不随应用打包），导出时检测缺失则返回阻断错误。
+> - 保留 v2 中仍然成立的部分：**格式分派仍在核心包**（复用 `output_format`）、**两种作用域都覆盖**（PO + SK·YM 发票组）。
+> - reportlab 依赖与 `pdf_renderer.py` 已删除，替换为 `pdf_convert.py`。
+>
 > **修订记录（2026-07-09，v2）**：初版把格式分派放在 API 路由层、并给 `GenerationResult` 挂 `preview` 字段。经对照现有代码修正三处：
 > 1. **格式分派下沉核心包**——复用已存在的 `DocumentRequest.output_format`，而非在 `app.py` 里写 `if format == "pdf"`（违反架构纪律，见产品方案 §7.1）。
 > 2. **不再新增平行的 `format` 字段、不再改 `GenerationResult`**——核心包内按 `output_format` 分派渲染器，xlsx 导出零负担。
@@ -11,14 +16,19 @@
 
 ## 约束
 
-- **离线可用**：不依赖外部服务，PDF 渲染在用户本地完成。
-- **PyInstaller 兼容**：新增依赖必须是纯 Python 包，无原生库依赖。
-- **架构纪律**：PDF 渲染逻辑与**格式分派**都放在核心包 `ro_generator`；CLI / API / 前端为薄壳，路由处理器里**不得**出现 `if format == ...` 这类业务分派（产品方案 §7.1）。
+- **像素级还原**：PDF 版式必须与 Excel 模板逐格一致（首要目标，v3 的立项原因）。
+- **本地转换**：转换在用户机器本地完成，不上传外部服务。
+- **LibreOffice 预装**：像素级 xlsx→pdf 无纯 Python 方案，依赖 LibreOffice；它**不随应用打包**（体积大、原生程序），要求用户机器预装。导出时检测 `soffice`，缺失则返回阻断错误 `PDF_CONVERTER_UNAVAILABLE`，**不静默降级**。可用环境变量 `RO_SOFFICE_PATH` 指定非标准安装位置。
+- **架构纪律**：PDF 转换逻辑与**格式分派**都放在核心包 `ro_generator`；CLI / API / 前端为薄壳，路由处理器里**不得**出现 `if format == ...` 这类业务分派（产品方案 §7.1）。
 - **范围**：仅预览页导出（含 PO 单据与 SK·YM 发票组）。不含导出确认页（ExportScreen）的批量 zip、不含 CLI 新增 flag（CLI 可自然获得，见下）。
 
 ## 技术方案
 
-采用 **reportlab**（纯 Python，无原生依赖）在后端渲染 PDF，通过现有 `/api/download` 通道下载。不转换 `.xlsx` 文件本身。
+**先渲染 xlsx 模板、再无头转换**：PDF 导出复用现有 renderer 生成 `.xlsx`（数据逐格填进模板），再由 LibreOffice 无头模式（`soffice --headless --convert-to pdf`）转成 PDF，通过现有 `/api/download` 通道下载。中间 `.xlsx` 转换后删除，只保留 `.pdf`。这样 PDF 与 Excel 导出出自**同一个模板**，版式必然一致。
+
+- 转换封装在核心包 `pdf_convert.py`：`find_soffice()` 按"环境变量 → PATH → 平台常见安装位置"定位，`convert_to_pdf()` 用独立临时 `UserInstallation` profile 避免与用户在跑的 LibreOffice 抢锁；缺失抛 `SofficeNotFoundError`、失败抛 `PdfConversionError`（均继承 `RoGeneratorError`）。
+- `generate()` 顶层已捕获 `RoGeneratorError` → 阻断错误结果；发票组入口 `export_invoice_group_from_snapshot()` 不经过该兜底，自行 `try/except` 转成 `_error_result`。
+- CLI/API/前端无需感知转换细节：错误经现有 `GenerationResult.errors` → 前端导出错误区展示。
 
 ### 关键决策 1：复用已有的 `output_format` 轴，分派写在核心包
 

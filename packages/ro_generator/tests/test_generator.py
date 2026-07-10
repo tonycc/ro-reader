@@ -177,6 +177,24 @@ def basic_po_row(**overrides):
     return base
 
 
+@pytest.fixture
+def fake_pdf_convert(monkeypatch):
+    """避免测试依赖 LibreOffice：伪造 xlsx→pdf 转换。
+
+    写出一个带真实 %PDF 头的同名 .pdf，从而在无 soffice 环境下也能端到端
+    验证 generator 的"先渲染 xlsx 模板、再转换"路径与文件名/清理逻辑。
+    真实转换由 test_pdf_convert.py 与 skipif 守卫的端到端用例覆盖。
+    """
+
+    def _convert(xlsx_path, **_kwargs):
+        pdf_path = Path(xlsx_path).with_suffix(".pdf")
+        pdf_path.write_bytes(b"%PDF-1.4 fake\n")
+        return pdf_path
+
+    monkeypatch.setattr("ro_generator.generator.convert_to_pdf", _convert)
+    return _convert
+
+
 class TestSuccessPath:
     def test_zip_output_with_single_workbook_is_still_packaged(self, tmp_path):
         path = make_base_file(
@@ -200,7 +218,7 @@ class TestSuccessPath:
         with ZipFile(result.output_file) as archive:
             assert archive.namelist() == list(result.files)
 
-    def test_pdf_output_single_document(self, tmp_path):
+    def test_pdf_output_single_document(self, tmp_path, fake_pdf_convert):
         path = make_base_file(
             tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
         )
@@ -221,7 +239,7 @@ class TestSuccessPath:
         assert Path(result.output_file).read_bytes()[:4] == b"%PDF"
         assert not list(Path(tmp_path / "out").glob("*.xlsx"))
 
-    def test_pdf_output_invoice_pl_bundle(self, tmp_path):
+    def test_pdf_output_invoice_pl_bundle(self, tmp_path, fake_pdf_convert):
         path = make_base_file(
             tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
         )
@@ -375,7 +393,7 @@ class TestSuccessPath:
         assert ws["B6"].value == "SK-PI-001"
         assert ws["D20"].value == "21-REEL"
 
-    def test_invoice_group_export_pdf(self, tmp_path):
+    def test_invoice_group_export_pdf(self, tmp_path, fake_pdf_convert):
         path = make_base_file(
             tmp_path,
             data_base_rows=[COMBO_PRODUCT],

@@ -58,6 +58,8 @@ export const useWorkbench = defineStore("workbench", () => {
 
   const previewError = ref("");
   const exportError = ref("");
+  // 未检测到 LibreOffice 时置真，由全局弹窗引导用户下载安装（PDF 导出专用）。
+  const libreOfficeMissing = ref(false);
 
   const poEntry = computed(() => poList.value.find((p) => p.po_no === selectedPo.value));
   const invoiceEntry = computed(() =>
@@ -366,7 +368,16 @@ export const useWorkbench = defineStore("workbench", () => {
     await refreshPreview();
   }
 
+  function dismissLibreOfficePrompt() {
+    libreOfficeMissing.value = false;
+  }
+
   function formatExportFailure(result: DryRunResult): string {
+    // 未装 LibreOffice：改用弹窗引导下载，不显示行内错误（所有导出路径都经此函数）。
+    if (result.errors.some((issue) => issue.code === "PDF_CONVERTER_UNAVAILABLE")) {
+      libreOfficeMissing.value = true;
+      return "";
+    }
     const messages = result.errors.map(formatIssueMessage).filter(Boolean);
     if (messages.length) return `导出失败：${messages.join("；")}`;
     if (result.missing_inputs.length) {
@@ -456,10 +467,10 @@ export const useWorkbench = defineStore("workbench", () => {
     exporting, lastExportFile,
     blockingErrors, warnings,
     poIssues, issuesLoading, issuesError,
-    previewError, exportError,
+    previewError, exportError, libreOfficeMissing,
     poEntry, poStatus, invoiceEntry, invoiceStatus,
     openSession, selectPo, refreshPreview, editCell, doExport, doExportPdf, doExportGroups, doExportInvoiceGroups,
     selectSeller, selectInvoice, selectPreviewScope, selectInvoiceGroup,
-    refreshPoIssues, refreshInvoiceInspection,
+    refreshPoIssues, refreshInvoiceInspection, dismissLibreOfficePrompt,
   };
 });
