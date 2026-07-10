@@ -55,3 +55,19 @@ class InternalError(RoGeneratorError):
     """核心包内部不变量违反，表明代码 bug。不应该在生产中触发。"""
 
     code = "INTERNAL_ERROR"
+
+
+class SofficeNotFoundError(RoGeneratorError):
+    """PDF 导出需要 LibreOffice，但本机未检测到 soffice 可执行文件。
+
+    像素级 PDF 由 LibreOffice 无头转换 .xlsx 得到（保证纸面 = Excel 模板），
+    因此要求用户机器预装 LibreOffice。缺失时返回此错误，提示安装或改用 Excel 导出。
+    """
+
+    code = "PDF_CONVERTER_UNAVAILABLE"
+
+
+class PdfConversionError(RoGeneratorError):
+    """LibreOffice 无头转换 .xlsx → .pdf 失败（非零退出、超时、未产出文件等）。"""
+
+    code = "PDF_CONVERSION_FAILED"

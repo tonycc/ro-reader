@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, Literal, cast
@@ -51,6 +52,7 @@ from ro_generator.packager import (
     package_zip,
     resolve_output_path,
 )
+from ro_generator.pdf_convert import convert_to_pdf
 from ro_generator.renderer import render_document, render_document_bundle
 from ro_generator.resolver import resolve_po_lines, resolve_po_rows
 from ro_generator.resources import resource_root
@@ -76,6 +78,22 @@ if TYPE_CHECKING:
     from ro_generator.workbook_snapshot import WorkbookSnapshot
 
 _bs = base_schema()
+
+
+def _finalize_as_pdf(xlsx_path: Path) -> Path:
+    """把已渲染的 .xlsx 用 LibreOffice 转成 .pdf，并删除中间 .xlsx，返回 pdf 路径。
+
+    PDF 导出走"先渲染 xlsx 模板、再无头转换"路径以保证纸面 = Excel 模板。
+    转换失败（含未装 LibreOffice）由 convert_to_pdf 抛 RoGeneratorError，
+    调用方（generate / export_invoice_group_from_snapshot）负责转成阻断错误结果。
+    """
+    try:
+        pdf_path = convert_to_pdf(xlsx_path)
+    finally:
+        with suppress(OSError):
+            xlsx_path.unlink()
+    return pdf_path
+
 
 # —————————————————————————————————————
 # 校验消息 code
@@ -491,55 +509,59 @@ def export_invoice_group_from_snapshot(
             )
         builds.append(build)
 
+    # PDF 导出先渲染 xlsx 模板、再由 LibreOffice 无头转换，故渲染目标始终是 .xlsx。
+    # 本入口不经过 generate() 的顶层异常兜底，需自行把转换异常转成阻断错误结果。
     is_pdf = output_format == "pdf"
-    ext = "pdf" if is_pdf else "xlsx"
     rendered_paths: list[Path] = []
     filenames: list[str] = []
-    if is_pdf:
-        from ro_generator.document_preview import build_preview
-        from ro_generator.pdf_renderer import render_pdf
 
-    if set(normalized_documents) in ({"INVOICE", "PL"}, {"CI", "RO_PL"}):
-        combined_label: Literal["INVOICE_PL", "CI_PL"] = (
-            "CI_PL" if set(normalized_documents) == {"CI", "RO_PL"} else "INVOICE_PL"
-        )
-        filename = build_invoice_group_document_filename(
-            seller=seller,
-            document_type=combined_label,
-            invoice_no=invoice_no,
-            extension=ext,
-        )
-        output_path = resolve_output_path(output_root, filename)
-        if is_pdf:
-            previews = [build_preview(build) for build in builds]
-            rendered = render_pdf(previews, output_path)
-            rendered_paths.append(Path(rendered.output_path))
-        else:
+    try:
+        if set(normalized_documents) in ({"INVOICE", "PL"}, {"CI", "RO_PL"}):
+            combined_label: Literal["INVOICE_PL", "CI_PL"] = (
+                "CI_PL" if set(normalized_documents) == {"CI", "RO_PL"} else "INVOICE_PL"
+            )
+            xlsx_name = build_invoice_group_document_filename(
+                seller=seller,
+                document_type=combined_label,
+                invoice_no=invoice_no,
+                extension="xlsx",
+            )
+            output_path = resolve_output_path(output_root, xlsx_name)
             bundle_items = tuple(
                 (build.model, build.mapping)
                 for build in builds
                 if build.model is not None and build.mapping is not None
             )
             rendered_xlsx = render_document_bundle(bundle_items, output_path)
-            rendered_paths.append(Path(rendered_xlsx.output_path))
-        filenames.append(filename)
-    else:
-        for document, build in zip(normalized_documents, builds, strict=True):
-            filename = build_invoice_group_document_filename(
-                seller=seller,
-                document_type=cast(Literal["INVOICE", "PL", "CI", "RO_PL"], document),
-                invoice_no=invoice_no,
-                extension=ext,
+            final_path = (
+                _finalize_as_pdf(Path(rendered_xlsx.output_path))
+                if is_pdf
+                else Path(rendered_xlsx.output_path)
             )
-            output_path = resolve_output_path(output_root, filename)
-            assert build.model is not None and build.mapping is not None
-            if is_pdf:
-                pdf_result = render_pdf([build_preview(build)], output_path)
-                rendered_paths.append(Path(pdf_result.output_path))
-            else:
-                xlsx_result = render_document(build.model, build.mapping, output_path)
-                rendered_paths.append(Path(xlsx_result.output_path))
-            filenames.append(filename)
+            rendered_paths.append(final_path)
+            filenames.append(final_path.name)
+        else:
+            for document, build in zip(normalized_documents, builds, strict=True):
+                xlsx_name = build_invoice_group_document_filename(
+                    seller=seller,
+                    document_type=cast(Literal["INVOICE", "PL", "CI", "RO_PL"], document),
+                    invoice_no=invoice_no,
+                    extension="xlsx",
+                )
+                output_path = resolve_output_path(output_root, xlsx_name)
+                assert build.model is not None and build.mapping is not None
+                rendered_xlsx = render_document(build.model, build.mapping, output_path)
+                final_path = (
+                    _finalize_as_pdf(Path(rendered_xlsx.output_path))
+                    if is_pdf
+                    else Path(rendered_xlsx.output_path)
+                )
+                rendered_paths.append(final_path)
+                filenames.append(final_path.name)
+    except RoGeneratorError as exc:
+        return _error_result(
+            ValidationMessage(kind="blocking_error", code=exc.code, message=exc.message)
+        )
 
     if len(rendered_paths) == 1:
         return GenerationResult(
@@ -912,13 +934,13 @@ def _generate_one(
     if build.model is None or build.mapping is None:
         return GenerationResult(status="error", errors=blocking, warnings=doc_warnings)
 
-    is_pdf = request.output_format == "pdf"
+    # PDF 导出先渲染 xlsx 模板，再由 LibreOffice 无头转换，故渲染目标始终是 .xlsx。
     filename = build_document_filename(
         seller=seller,
         document_type=doc_type,
         po_no=po_no,
         invoice_no=invoice_no,
-        extension="pdf" if is_pdf else "xlsx",
+        extension="xlsx",
     )
     output_path = resolve_output_path(
         request.output_dir,
@@ -926,20 +948,16 @@ def _generate_one(
         on_conflict=request.on_conflict,
     )
 
-    if is_pdf:
-        from ro_generator.document_preview import build_preview
-        from ro_generator.pdf_renderer import render_pdf
+    render_result = render_document(build.model, build.mapping, output_path)
 
-        preview = build_preview(build)
-        pdf_result = render_pdf([preview], output_path)
+    if request.output_format == "pdf":
+        pdf_path = _finalize_as_pdf(Path(render_result.output_path))
         return GenerationResult(
             status="success",
-            files=(filename,),
-            output_file=str(pdf_result.output_path),
+            files=(pdf_path.name,),
+            output_file=str(pdf_path),
             warnings=doc_warnings,
         )
-
-    render_result = render_document(build.model, build.mapping, output_path)
 
     return GenerationResult(
         status="success",
@@ -1007,12 +1025,12 @@ def _generate_invoice_pl_bundle(
             return GenerationResult(status="error", errors=blocking, warnings=tuple(warnings))
         builds.append(build)
 
-    is_pdf = request.output_format == "pdf"
+    # 合并 Invoice+PL 先渲染成单个双 sheet 的 .xlsx，再整体转 PDF（一份多页 PDF）。
     filename = build_invoice_pl_filename(
         seller=seller,
         po_no=po_no,
         invoice_no=invoice_no,
-        extension="pdf" if is_pdf else "xlsx",
+        extension="xlsx",
     )
     output_path = resolve_output_path(
         request.output_dir,
@@ -1020,26 +1038,22 @@ def _generate_invoice_pl_bundle(
         on_conflict=request.on_conflict,
     )
 
-    if is_pdf:
-        from ro_generator.document_preview import build_preview
-        from ro_generator.pdf_renderer import render_pdf
-
-        previews = [build_preview(build) for build in builds]
-        pdf_result = render_pdf(previews, output_path)
-        return GenerationResult(
-            status="success",
-            files=(filename,),
-            output_file=str(pdf_result.output_path),
-            warnings=tuple(warnings),
-            summary={"combined_documents": combined_documents},
-        )
-
     bundle_items = tuple(
         (build.model, build.mapping)
         for build in builds
         if build.model is not None and build.mapping is not None
     )
     render_result = render_document_bundle(bundle_items, output_path)
+
+    if request.output_format == "pdf":
+        pdf_path = _finalize_as_pdf(Path(render_result.output_path))
+        return GenerationResult(
+            status="success",
+            files=(pdf_path.name,),
+            output_file=str(pdf_path),
+            warnings=tuple(warnings),
+            summary={"combined_documents": combined_documents},
+        )
 
     return GenerationResult(
         status="success",
