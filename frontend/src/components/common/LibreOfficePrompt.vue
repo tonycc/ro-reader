@@ -4,7 +4,7 @@ import { useWorkbench } from "../../stores/workbench";
 
 const wb = useWorkbench();
 
-const DOWNLOAD_URL = "https://www.libreoffice.org/download/download/";
+const DOWNLOAD_URL = "https://www.libreoffice.org/download/";
 
 function close() {
   wb.dismissLibreOfficePrompt();
