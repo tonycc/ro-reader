@@ -14,7 +14,6 @@ on:
 jobs:
   lint-type-test:
     runs-on: ubuntu-latest
-    if: hashFiles('frontend/package.json') != ''
     defaults:
       run:
         working-directory: frontend
@@ -40,7 +39,6 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    if: hashFiles('frontend/package.json') != ''
     defaults:
       run:
         working-directory: frontend
