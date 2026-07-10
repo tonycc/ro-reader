@@ -989,16 +989,33 @@ def _generate_invoice_pl_bundle(
             return GenerationResult(status="error", errors=blocking, warnings=tuple(warnings))
         builds.append(build)
 
+    is_pdf = request.output_format == "pdf"
     filename = build_invoice_pl_filename(
         seller=seller,
         po_no=po_no,
         invoice_no=invoice_no,
+        extension="pdf" if is_pdf else "xlsx",
     )
     output_path = resolve_output_path(
         request.output_dir,
         filename,
         on_conflict=request.on_conflict,
     )
+
+    if is_pdf:
+        from ro_generator.document_preview import build_preview
+        from ro_generator.pdf_renderer import render_pdf
+
+        previews = [build_preview(build) for build in builds]
+        pdf_result = render_pdf(previews, output_path)
+        return GenerationResult(
+            status="success",
+            files=(filename,),
+            output_file=str(pdf_result.output_path),
+            warnings=tuple(warnings),
+            summary={"combined_documents": combined_documents},
+        )
+
     bundle_items = tuple(
         (build.model, build.mapping)
         for build in builds

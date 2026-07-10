@@ -221,6 +221,26 @@ class TestSuccessPath:
         assert Path(result.output_file).read_bytes()[:4] == b"%PDF"
         assert not list(Path(tmp_path / "out").glob("*.xlsx"))
 
+    def test_pdf_output_invoice_pl_bundle(self, tmp_path):
+        path = make_base_file(
+            tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
+        )
+        request = DocumentRequest(
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("INVOICE", "PL"),
+            seller="GS PTE",
+            invoice_no="INV-001",
+            output_format="pdf",
+            output_dir=str(tmp_path / "out"),
+        )
+        result = generate(request)
+        assert result.status == "success", result.errors
+        assert result.output_file is not None
+        assert result.output_file.endswith(".pdf")
+        assert Path(result.output_file).read_bytes()[:4] == b"%PDF"
+        assert not list(Path(tmp_path / "out").glob("*.xlsx"))
+
     def test_invoice_with_seller_and_invoice_no(self, tmp_path):
         path = make_base_file(
             tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
