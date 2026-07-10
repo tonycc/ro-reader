@@ -105,14 +105,18 @@ export interface BatchExportGroup {
   invoice_no?: string | null
 }
 
+export type ExportFileFormat = "xlsx" | "pdf"
+
 export interface BatchExportRequest {
   base_file: string
   po_no: string
   groups: BatchExportGroup[]
+  output_formats?: ExportFileFormat[]
 }
 
 export interface InvoiceBatchExportRequest {
   groups: BatchExportGroup[]
+  output_formats?: ExportFileFormat[]
 }
 
 export interface DryRunResult {
@@ -259,8 +263,9 @@ export const api = {
   exportInvoiceDocumentGroups: (
     invoice_group_key: string,
     groups: BatchExportGroup[],
+    output_formats: ExportFileFormat[] = ["xlsx"],
   ): Promise<DryRunResult> =>
-    request("POST", `/invoice/${encodeURIComponent(invoice_group_key)}/export-batch`, { groups }),
+    request("POST", `/invoice/${encodeURIComponent(invoice_group_key)}/export-batch`, { groups, output_formats }),
   getDataView: (base_file: string, po_no: string): Promise<{ po_no: string; headers: string[]; rows: Record<string, unknown>[] }> =>
     request("GET", `/po/${po_no}?base_file=${encodeURIComponent(base_file)}`),
   getPoIssues: (base_file: string, po_no: string): Promise<PoIssuesResponse> =>

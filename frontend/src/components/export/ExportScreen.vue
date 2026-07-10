@@ -1,8 +1,25 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useWorkbench } from "../../stores/workbench";
+import type { ExportFileFormat } from "../../stores/api";
 
 const wb = useWorkbench();
+
+const fileFormats: { key: ExportFileFormat; label: string }[] = [
+  { key: "xlsx", label: "Excel (.xlsx)" },
+  { key: "pdf", label: "PDF" },
+];
+// Excel 默认勾选，PDF 按需（PDF 依赖本机 LibreOffice，且每份要多花几秒转换）。
+const selectedFormats = ref<Set<ExportFileFormat>>(new Set<ExportFileFormat>(["xlsx"]));
+const exportFormats = computed(() =>
+  fileFormats.map((f) => f.key).filter((key) => selectedFormats.value.has(key)),
+);
+function toggleFormat(key: ExportFileFormat) {
+  const next = new Set(selectedFormats.value);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  selectedFormats.value = next;
+}
 
 const docLabels: Record<string, string> = {
   PI: "形式发票（PI）",
@@ -123,11 +140,11 @@ function toggleDoc(id: string) {
 }
 
 async function handleExport() {
-  await wb.doExportGroups(selectedExportDocs.value);
+  await wb.doExportGroups(selectedExportDocs.value, exportFormats.value);
 }
 
 async function handleInvoiceGroupExport() {
-  await wb.doExportInvoiceGroups(selectedInvoiceExportDocs.value);
+  await wb.doExportInvoiceGroups(selectedInvoiceExportDocs.value, exportFormats.value);
 }
 
 function buildInvoiceExportEntry(seller: string, document: string): ExportDocEntry {
@@ -207,13 +224,26 @@ function safeToken(value: string): string {
         <h3>输出设置</h3>
         <div class="field" style="margin-bottom: 10px">
           <label>文件格式</label>
-          <div class="value">{{ selectedInvoiceDocCount > 1 ? 'ZIP 包' : 'XLSX 文件' }}</div>
+          <div class="format-options">
+            <span
+              v-for="fmt in fileFormats"
+              :key="fmt.key"
+              class="format-opt"
+              :class="{ on: selectedFormats.has(fmt.key) }"
+              :data-testid="`export-format-${fmt.key}`"
+              @click="toggleFormat(fmt.key)"
+            >
+              <span class="checkbox sm" :class="{ on: selectedFormats.has(fmt.key) }">{{ selectedFormats.has(fmt.key) ? '✓' : '' }}</span>
+              {{ fmt.label }}
+            </span>
+          </div>
+          <div v-if="selectedFormats.has('pdf')" class="format-hint">PDF 需本机安装 LibreOffice，每份多花几秒转换</div>
         </div>
         <div class="field" style="margin-bottom: 14px">
           <label>已选单据</label>
-          <div class="value">{{ selectedInvoiceDocCount }} 份</div>
+          <div class="value">{{ selectedInvoiceDocCount }} 份 × {{ exportFormats.length }} 种格式</div>
         </div>
-        <button class="primary-btn" :disabled="!selectedInvoiceDocCount || wb.exporting" @click="handleInvoiceGroupExport">
+        <button class="primary-btn" :disabled="!selectedInvoiceDocCount || !exportFormats.length || wb.exporting" @click="handleInvoiceGroupExport">
           {{ wb.exporting ? "导出中…" : "确认导出" }}
         </button>
         <div v-if="wb.exportError" class="export-err">{{ wb.exportError }}</div>
@@ -251,13 +281,26 @@ function safeToken(value: string): string {
         <h3>输出设置</h3>
         <div class="field" style="margin-bottom: 10px">
           <label>文件格式</label>
-          <div class="value">ZIP 包</div>
+          <div class="format-options">
+            <span
+              v-for="fmt in fileFormats"
+              :key="fmt.key"
+              class="format-opt"
+              :class="{ on: selectedFormats.has(fmt.key) }"
+              :data-testid="`export-format-${fmt.key}`"
+              @click="toggleFormat(fmt.key)"
+            >
+              <span class="checkbox sm" :class="{ on: selectedFormats.has(fmt.key) }">{{ selectedFormats.has(fmt.key) ? '✓' : '' }}</span>
+              {{ fmt.label }}
+            </span>
+          </div>
+          <div v-if="selectedFormats.has('pdf')" class="format-hint">PDF 需本机安装 LibreOffice，每份多花几秒转换</div>
         </div>
         <div class="field" style="margin-bottom: 14px">
           <label>已选单据</label>
-          <div class="value">{{ selectedDocCount }} 份</div>
+          <div class="value">{{ selectedDocCount }} 份 × {{ exportFormats.length }} 种格式</div>
         </div>
-        <button class="primary-btn" :disabled="!selectedDocCount || wb.exporting" @click="handleExport">
+        <button class="primary-btn" :disabled="!selectedDocCount || !exportFormats.length || wb.exporting" @click="handleExport">
           {{ wb.exporting ? "导出中…" : "确认导出" }}
         </button>
         <div v-if="wb.exportError" class="export-err">{{ wb.exportError }}</div>
@@ -292,6 +335,10 @@ function safeToken(value: string): string {
 .field { border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); padding: 10px; }
 .field label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
 .field .value { color: var(--text); font-family: var(--mono); font-weight: 800; font-size: 13px; }
+.format-options { display: flex; flex-direction: column; gap: 8px; }
+.format-opt { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: var(--text); user-select: none; }
+.checkbox.sm { width: 18px; height: 18px; border-width: 2px; }
+.format-hint { margin-top: 8px; color: var(--muted); font-size: 11px; line-height: 1.4; }
 .primary-btn {
   width: 100%; height: 42px;
   border: 1px solid #1d4ed8; border-radius: 8px;

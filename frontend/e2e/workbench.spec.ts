@@ -286,6 +286,40 @@ test.describe("RO Workbench E2E", () => {
     });
   });
 
+  test("export format selector controls output_formats", async ({ page }) => {
+    const exportRequests: unknown[] = [];
+    await page.route("**/api/po/*/export-batch", async (route) => {
+      exportRequests.push(route.request().postDataJSON());
+      await route.fulfill({
+        json: {
+          status: "success",
+          summary: {},
+          files: ["GS_PTE-GS-PI-4500099999.xlsx"],
+          output_file: "GS_PTE-GS-PI-4500099999.xlsx",
+          errors: [],
+          warnings: [],
+          missing_inputs: [],
+          source_index: [],
+        },
+      });
+    });
+
+    await openBaseFile(page);
+    await page.locator(".po-card").filter({ hasText: "4500099999" }).click();
+    await page.waitForTimeout(1500);
+    await page.locator(".tab").filter({ hasText: "导出确认" }).click();
+
+    // 默认只勾 Excel；加勾 PDF 后，请求应带 output_formats: ["xlsx","pdf"]
+    await page.getByTestId("export-format-pdf").click();
+
+    const exportBtn = page.locator("button").filter({ hasText: "确认导出" });
+    await expect(exportBtn).toBeEnabled();
+    await exportBtn.click();
+
+    await expect.poll(() => exportRequests.length).toBe(1);
+    expect(exportRequests[0]).toMatchObject({ output_formats: ["xlsx", "pdf"] });
+  });
+
   test("export screen disables documents that are not exportable for seller", async ({ page }) => {
     await page.route("**/api/session/open", async (route) => {
       const response = await route.fetch();
