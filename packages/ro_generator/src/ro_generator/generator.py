@@ -424,6 +424,7 @@ def export_invoice_group_from_snapshot(
     seller: str,
     documents: tuple[str, ...],
     output_dir: str,
+    output_format: Literal["xlsx", "pdf"] = "xlsx",
 ) -> GenerationResult:
     """Render Invoice/PL documents for one cross-PO invoice group."""
     normalized_documents = tuple(document.upper() for document in documents)
@@ -490,8 +491,14 @@ def export_invoice_group_from_snapshot(
             )
         builds.append(build)
 
+    is_pdf = output_format == "pdf"
+    ext = "pdf" if is_pdf else "xlsx"
     rendered_paths: list[Path] = []
     filenames: list[str] = []
+    if is_pdf:
+        from ro_generator.document_preview import build_preview
+        from ro_generator.pdf_renderer import render_pdf
+
     if set(normalized_documents) in ({"INVOICE", "PL"}, {"CI", "RO_PL"}):
         combined_label: Literal["INVOICE_PL", "CI_PL"] = (
             "CI_PL" if set(normalized_documents) == {"CI", "RO_PL"} else "INVOICE_PL"
@@ -500,15 +507,21 @@ def export_invoice_group_from_snapshot(
             seller=seller,
             document_type=combined_label,
             invoice_no=invoice_no,
+            extension=ext,
         )
         output_path = resolve_output_path(output_root, filename)
-        bundle_items = tuple(
-            (build.model, build.mapping)
-            for build in builds
-            if build.model is not None and build.mapping is not None
-        )
-        rendered = render_document_bundle(bundle_items, output_path)
-        rendered_paths.append(Path(rendered.output_path))
+        if is_pdf:
+            previews = [build_preview(build) for build in builds]
+            rendered = render_pdf(previews, output_path)
+            rendered_paths.append(Path(rendered.output_path))
+        else:
+            bundle_items = tuple(
+                (build.model, build.mapping)
+                for build in builds
+                if build.model is not None and build.mapping is not None
+            )
+            rendered_xlsx = render_document_bundle(bundle_items, output_path)
+            rendered_paths.append(Path(rendered_xlsx.output_path))
         filenames.append(filename)
     else:
         for document, build in zip(normalized_documents, builds, strict=True):
@@ -516,11 +529,16 @@ def export_invoice_group_from_snapshot(
                 seller=seller,
                 document_type=cast(Literal["INVOICE", "PL", "CI", "RO_PL"], document),
                 invoice_no=invoice_no,
+                extension=ext,
             )
             output_path = resolve_output_path(output_root, filename)
             assert build.model is not None and build.mapping is not None
-            rendered = render_document(build.model, build.mapping, output_path)
-            rendered_paths.append(Path(rendered.output_path))
+            if is_pdf:
+                pdf_result = render_pdf([build_preview(build)], output_path)
+                rendered_paths.append(Path(pdf_result.output_path))
+            else:
+                xlsx_result = render_document(build.model, build.mapping, output_path)
+                rendered_paths.append(Path(xlsx_result.output_path))
             filenames.append(filename)
 
     if len(rendered_paths) == 1:

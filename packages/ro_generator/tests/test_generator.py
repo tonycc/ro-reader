@@ -375,6 +375,43 @@ class TestSuccessPath:
         assert ws["B6"].value == "SK-PI-001"
         assert ws["D20"].value == "21-REEL"
 
+    def test_invoice_group_export_pdf(self, tmp_path):
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[
+                basic_po_row(**{"PO NO.": "PO-1", "INV#": "INV-001"}),
+                basic_po_row(
+                    **{
+                        "PO NO.": "PO-2",
+                        "ITEM LINE#": "20",
+                        "INV#": "INV-001",
+                        "SK/YM INVOICE NO.": None,
+                    }
+                ),
+            ],
+            customer_po_rows=[
+                {"Purchasing Document": "PO-1", "Material": "21-44640", "Order Quantity": 100},
+                {"Purchasing Document": "PO-2", "Material": "21-44640", "Order Quantity": 100},
+            ],
+        )
+        snap = build_workbook_snapshot(path)
+        assert snap.invoice_summary, "需要至少一个发票组"
+        summary = snap.invoice_summary[0]
+        seller = next(iter(summary.seller_invoice_numbers))
+        result = export_invoice_group_from_snapshot(
+            snap,
+            summary.invoice_group_key,
+            seller=seller,
+            documents=("INVOICE", "PL"),
+            output_dir=str(tmp_path / "out"),
+            output_format="pdf",
+        )
+        assert result.status == "success", result.errors
+        assert result.output_file is not None
+        assert result.output_file.endswith(".pdf")
+        assert Path(result.output_file).read_bytes()[:4] == b"%PDF"
+
 
 class TestNeedsInput:
     def test_multiple_invoices_needs_input(self, tmp_path):
