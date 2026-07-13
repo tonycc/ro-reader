@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import socket
 import sys
+import tempfile
 import threading
 import time
 import traceback
@@ -153,8 +154,31 @@ def _fatal(msg: str) -> None:
     sys.exit(1)
 
 
+def _lock_file_path() -> Path:
+    return Path(tempfile.gettempdir()) / "saiken_doc_port.txt"
+
+
+def _read_lock_port() -> int | None:
+    """读取锁文件中的端口号，如果该端口仍在响应则返回端口号。"""
+    try:
+        port = int(_lock_file_path().read_text(encoding="utf-8").strip())
+        with urlopen(f"http://127.0.0.1:{port}/api/health", timeout=1) as resp:
+            if resp.status == 200:
+                return port
+    except Exception:
+        pass
+    return None
+
+
 def main() -> None:
+    existing = _read_lock_port()
+    if existing is not None:
+        # 已有运行中的实例，直接打开浏览器到已有端口
+        webbrowser.open(f"http://127.0.0.1:{existing}")
+        return
+
     port = _find_free_port()
+    _lock_file_path().write_text(str(port), encoding="utf-8")
 
     # 设置前端静态资源路径（在 import app 之前）
     frontend_dist = os.environ.get("RO_WORKBENCH_FRONTEND_DIST", "")
@@ -198,6 +222,8 @@ def main() -> None:
 
     webbrowser.open(f"http://127.0.0.1:{port}")
     _run_tray(port)
+    # 退出后清理锁文件
+    _lock_file_path().unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
