@@ -43,17 +43,65 @@ jobs:
       # PyInstaller build (onedir mode)
       - run: uv run pyinstaller packages/ro_workbench_launcher/ro-workbench.spec --distpath dist --workpath build --noconfirm
 
-      # macOS: package as .dmg
+      # macOS: 生成 README + VERSION → 打包 DMG
       - name: Package DMG (macOS)
         if: matrix.os == 'macos-latest'
         run: |
+          V="${{ env.APP_VERSION }}"
+          D=$(date +"%Y-%m-%d")
           APP="dist/赛肯单据生成工具.app"
-          DMG="dist/赛肯单据工具-${{ env.APP_VERSION }}-mac.dmg"
+          STAGE="dist/_dmg_stage"
+          DMG="dist/赛肯单据工具-${V}-mac.dmg"
+
+          mkdir -p "$STAGE"
+          cp -R "$APP" "$STAGE/"
+
+          printf '%s\n' \
+            "赛肯单据生成工具 v${V}" \
+            "构建日期：${D}" \
+            "来源：GitHub Actions" \
+            > "$STAGE/VERSION.txt"
+
+          # README.txt
+          printf '%s\n' \
+            "赛肯单据生成工具 v${V}" \
+            "" \
+            "将 RO DATA BASE.xlsx 中的 PO 数据装配为 PI、PO、Invoice、Packing List 四类单据，" \
+            "支持导出 Excel 和 PDF。" \
+            "" \
+            "【环境要求】" \
+            "PDF 导出需要预装 LibreOffice（仅 PDF 导出依赖，Excel 导出不受影响）。" \
+            "LibreOffice 下载：https://www.libreoffice.org/" \
+            "" \
+            "【首次使用】" \
+            "1. 将 DMG 中的「赛肯单据生成工具」拖到「应用程序」文件夹" \
+            "2. 双击启动（首次打开如被 Gatekeeper 拦截，右键 → 打开）" \
+            "3. 浏览器会自动打开工作台页面" \
+            "4. 点击顶部栏打开 base 文件（.xlsx），选择 PO 开始使用" \
+            "" \
+            "【工作流程】" \
+            "工作台采用三 Tab 布局：" \
+            "  - 数据检查：查看和编辑 PO 行数据，双击单元格可编辑" \
+            "  - 单据预览：选择贸易链段和单据类型，实时预览单据内容" \
+            "  - 导出确认：勾选单据类型和格式（Excel / PDF），一键下载" \
+            "" \
+            "【常见问题】" \
+            "Q：PDF 导出失败？" \
+            "A：请确认已安装 LibreOffice，下载地址 https://www.libreoffice.org/" \
+            "" \
+            "Q：浏览器没有自动打开？" \
+            "A：请手动访问 http://127.0.0.1:<端口号>（端口号见托盘图标提示）" \
+            "" \
+            "Q：如何退出？" \
+            "A：右键菜单栏托盘图标 → 退出" \
+            > "$STAGE/README.txt"
+
           hdiutil create -volname "赛肯单据生成工具" \
-            -srcfolder "$APP" \
+            -srcfolder "$STAGE" \
             -ov -format UDZO "$DMG"
-          # 删除源 .app，只保留 .dmg，避免 artifact 中重复
-          rm -rf "$APP"
+
+          # 清理源文件，只保留 .dmg
+          rm -rf "$APP" "$STAGE"
 
       # Windows: 生成辅助文件 + 打 ZIP
       - name: Package ZIP (Windows)
@@ -67,7 +115,8 @@ jobs:
           $lines = @(
             "赛肯单据生成工具 v$v",
             "构建日期：$d",
-            "来源：GitHub Actions"
+            "来源：GitHub Actions",
+            "技术栈：Python 3.11 / FastAPI / LibreOffice (PDF)"
           )
           [System.IO.File]::WriteAllLines("$PWD\dist\VERSION.txt", $lines, [System.Text.Encoding]::UTF8)
 
@@ -116,28 +165,43 @@ jobs:
           $readme = @(
             "赛肯单据生成工具 v$v",
             "",
+            "将 RO DATA BASE.xlsx 中的 PO 数据装配为 PI、PO、Invoice、Packing List 四类单据，",
+            "支持导出 Excel 和 PDF。",
+            "",
+            "【环境要求】",
+            "PDF 导出需要预装 LibreOffice（仅 PDF 导出依赖，Excel 导出不受影响）。",
+            "LibreOffice 下载：https://www.libreoffice.org/",
+            "",
             "【首次使用】",
             "1. 将 ZIP 解压到固定位置",
             "   例如：C:\Users\<用户名>\赛肯单据工具\",
             "2. 双击 launch.bat 启动",
-            "3. 浏览器会自动打开",
-            "4. 点击右上角设置，配置 BASE 文件路径",
+            "3. 浏览器会自动打开工作台页面",
+            "4. 点击顶部栏打开 base 文件（.xlsx），选择 PO 开始使用",
+            "",
+            "【工作流程】",
+            "工作台采用三 Tab 布局：",
+            "  - 数据检查：查看和编辑 PO 行数据，双击单元格可编辑",
+            "  - 单据预览：选择贸易链段和单据类型，实时预览单据内容",
+            "  - 导出确认：勾选单据类型和格式（Excel / PDF），一键下载",
             "",
             "【更新升级】",
             "1. 右键托盘图标 → 退出",
             "2. 删除旧的「赛肯单据生成工具」文件夹",
             "3. 将新 ZIP 中的「赛肯单据生成工具」文件夹解压到同一位置",
             "4. 再次双击 launch.bat 启动",
-            "   （文件路径已保存在浏览器中，自动恢复）",
             "",
             "【常见问题】",
-            "Q：Windows 提示「已阻止此应用」",
+            "Q：PDF 导出失败？",
+            "A：请确认已安装 LibreOffice，下载地址 https://www.libreoffice.org/",
+            "",
+            "Q：Windows 提示「已阻止此应用」？",
             "A：点击「更多信息」→「仍要运行」",
             "",
-            "Q：浏览器没有自动打开",
-            "A：请访问托盘图标提示中显示的地址 http://127.0.0.1:<端口号>",
+            "Q：浏览器没有自动打开？",
+            "A：请手动访问 http://127.0.0.1:<端口号>（端口号见托盘图标提示）",
             "",
-            "Q：如何退出",
+            "Q：如何退出？",
             "A：右键任务栏右下角托盘图标 → 退出"
           )
           [System.IO.File]::WriteAllLines("$PWD\dist\README.txt", $readme, [System.Text.Encoding]::UTF8)
