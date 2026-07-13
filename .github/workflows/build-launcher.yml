@@ -120,66 +120,6 @@ jobs:
           )
           [System.IO.File]::WriteAllLines("$PWD\dist\VERSION.txt", $lines, [System.Text.Encoding]::UTF8)
 
-          # launch.ps1：启动后端并等待就绪后打开浏览器
-          $launchPs1 = @'
-          $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-          $exePath = Join-Path $scriptDir "赛肯单据生成工具\赛肯单据生成工具.exe"
-          $portFile = "$env:TEMP\saiken_doc_port.txt"
-
-          Remove-Item $portFile -Force -ErrorAction SilentlyContinue
-
-          Write-Host "  赛肯单据生成工具"
-          Write-Host "  =================="
-          Write-Host ""
-          Write-Host "  正在启动，请稍候..."
-          Write-Host ""
-
-          $proc = Start-Process -FilePath $exePath -PassThru -WindowStyle Hidden
-
-          Write-Host "  [1/3] 正在初始化 " -NoNewline
-          $deadline = (Get-Date).AddSeconds(30)
-          while (!(Test-Path $portFile)) {
-              if ((Get-Date) -ge $deadline) {
-                  Write-Host " 超时" -ForegroundColor Red
-                  Start-Sleep 2
-                  exit 1
-              }
-              Write-Host "." -NoNewline
-              Start-Sleep 0.3
-          }
-          $port = (Get-Content $portFile).Trim()
-          Write-Host ""
-
-          Write-Host "  [2/3] 服务端口：$port"
-
-          $url = "http://127.0.0.1:${port}/api/health"
-          Write-Host "  [3/3] 等待服务就绪 " -NoNewline
-          $deadline = (Get-Date).AddSeconds(30)
-          while ($true) {
-              try {
-                  $r = Invoke-WebRequest $url -UseBasicParsing -TimeoutSec 1 -ErrorAction Stop
-                  if ($r.StatusCode -eq 200) { break }
-              } catch {}
-              if ((Get-Date) -ge $deadline) {
-                  Write-Host " 超时" -ForegroundColor Red
-                  Start-Sleep 2
-                  exit 1
-              }
-              Write-Host "." -NoNewline
-              Start-Sleep 0.3
-          }
-          Write-Host ""
-
-          Start-Process "http://127.0.0.1:${port}"
-          Write-Host "  启动成功！浏览器已打开。" -ForegroundColor Green
-          Start-Sleep 2
-          '@
-          [System.IO.File]::WriteAllText("$PWD\dist\launch.ps1", $launchPs1, [System.Text.Encoding]::UTF8)
-
-          # launch.vbs：双击入口，以隐藏窗口方式运行 launch.ps1，避免 .bat 被杀软误报
-          $launchVbs = 'CreateObject("WScript.Shell").Run "powershell -NoProfile -ExecutionPolicy Bypass -File """ & CreateObject("Scripting.FileSystemObject").GetParentFolderName(WScript.ScriptFullName) & "\launch.ps1""", 0, False'
-          [System.IO.File]::WriteAllText("$PWD\dist\launch.vbs", $launchVbs, [System.Text.Encoding]::UTF8)
-
           # README.txt（中文）
           $readme = @(
             "赛肯单据生成工具 v$v",
@@ -194,8 +134,8 @@ jobs:
             "【首次使用】",
             "1. 将 ZIP 解压到固定位置",
             "   例如：C:\Users\<用户名>\赛肯单据工具\",
-            "2. 双击 launch.vbs 启动（自动打开浏览器）",
-            "3. 浏览器会自动打开工作台页面",
+            "2. 进入「赛肯单据生成工具」文件夹，双击 赛肯单据生成工具.exe",
+            "3. 程序启动后自动打开浏览器进入工作台页面",
             "4. 点击顶部栏打开 base 文件（.xlsx），选择 PO 开始使用",
             "",
             "【工作流程】",
@@ -208,7 +148,7 @@ jobs:
             "1. 右键托盘图标 → 退出",
             "2. 删除旧的「赛肯单据生成工具」文件夹",
             "3. 将新 ZIP 中的「赛肯单据生成工具」文件夹解压到同一位置",
-            "4. 再次双击 launch.vbs 启动",
+            "4. 双击 赛肯单据生成工具.exe 启动",
             "",
             "【常见问题】",
             "Q：PDF 导出失败？",
@@ -230,12 +170,12 @@ jobs:
 
           # 打包（只含程序文件夹和辅助文件，不含中间产物）
           Compress-Archive `
-            -Path "dist\赛肯单据生成工具", "dist\launch.vbs", "dist\launch.ps1", "dist\VERSION.txt", "dist\README.txt" `
+            -Path "dist\赛肯单据生成工具", "dist\VERSION.txt", "dist\README.txt" `
             -DestinationPath "dist\赛肯单据工具-$v-windows.zip"
 
           # 删除源文件，只保留 .zip，避免 artifact 中重复
           Remove-Item -Recurse -Force "dist\赛肯单据生成工具" -ErrorAction SilentlyContinue
-          Remove-Item -Force "dist\launch.vbs", "dist\launch.ps1", "dist\VERSION.txt", "dist\README.txt" -ErrorAction SilentlyContinue
+          Remove-Item -Force "dist\VERSION.txt", "dist\README.txt" -ErrorAction SilentlyContinue
 
       - uses: actions/upload-artifact@v4
         with:

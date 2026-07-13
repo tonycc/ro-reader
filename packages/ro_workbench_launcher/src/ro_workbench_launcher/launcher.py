@@ -1,7 +1,6 @@
 """工作台启动器：端口探测 + 内嵌 FastAPI + 自动开浏览器 + 托盘。
 
-双击 .app 后直接运行此脚本。
-服务器在后台线程中运行，避免子进程复杂度。
+双击 .app / .exe 直接运行。服务器在后台线程中运行，避免子进程复杂度。
 退出托盘时通过信号优雅关闭，让 uvicorn 清理连接再退出。
 """
 
@@ -10,12 +9,10 @@ from __future__ import annotations
 import os
 import socket
 import sys
-import tempfile
 import threading
 import time
 import traceback
 import webbrowser
-from contextlib import suppress
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -156,17 +153,8 @@ def _fatal(msg: str) -> None:
     sys.exit(1)
 
 
-def _port_file() -> Path:
-    """端口文件路径：launch.bat 通过此文件获知动态端口。"""
-    return Path(tempfile.gettempdir()) / "saiken_doc_port.txt"
-
-
 def main() -> None:
     port = _find_free_port()
-
-    # 将端口写入临时文件，供 Windows launch.bat 的状态监控脚本读取
-    with suppress(OSError):
-        _port_file().write_text(str(port), encoding="utf-8")
 
     # 设置前端静态资源路径（在 import app 之前）
     frontend_dist = os.environ.get("RO_WORKBENCH_FRONTEND_DIST", "")
@@ -210,10 +198,6 @@ def main() -> None:
 
     webbrowser.open(f"http://127.0.0.1:{port}")
     _run_tray(port)
-
-    # 用户从托盘退出后，清理端口文件
-    with suppress(OSError):
-        _port_file().unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
