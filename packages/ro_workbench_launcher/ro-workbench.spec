@@ -97,7 +97,7 @@ if sys.platform == "darwin":
         icon=None,
         bundle_identifier="com.saiken.doctools",
         info_plist={
-            "CFBundleShortVersionString": "0.1.0",
+            "CFBundleShortVersionString": "1.1.0",
             "CFBundleName": APP_NAME,
             "LSBackgroundOnly": "0",
             "LSUIElement": "1",

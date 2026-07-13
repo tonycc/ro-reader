@@ -12,7 +12,7 @@ on:
       - '.github/workflows/build-launcher.yml'
 
 env:
-  APP_VERSION: "0.1.0"
+  APP_VERSION: "1.1.0"
   # Opt into Node.js 24 now — GitHub will force it on 2026-06-16
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
