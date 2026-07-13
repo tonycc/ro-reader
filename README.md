@@ -1,6 +1,6 @@
 # RO 单据工作台
 
-把 `RO DATA BASE.xlsx` 中的 PO 数据装配为 PI、PO、Invoice、Packing List 四类单据。
+把 `RO DATA BASE.xlsx` 中的 PO 数据装配为 PI、PO、Invoice、Packing List 四类单据，并支持导出 Excel 和 PDF。
 
 ## 环境要求
 
@@ -8,7 +8,7 @@
 - [uv](https://docs.astral.sh/uv/)（Python 包管理）
 - Node.js 20+ + [pnpm](https://pnpm.io/) 9+（前端）
 - macOS / Windows / Linux
-- **导出 PDF 需预装 [LibreOffice](https://www.libreoffice.org/)**（仅 PDF 导出用到）。PDF 由"渲染 xlsx 模板 → LibreOffice 无头转换"生成，以保证版式与 Excel 模板逐格一致；未安装时 PDF 导出会返回明确的阻断错误（`PDF_CONVERTER_UNAVAILABLE`），Excel 导出不受影响。若 `soffice` 不在标准位置，可用环境变量 `RO_SOFFICE_PATH` 指定其路径。
+- **导出 PDF 需预装 [LibreOffice](https://www.libreoffice.org/)**。PDF 由"渲染 xlsx 模板 → LibreOffice 无头转换"生成，以保证版式与 Excel 模板逐格一致；未安装时 PDF 导出返回明确的阻断错误（`PDF_CONVERTER_UNAVAILABLE`），Excel 导出不受影响。若 `soffice` 不在标准位置，可用环境变量 `RO_SOFFICE_PATH` 指定其路径。
 
 ## 快速启动（开发模式）
 
@@ -31,13 +31,27 @@ cd frontend && pnpm run dev
 
 ## 工作台使用流程
 
+### 三 Tab 工作流
+
+```text
+┌────────────────────────────────────────────────────┐
+│  TopBar：base 文件路径 │ 撤销/重做 │ 导出           │
+├──────────┬─────────────────────────────────────────┤
+│          │  数据检查 │ 单据预览 │ 导出确认           │
+│  PO 队列 │  ─────────────────────────────────       │
+│  （左侧） │  选中 tab 对应内容区                     │
+│          │                                         │
+│  多选    │  - 数据检查：PO 行表格 + inline 编辑     │
+│  搜索    │  - 单据预览：链段选择 + header/tables    │
+│  状态筛选 │  - 导出确认：选单据类型 → 下载          │
+├──────────┴─────────────────────────────────────────┤
+│  StatusBar：PO 状态 │ 阻断/警告数                    │
+└────────────────────────────────────────────────────┘
+```
+
 ### 1. 打开 base 文件
 
-点击顶部栏文件名"点击打开 base 文件…"，在弹出的对话框中输入 `.xlsx` 文件的绝对路径：
-
-```bash
-/Users/max/projects/ro-reader/tests/fixtures/synthetic_base.xlsx
-```
+点击顶部栏文件名"点击打开 base 文件…"，在弹出的对话框中输入 `.xlsx` 文件的绝对路径。
 
 ### 2. 浏览 PO 列表
 
@@ -49,39 +63,28 @@ cd frontend && pnpm run dev
 
 支持搜索框筛选 PO 号和下拉按状态过滤。
 
-### 3. 查看和编辑数据
+### 3. 查看和编辑数据（数据检查 Tab）
 
-点击某个 PO，中央主区展示该 PO 的所有行数据（类似 Excel 表格）。
+- **PO 数据检查**：展示选中 PO 的所有行数据（类 Excel 表格），双击单元格进入编辑模式，修改直接写回 base 文件
+- **Invoice 数据检查**：展示按 `(PO, 月份, 链段)` 分组的发票数据，以只读方式查看出货行及校验问题
 
-- **双击单元格**进入编辑模式，输入新值后按 **Enter** 提交
-- 修改会**直接写回 base 文件**，预览即时刷新
-- 必填字段（SAP Number、客户PO 的 Order Quantity 等）为空时显示**红色边框 + 粉色背景**
+### 4. 预览单据（单据预览 Tab）
 
-### 4. 选择链段和月份
+按 PO 或 Invoice 分组预览单据：
 
-主区下半部：
+- **PO 预览**：选择链段和单据类型，查看 PI/PO 的结构化预览（header + table + totals + notes 区域）
+- **Invoice 预览**：按 `(PO, 月份, 链段)` 分组查看 Invoice + PL 的合并预览
+- 悬停单元格可查看源字段溯源信息
 
-- **链段选择器**：横向胶囊按钮显示贸易链路（SK→GS PTE、GS PTE→EMAX PTE 等），点击切换定价视角
-- **月份选择器**：显示该 PO 有出货数据的月份，点击切换 Invoice/PL 的取数月份。PI 和 PO 不受月份影响
+### 5. 导出（导出确认 Tab）
 
-### 5. 预览单据
-
-右侧预览栏显示当前选中链段 + 月份的 Invoice 实时预览。顶部四个标签可切换 PI / PO / Invoice / PL。
-
-- 预览由 SheetJS 渲染，悬停单元格时右下角显示源字段溯源信息
-- 缺字段位置显示红色占位符
-
-### 6. 导出
-
-点击顶部栏右侧"导出 ⌘E"按钮进入导出确认页：
-
-- 可勾选 PI / PO / Invoice / PL；SK / YM 主体下 PO 会自动隐藏
-- 当前预览为 Invoice 或 PL 时，默认同时勾选 Invoice + PL
+- 勾选需要导出的单据类型（PI / PO / Invoice / PL）；SK / YM 主体下 PO 自动禁用
+- 可选择导出格式：**Excel** 或 **PDF**（二者可以同时勾选）
 - Invoice + PL 同时导出时写入同一个 workbook 的两个 sheet
-- 只有一个生成文件时直接返回 `.xlsx`；多个生成文件时按 ZIP 打包
-- 文件写入后端 session 临时目录，状态栏显示导出文件名或失败原因
+- PDF 导出由 LibreOffice 无头转换生成，保证与 Excel 模板像素级一致
+- 未安装 LibreOffice 时 PDF 选项提示用户安装
 
-## 实现逻辑
+## 核心架构
 
 ### 装配流水线
 
@@ -100,55 +103,52 @@ RO DATA BASE.xlsx
      │
      ▼
   DocumentModel ─── 构建四类单据的视图模型（DocumentLine 列表 + 合计）
-     │              PI/PO 使用客户PO.Order Quantity；Invoice/PL 可按 invoice_month 切片
+     │              PI/PO 使用客户PO.Order Quantity；Invoice/PL 按 invoice_month 切片
      │
      ▼
   TemplateMapping ─── 加载 YAML 映射，校验所有引用单元格在模板中存在
-     │                支持可选 table_header_row，显式保护 start_row 上方的真实表格表头
      │
      ▼
-  Renderer ─── 先统一预留明细区样式，再写入 Excel 模板；超行时插入新行并复制样式
+  Renderer ─── 写入 Excel 模板；超行时插入新行并复制样式
      │          openpyxl 陷阱：insert_rows() 不平移 row_dimensions，须先手动处理
-     │          支持 mapping.notes：例如 PL 底部 PACKED IN <总 CTNS> CTNS
      │
-     ▼
-  输出 .xlsx / .zip
+     ├──→ 输出 .xlsx / .zip
+     │
+     └──→ pdf_convert ─── LibreOffice 无头转换 → 输出 .pdf（像素级还原模板版式）
 ```
 
 ### 模板与 YAML 映射
 
-每个模板配一份 YAML，描述"哪个业务字段写到哪个单元格"：
+12 个 `.xlsx` 模板每个配一份 YAML mapping，描述"哪个业务字段写到哪个单元格"：
 
 ```yaml
-# templates/gs/mappings/invoice.yaml
+# 示例：templates/gs/mappings/invoice.yaml
 document: invoice
 template_version: "v1"
 template: templates/gs/invoice&pl.xlsx
 sheet: Standard Invoice format
-table_header_row: 17      # 可选：start_row 上方若存在真实表格表头，则显式声明保留该行
+table_header_row: 17
 header:
-  invoice_no: H6          # 发票号写到 H6
-  ship_to: A12            # 收货地址写到 A12
+  invoice_no: H6
+  ship_to: A12
 lines:
-  start_row: 18           # 数据行从 18 行开始
-  style_source_row: 19    # 明细样式参考行（预留区归一化 + 插入新行都复制此行样式）
+  start_row: 18
+  style_source_row: 19
   columns:
-    sap: D                # SAP 号写到 D 列
-    unit_price: E          # 单价写到 E 列
-    quantity: F            # 数量写到 F 列
-    amount: H              # 金额写到 H 列
+    sap: D
+    unit_price: E
+    quantity: F
+    amount: H
 totals:
-  quantity: F27            # 数量合计写到 F27
-  amount: H27              # 金额合计写到 H27
-notes:
-  packed_in_ctns: A16      # PL 底部写 PACKED IN <总 CTNS> CTNS
+  quantity: F27
+  amount: H27
 ```
 
-模板版式变化时**只改 YAML，不改代码**。mapping 加载时自动校验所有单元格引用在模板中真实存在，防止模板漂移。
+模板版式变化时**只改 YAML，不改代码**。
 
-- `style_source_row` 不只用于“超行插入时复制样式”，也用于把模板预留明细区统一成同一套样式，避免模板脏格式把单价/数量显示成日期等错误格式。
-- `table_header_row` 是可选字段；当 `start_row` 上方存在真实表格表头时显式声明，渲染器会保留该行，不再依赖启发式猜测。
-- `notes` 是可选字段；用于声明模板底部动态说明单元格，例如 SK/YM PL 的 `PACKED IN <总 CTNS> CTNS`。
+- `style_source_row`：用于"超行插入时复制样式"和统一预留明细区样式
+- `table_header_row`：当 `start_row` 上方存在真实表格表头时显式声明，不再依赖启发式猜测
+- `notes`：可选，声明模板底部动态说明单元格（如 PL 的 `PACKED IN <总 CTNS> CTNS`）
 
 ### 贸易链段与定价
 
@@ -176,8 +176,6 @@ SK / YM 主体按 `PO record.CATEGORY` 判断工厂主体：
 | `1` / `2` | YM |
 | `3` | SK |
 
-工作台或 CLI 已明确选择 `seller=SK` / `seller=YM` 时，只导出该主体对应的行，不会把同一 PO 下另一主体的行一并生成。SK/YM 的 PI 导出会先按主体预过滤 PO record 原始行，再做客户 PO 数量匹配，避免未选主体的缺失客户 PO 行阻断当前主体导出。
-
 ### 数量来源
 
 | 单据 | 数量来源 |
@@ -197,26 +195,41 @@ SK / YM 主体按 `PO record.CATEGORY` 判断工厂主体：
 
 ### 公式回退
 
-`PO record` 中的 `SUBTOTAL`、`CTNS`、`TOTAL CBM` 通常来自 Excel 公式。当保存文件的程序（如 LibreOffice/WPS）未缓存公式结果时，`openpyxl` 的 `data_only=True` 读到的是 `None`，装配引擎按规则现算：
+`PO record` 中的 `SUBTOTAL`、`CTNS`、`TOTAL CBM` 通常来自 Excel 公式。当保存文件的程序未缓存公式结果时，`openpyxl` 的 `data_only=True` 读到的是 `None`，装配引擎按规则现算：
 
-- `CTNS = quantity / 外箱`（当前回退口径取 `客户PO.Order Quantity`）
+- `CTNS = quantity / 外箱`
 - `TOTAL CBM = L × W × H ÷ 1,000,000 × CTNS`
 
 并在数据视图中标记橙色边框，提示用户"由工作台计算，建议在 Excel 中刷新"。
 
 ### 双向溯源
 
-渲染时每个写到 Excel 的单元格都记录其来源（`SourceLocation`：sheet + row + field），构建 `SourceIndex`。
+渲染时每个写到 Excel 的单元格都记录其来源（`SourceLocation`：sheet + row + field），构建 `SourceIndex`。工作台中悬停文档预览的单元格时，右下角显示源字段信息。
 
-- 工作台中**悬停文档预览的单元格** → 右下角显示源字段信息
-- 未来：点击源字段 → 高亮所有引用它的文档位置
+### PDF 导出
+
+PDF 不通过 reportlab 重画，而是：
+
+1. **Renderer** 把 `DocumentModel` 逐格填进 `.xlsx` 模板
+2. **LibreOffice 无头模式** 将 `.xlsx` 转换为 `.pdf`
+
+这样 PDF 与 Excel 模板的字体、列宽、行高、合并单元格、边框、logo 完全一致。约束：LibreOffice 不随应用打包，需用户预装；未检测到时返回阻断错误，绝不静默降级。
+
+### Invoice 工作流
+
+工作台对 Invoice/PL 采用独立的分组视角：
+
+- **Invoice Group**：按 `(PO 号, 月份, 链段)` 组合为分组键
+- **Inspection**：以只读模式展示发票出货行及校验问题
+- **Preview**：在 Invoice 分组上下文中预览 Invoice + PL
+- **Export**：按分组导出，支持 Excel + PDF 双格式
 
 ## 命令行工具
 
 `ro-generate` 不依赖工作台 UI，可直接在终端使用。
 
 ```bash
-# 装配单张 Invoice（GS PTE → EMAX PTE 段，2026 年 1 月）
+# 装配单张 Invoice（GS PTE → EMAX PTE 段，2026 年 3 月）
 uv run ro-generate \
   --base tests/fixtures/synthetic_base.xlsx \
   --po 4500099999 \
@@ -226,7 +239,7 @@ uv run ro-generate \
   --invoice-month 2603 \
   --output-dir ./outputs
 
-# 四类单据全部装配
+# 四类单据全部装配为 Excel
 uv run ro-generate \
   --base tests/fixtures/synthetic_base.xlsx \
   --po 4500099999 \
@@ -235,6 +248,17 @@ uv run ro-generate \
   --output-format zip \
   --output-dir ./outputs \
   --json
+
+# 导出 PDF
+uv run ro-generate \
+  --base tests/fixtures/synthetic_base.xlsx \
+  --po 4500099999 \
+  --docs invoice \
+  --seller "GS PTE" \
+  --buyer "EMAX PTE" \
+  --invoice-month 2603 \
+  --output-format pdf \
+  --output-dir ./outputs
 ```
 
 ### CLI 参数
@@ -247,7 +271,7 @@ uv run ro-generate \
 | `--seller` / `--buyer` | 链段卖方/买方（GS PTE / EMAX PTE / SK/YM / PF） |
 | `--invoice-month` | 月份代码（`2601`–`2612`），Invoice/PL 必填或自动推断 |
 | `--invoice-no` | 指定发票号（多 INV# 歧义时使用） |
-| `--output-format` | `xlsx`（默认）或 `zip`（多文件时打包） |
+| `--output-format` | `xlsx`（默认）、`pdf` 或 `zip`（多文件时打包） |
 | `--output-dir` | 输出目录，默认 `./outputs` |
 | `--on-conflict` | `overwrite`（默认）/ `rename` / `abort` |
 | `--input` | 从 JSON 文件读取完整请求 |
@@ -264,8 +288,6 @@ uv run ro-generate \
 
 ### request.json 模式
 
-适合脚本和自动化调用：
-
 ```json
 {
   "base_file": "/path/to/base.xlsx",
@@ -274,7 +296,7 @@ uv run ro-generate \
   "seller": "GS PTE",
   "buyer": "EMAX PTE",
   "invoice_month": "2603",
-  "output_format": "zip",
+  "output_format": "pdf",
   "output_dir": "./outputs"
 }
 ```
@@ -282,8 +304,6 @@ uv run ro-generate \
 ```bash
 uv run ro-generate --input request.json --json
 ```
-
-`--json` 模式下 stdout 输出结构化 JSON，`status` 字段为 `success` / `error` / `needs_input`。CLI 命令行参数会覆盖 JSON 中的同名字段。
 
 ## 构建桌面应用（macOS）
 
@@ -304,13 +324,13 @@ ro_generator (核心包) → CLI | FastAPI 后端 → Vue 3 前端 → PyInstall
 
 ```text
 packages/
-  ro_generator/         核心包（Python）
-  ro_workbench_api/     工作台后端（FastAPI, 12 endpoints）
-  ro_workbench_launcher/  启动器（PyInstaller 打包）
-frontend/               Vue 3 + Pinia + SheetJS（Vite 构建）
-templates/              10 个 .xlsx workbook + 14 份 YAML mapping
-tests/fixtures/         合成 base 文件
-docs/                   产品方案 / UI 设计 / 实施指南
+  ro_generator/          核心包（Python，24 模块）
+  ro_workbench_api/      工作台后端（FastAPI，15 API 端点 + 3 静态资源路由）
+  ro_workbench_launcher/   启动器（PyInstaller 打包）
+frontend/                Vue 3 + TypeScript + Pinia（Vite 构建）
+templates/               12 个 .xlsx 模板 workbook + 18 份 YAML mapping
+tests/fixtures/          合成 base 文件生成脚本
+docs/                    产品方案 / UI 设计 / 实施指南
 ```
 
 ## 模板矩阵
@@ -319,18 +339,49 @@ docs/                   产品方案 / UI 设计 / 实施指南
 | --- | :-: | :-: | :-: | :-: |
 | GS PTE | ✅ | ✅ | ✅ | ✅ |
 | EMAX PTE | ✅ | ✅ | ✅ | ✅ |
-| SK/YM | ✅ | ❌ | ✅ | ✅ |
+| SK | ✅ | ❌ | ✅ | ✅ |
+| YM | ✅ | ❌ | ✅ | ✅ |
 
-SK / YM 主体没有 PO 模板，请求 `--docs po --seller SK/YM` 时返回阻断错误。
+SK / YM 主体没有 PO 模板，请求 `--docs po --seller SK` / `--seller YM` 时返回阻断错误。
+
+## 工作台 API 端点
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/api/health` | 健康检查 |
+| `POST` | `/api/check-path` | 校验文件路径是否存在 |
+| `POST` | `/api/session/open` | 打开 base 文件，返回 session_id + PO 列表 |
+| `GET` | `/api/invoices` | 获取 Invoice 分组列表 |
+| `GET` | `/api/invoice/{key}/inspection` | 获取 Invoice 分组的只读出货行及校验信息 |
+| `POST` | `/api/invoice/{key}/preview` | 获取 Invoice 分组的结构化预览 |
+| `POST` | `/api/invoice/{key}/export` | 导出单个 Invoice 分组单据 |
+| `POST` | `/api/invoice/{key}/export-batch` | 批量导出多个 Invoice 分组单据 |
+| `GET` | `/api/po/{po_no}` | 获取 PO 数据行（headers + rows） |
+| `GET` | `/api/po/{po_no}/customer-po` | 获取客户 PO 数据 |
+| `GET` | `/api/po/{po_no}/issues` | 获取 PO 校验问题（阻断/警告/缺失） |
+| `POST` | `/api/po/{po_no}/dry-run` | 干跑装配（不写入磁盘） |
+| `POST` | `/api/po/{po_no}/preview` | 获取 PO 的结构化预览 payload |
+| `POST` | `/api/po/{po_no}/edit` | 编辑单元格并写回 base 文件 |
+| `POST` | `/api/po/{po_no}/export` | 导出单个 PO 的单据 |
+| `POST` | `/api/po/{po_no}/export-batch` | 批量导出多个单据组 |
+| `GET` | `/api/download` | 下载导出文件 |
+| `POST` | `/api/session/close` | 关闭 session |
+
+Session 通过 `X-Session-Id` header 传递。
 
 ## 测试
 
 ```bash
+# Python 测试（~400 个）
 uv run pytest packages/ro_generator packages/ro_workbench_api -q
 uv run pytest packages/ro_generator/tests/test_resolver.py -v
-cd frontend && pnpm run test:e2e                       # Playwright E2E（5 场景）
+
+# E2E 测试（23 场景）
+cd frontend && pnpm run test:e2e
 ```
+
+黄金回归 PO：**`4500030844`**。合成 fixture：`tests/fixtures/synthetic_base.xlsx`。
 
 ## 技术栈
 
-Python 3.11+ / openpyxl / FastAPI / Vue 3 + TypeScript / Pinia / SheetJS / PyInstaller
+Python 3.11+ / openpyxl / FastAPI / Vue 3 + TypeScript / Pinia / Vite / Playwright / PyInstaller / LibreOffice

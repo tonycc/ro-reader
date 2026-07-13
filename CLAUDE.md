@@ -11,9 +11,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```text
 packages/
   ro_generator/        核心包（Python）：24 模块，~400 测试
-  ro_workbench_api/    工作台后端（FastAPI）：13 API 端点 + 3 静态资源路由
+  ro_workbench_api/    工作台后端（FastAPI）：18 API 端点 + 3 静态资源路由
   ro_workbench_launcher/  启动器（PyInstaller .app 24 MB）
-frontend/              Vue 3 + TypeScript + Pinia（Vite 构建，16 E2E 场景）
+frontend/              Vue 3 + TypeScript + Pinia（Vite 构建，23 E2E 场景）
 templates/             10 个 .xlsx 模板 workbook + 14 份 YAML mapping
 tests/fixtures/        合成 base 文件生成脚本
 ```
@@ -218,7 +218,7 @@ uv run uvicorn ro_workbench_api.app:app --reload --host 127.0.0.1 --port 54321
 pnpm install
 pnpm run dev                                    # Vite 开发服务器 :5173
 pnpm run build                                  # vue-tsc + vite build → dist/
-pnpm run test:e2e                               # Playwright E2E（16 场景）
+pnpm run test:e2e                               # Playwright E2E（23 场景）
 
 # === 启动器（macOS） ===
 uv run pyinstaller packages/ro_workbench_launcher/ro-workbench.spec --noconfirm
@@ -275,6 +275,11 @@ uv run ruff check . && uv run ruff format --check . && uv run mypy packages
 | `GET` | `/api/health` | 健康检查 |
 | `POST` | `/api/check-path` | 校验文件路径是否存在 |
 | `POST` | `/api/session/open` | 打开 base 文件，返回 session_id + PO 列表 |
+| `GET` | `/api/invoices` | 获取 Invoice 分组列表 |
+| `GET` | `/api/invoice/{key}/inspection` | 获取 Invoice 分组的只读出货行及校验信息 |
+| `POST` | `/api/invoice/{key}/preview` | 获取 Invoice 分组的结构化预览 |
+| `POST` | `/api/invoice/{key}/export` | 导出单个 Invoice 分组单据 |
+| `POST` | `/api/invoice/{key}/export-batch` | 批量导出多个 Invoice 分组单据 |
 | `GET` | `/api/po/{po_no}` | 获取 PO 数据行（headers + rows） |
 | `GET` | `/api/po/{po_no}/customer-po` | 获取客户 PO 数据 |
 | `GET` | `/api/po/{po_no}/issues` | 获取 PO 校验问题（阻断/警告/缺失） |
@@ -315,7 +320,7 @@ Session 通过 `X-Session-Id` header 传递（前端 Pinia store 自动管理）
 | 1 | 核心包 + CLI（先做 Invoice 一种单据） | ✅ 完成 |
 | 2 | 四类单据 + GS/EMAX/SK/YM 多主体模板 + 模板预览 CLI | ✅ 完成（14 份 mapping，四类单据 × 三链段） |
 | 3 | 工作台 MVP（FastAPI + Vue + PyInstaller 启动器，含完整 UI） | ✅ 完成（前后端联调通过，.app 24 MB） |
-| 4 | 加固（回归测试、性能、模板版本管理） | ✅ 完成（E2E 16 场景、~400 pytest、README） |
+| 4 | 加固（回归测试、性能、模板版本管理） | ✅ 完成（E2E 23 场景、~400 pytest、README） |
 
 > Phase 0 spike 结论见 [`docs/development/phase-0-spike-results.md`](docs/development/phase-0-spike-results.md)。
 
