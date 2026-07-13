@@ -52,6 +52,8 @@ jobs:
           hdiutil create -volname "赛肯单据生成工具" \
             -srcfolder "$APP" \
             -ov -format UDZO "$DMG"
+          # 删除源 .app，只保留 .dmg，避免 artifact 中重复
+          rm -rf "$APP"
 
       # Windows: 生成辅助文件 + 打 ZIP
       - name: Package ZIP (Windows)
@@ -147,6 +149,10 @@ jobs:
           Compress-Archive `
             -Path "dist\赛肯单据生成工具", "dist\launch.bat", "dist\VERSION.txt", "dist\README.txt" `
             -DestinationPath "dist\赛肯单据工具-$v-windows.zip"
+
+          # 删除源文件，只保留 .zip，避免 artifact 中重复
+          Remove-Item -Recurse -Force "dist\赛肯单据生成工具" -ErrorAction SilentlyContinue
+          Remove-Item -Force "dist\launch.bat", "dist\VERSION.txt", "dist\README.txt" -ErrorAction SilentlyContinue
 
       - uses: actions/upload-artifact@v4
         with:
