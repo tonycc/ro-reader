@@ -1,5 +1,7 @@
 # Agent 字段修复操作手册
 
+> 当前有效。适用于 12 个 workbook、18 份 mapping 和六种内部单据类型（PI、PO、INVOICE、PL、CI、RO_PL）。
+
 > 本手册面向开发者与 Agent，目标是把“发现字段问题 -> 定位根因 -> 修改正确层级 -> 验证结果”收敛成一套可重复执行的标准流程。
 
 配套文档：
@@ -47,7 +49,7 @@
 
 先记录以下信息：
 
-- 单据类型：`PI` / `PO` / `INVOICE` / `PL`
+- 单据类型：`PI` / `PO` / `INVOICE` / `PL` / `CI` / `RO_PL`
 - 主体 / 链段：如 `GS PTE -> EMAX PTE`
 - 出错字段名
 - 当前值
@@ -64,7 +66,7 @@
 | 值错 | 单元格位置对，但值不对 |
 | 位置错 | 值对，但写到了错误格子 |
 | 顺序错 | 预览条款或展示顺序不对 |
-| 口径错 | `Invoice` 用了 `FINALQTY` 等 |
+| 口径错 | `Invoice` 用了订单数量而不是 `SHIP QTY` 等 |
 | 预览错但 Excel 对 | 只影响 `document_preview.py` 或 preview YAML |
 | Excel 错但预览对 | 只影响 mapping YAML 或 `renderer.py` |
 

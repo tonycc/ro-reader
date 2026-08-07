@@ -1,5 +1,7 @@
 # 字段修复案例库
 
+> 当前有效。案例用于解释定位方法；字段最终事实以当前 `base_schema.yaml`、字段规则模块、mapping 和测试为准。
+
 > 本文档沉淀字段映射修复的真实案例，目标是帮助开发者和 Agent 快速类比类似问题。
 
 配套文档：
@@ -132,7 +134,7 @@
 
 现象：
 
-- `Invoice` 中 `quantity` 错误地使用了 `FINALQTY`
+- `Invoice` 中 `quantity` 错误地使用了订单数量（如 `FINALQTY` 或 `客户PO.Order Quantity`）
 - 正确口径应该是 `SHIP QTY`
 
 判断：
@@ -156,7 +158,7 @@
 验证：
 
 - `Invoice` 使用 `SHIP QTY`
-- `PI / PO` 仍保持 `FINALQTY`
+- `PI / PO` 仍使用 `客户PO.Order Quantity`
 
 ### 案例 5：`ship_to` 来自错误列
 

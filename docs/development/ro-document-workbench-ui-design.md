@@ -1,728 +1,198 @@
-# RO 单据工作台前端 UI 与交互设计
+# RO 单据工作台 UI 说明
 
-> 本文档基于 [产品方案](../product/ro-document-generator-product-plan.md) §4 体验原则、§7.2 部署形态、§8 工作台设计展开，把"用户应当如何使用"落到"界面应当如何呈现、应当如何响应"。
->
-> 视觉风格定位：**克制的业务工具**（灰阶 + 单一蓝色强调，系统 sans + JetBrains Mono）。
-> 主题：**MVP 仅亮色**，但 token 体系按语义化变量设计，预留暗色扩展位。
+> 本文描述当前前端实现，不包含尚未开发的交互设想。产品范围见 [`../product/ro-document-generator-product-plan.md`](../product/ro-document-generator-product-plan.md)。
 
----
+## 1. 技术与边界
 
-## 0. Phase 5 双视角修订
+- Vue 3 + `<script setup lang="ts">`
+- TypeScript、Pinia、Vite
+- 原生 `<table>` 和组件局部 CSS
+- 全局 token：`frontend/src/styles/tokens.css`
 
-本节是 Phase 5 的当前交互契约；与本文后续仍以单个 PO 承载四类单据的旧描述冲突时，以本节和产品方案 §8 为准。
+前端不计算价格、主体、票据组、校验结果或导出文件名，只提交用户选择并渲染核心包结果。
 
-- `数据检查`沿用 `PO 视角 / Invoice 视角`：PO 视角保留单个 PO 可编辑数据表；Invoice 视角展示票据组实际出货行及问题原因，并保持只读。
-- `单据预览`顶部增加 `PO 视角 / Invoice 视角`一级 segmented control。
-- `PO 视角`左侧显示 PO 列表，右侧只显示 PI / PO；`Invoice 视角`左侧显示票据组列表，右侧只显示 Invoice / PL。
-- 票据组列表主文本显示 `display_invoice_no`，同一行以紧凑元信息显示 PO 数量、可用主体和状态，不显示解释性长副标题。
-- 两个视角分别记忆选中对象、主体和单据类型。首次进入默认 PO 视角；首次进入 Invoice 视角优先选择第一个非阻断票据组。
-- Invoice 视角只启用当前票据组实际存在的主体；无数据主体保持可见但禁用，并显示“该票据组在此主体下无可装配数据”提示。
-- Invoice 检查复用 PO 检查的阻断/警告徽章、去重规则和原因面板，不提供跨 PO 编辑或问题跳转。
-- `导出确认`沿用进入前的视角：PO 视角只显示 PI / PO，Invoice 视角只显示 Invoice / PL；一次导出不混合两种业务对象。
+当前依赖中没有 SheetJS、Tailwind 或组件设计系统。单据预览消费后端结构化 JSON，而不是在浏览器读取 `.xlsx`。
 
-详细对象模型、API 和聚合规则分别见：
+## 2. 页面结构
 
-- [`workbench-preview-dual-scope-design.md`](./workbench-preview-dual-scope-design.md)
-- [`workbench-invoice-group-key-and-preview-api-design.md`](./workbench-invoice-group-key-and-preview-api-design.md)
+`App.vue` 使用三行网格：
 
-## 1. 设计原则
+```text
+TopBar（56px）
+┌───────────────┬─────────────────────────────────────┐
+│ QueueSidebar  │ 数据检查 | 单据预览 | 导出确认       │
+│ 292px         │ 当前 Tab 内容                       │
+└───────────────┴─────────────────────────────────────┘
+StatusBar（30px）
+```
 
-承接产品方案 §4 的五条原则，落到界面层补充三条执行守则：
+主要组件：
 
-1. **状态可见**：每个数据点都能看出"它现在是什么状态"。颜色、图标、徽章必须有明确语义，不允许装饰性使用。
-2. **操作就近**：要修改某个字段，触发点必须在该字段附近。不允许"在这里看见错误，到那里去修复"。
-3. **反馈即时**：编辑、切换、刷新都要在 200 ms 内给出视觉变化。超过 200 ms 的操作必须显示进行中状态。
+| 组件 | 职责 |
+| --- | --- |
+| `TopBar.vue` | base 路径设置、路径检测和加载 |
+| `QueueSidebar.vue` | PO/Invoice 业务对象列表、选择和筛选 |
+| `DataCheckScreen.vue` | PO/Invoice 数据检查切换 |
+| `InvoiceDataCheck.vue` | 票据组只读成员行 |
+| `IssueSummaryBar.vue` | 阻断/警告摘要和详情 |
+| `PreviewScreen.vue` | 作用域、主体、单据选择和预览编排 |
+| `PreviewDocumentPanel.vue` | 单张结构化单据 |
+| `ExportScreen.vue` | 主体、单据、Excel/PDF 导出确认 |
+| `LibreOfficePrompt.vue` | PDF 转换器缺失提示 |
+| `StatusBar.vue` | 当前对象状态和问题计数 |
 
-任何 UI 决策与这三条冲突时需明确取舍。
+## 3. TopBar
 
-## 2. 设计 Token 体系
+顶部栏显示当前 base 文件名、PO 数量和加载状态。
 
-所有视觉量都以 token 形式定义，存放在 `src/styles/tokens.css`。组件代码不允许写死颜色或像素值。
+“系统设置”打开模态面板：
 
-### 2.1 色彩
+- 输入完整 `.xlsx` 路径。
+- “检测”调用 `/api/check-path`。
+- “保存”把路径写入 `localStorage`，key 为 `ro-workbench-base-path`。
+- “加载数据”打开或复用后端 session。
 
-色彩按语义分组，命名只描述用途不描述颜色，便于将来做暗色主题。
+当前 TopBar 不提供撤销、重做、版本历史或文件选择器；用户输入绝对路径。
 
-```css
-:root {
-  /* surface */
-  --surface-canvas:    #f7f7f8;   /* 主区背景 */
-  --surface-default:   #ffffff;   /* 卡片、面板 */
-  --surface-raised:    #ffffff;   /* 弹层、抽屉 */
-  --surface-sunken:    #f0f0f2;   /* 内嵌区域、分组 */
-  --surface-overlay:   rgba(20,22,26,0.4); /* 模态遮罩 */
+## 4. QueueSidebar
 
-  /* foreground */
-  --fg-default:        #18181b;   /* 主文本 */
-  --fg-muted:          #52525b;   /* 次级文本 */
-  --fg-subtle:         #a1a1aa;   /* 辅助文本、placeholder */
-  --fg-on-accent:      #ffffff;   /* 强调色背景上的文字 */
+队列有两种业务对象：
 
-  /* border */
-  --border-default:    #e4e4e7;
-  --border-strong:     #d4d4d8;
-  --border-focus:      var(--accent-default);
+- PO：状态为 `ready`、`partial` 或 `blocked`。
+- Invoice：状态为 `ready`、`partial`、`blocked` 或 `done`。
 
-  /* accent (单一蓝) */
-  --accent-default:    #2563eb;
-  --accent-hover:      #1d4ed8;
-  --accent-active:     #1e40af;
-  --accent-subtle:     #eff6ff;   /* 选中行、激活背景 */
+PO 摘要包含主体、行数、发票候选、可导出单据和阻断数量。Invoice 摘要包含显示发票号、成员 PO、主体发票号和冲突数。
 
-  /* status: 用于 PO 状态、校验、回写提示。低饱和度避免视觉干扰 */
-  --status-ready-fg:    #166534;   --status-ready-bg:    #dcfce7;
-  --status-partial-fg:  #854d0e;   --status-partial-bg:  #fef9c3;
-  --status-blocked-fg:  #991b1b;   --status-blocked-bg:  #fee2e2;
-  --status-done-fg:     #52525b;   --status-done-bg:     #f4f4f5;
-  --status-info-fg:     #1e3a8a;   --status-info-bg:     #eff6ff;
+选择对象时，store 分别记忆 `selectedPo` 和 `selectedInvoiceGroup`，不能把两种 ID 混用。
 
-  /* validation overlay */
-  --warn-low-bg:        #fffbeb;
-  --warn-high-bg:       #fef3c7;
-  --error-bg:           #fee2e2;
-  --formula-fallback:   #f59e0b;   /* §10.4 公式回退橙色边框 */
+## 5. 数据检查
+
+### 5.1 PO 视角
+
+从 `GET /api/po/{po_no}` 获取 headers 和 rows。双击可编辑单元格，提交到 `/api/po/{po_no}/edit`。
+
+编辑成功后重新加载当前 PO、问题和预览。当前 store 固定写入 `PO record`，不允许从 UI 编辑 `DATA BASE` 或 `客户PO`。
+
+### 5.2 Invoice 视角
+
+从 `GET /api/invoice/{key}/inspection` 获取票据组实际出货行。表格只读，展示源行号、PO、SAP、描述、Category、SHIP QTY、发票号、SK/YM 发票号和可用主体。
+
+loading、error 和 empty 状态彼此独立，不能沿用上一个票据组数据。
+
+### 5.3 问题摘要
+
+PO 和 Invoice 复用 `IssueSummaryBar`。详情由后端返回的 code、message、Sheet、row、field 和 severity 驱动；前端不重新判断严重度。
+
+## 6. 单据预览
+
+### 6.1 两种作用域
+
+- `po`：PI、PO。
+- `invoice`：INVOICE、PL、INVOICE_PL，以及 SK/YM 的 CI、RO_PL、CI_PL。
+
+切换作用域时分别恢复已选 PO/票据组和主体。
+
+### 6.2 请求编排
+
+组合预览不是后端领域单据类型：
+
+- `INVOICE_PL` 在前端并行请求 `INVOICE` 和 `PL`。
+- `CI_PL` 在前端并行请求 `CI` 和 `RO_PL`。
+
+每张单据独立保留 preview、errors 和 warnings；一张失败不应隐藏另一张结果。
+
+### 6.3 PreviewPayload
+
+预览响应包含：
+
+```text
+document_type / title / seller / buyer
+po_no / pi_no / invoice_no / ship_to
+seller_info / to_label / terms
+layout / resolved_values
+column_labels / lines / totals / notes
+source_entries
+```
+
+`PreviewDocumentPanel` 按 `layout.top`、`layout.info`、明细表、合计和备注渲染，不依赖 Excel 坐标。
+
+### 6.4 来源信息
+
+点击可溯源字段时显示来源详情。来源类型包括：
+
+- `base_field`
+- `computed`
+- `template_content`
+- `system_generated`
+- `manual_input`
+
+页面底部也可显示当前预览的来源表。当前没有从数据表单元格反向高亮预览字段。
+
+## 7. 导出确认
+
+导出页根据当前作用域和主体显示合法单据：
+
+- PO 作用域：PI/PO。
+- Invoice 作用域：INVOICE/PL；SK/YM 额外显示 CI/RO_PL。
+
+支持勾选 Excel、PDF 或两者。前端把选择转换为 batch groups：
+
+```json
+{
+  "seller": "GS PTE",
+  "documents": ["INVOICE", "PL"]
 }
 ```
 
-> 命名约定：`--<role>-<variant>`。新增颜色优先复用已有 role；只有出现真正新语义时才加新 role。
+后端返回单文件或 ZIP 路径后，store 通过 `/api/download` 触发浏览器下载。
 
-### 2.2 字体
+当错误 code 为 `PDF_CONVERTER_UNAVAILABLE` 时设置全局 `libreOfficeMissing`，展示安装引导。前端不得自行把 PDF 请求降级为 Excel。
 
-```css
-:root {
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI",
-               "PingFang SC", "Microsoft YaHei", sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono",
-               "Cascadia Code", Consolas, monospace;
-}
-```
+## 8. Store 状态
 
-**Mono 强制使用场景**（保证视觉对齐和可读性）：
+`stores/workbench.ts` 是工作台状态入口，主要状态组：
 
-- PO 号、SAP、INV#、FACTORY DOC NO. 等业务编号
-- 所有数值（数量、单价、金额、CBM）
-- 发票号、出货数量等票据字段
-- 文件名
+- session/base：`baseFile`、`poList`、`invoiceList`
+- selection：PO、票据组、preview scope、seller、invoice no
+- data check：PO rows/headers、Invoice inspection
+- preview：单据结果、来源、loading/error
+- validation：blocking、warnings、PO issues
+- export：loading、错误、最后输出、LibreOffice 状态
 
-**字号阶梯**（rem，1rem = 16px）：
+异步请求必须记录请求上下文，避免较慢的旧请求覆盖新选择。
 
-| token | rem | px | 用途 |
-|---|---|---|---|
-| `--text-xs` | 0.75 | 12 | 标签、辅助说明 |
-| `--text-sm` | 0.8125 | 13 | grid 默认行、PO 列表 |
-| `--text-base` | 0.875 | 14 | 主区文本、按钮 |
-| `--text-md` | 1.0 | 16 | 区块标题、模态标题 |
-| `--text-lg` | 1.125 | 18 | 顶部栏文件名 |
+`stores/api.ts` 只封装 fetch、session header、类型和 HTTP 错误，不含业务规则。
 
-**行高**：UI 文本统一 1.4，grid 单元格 1.2。**禁止**为追求紧凑而低于 1.2。
+## 9. 样式
 
-### 2.3 间距
+全局颜色和排版使用 CSS variables。组件优先使用 token，不新增平行色板。
 
-8 px 网格，命名按级数：
+当前视觉语义：
 
-| token | px | 用途 |
-|---|---|---|
-| `--space-1` | 4 | 图标与文字、徽章内边距 |
-| `--space-2` | 8 | 紧凑型间距（grid cell padding） |
-| `--space-3` | 12 | 默认行间距 |
-| `--space-4` | 16 | 区块内边距 |
-| `--space-6` | 24 | 区块之间 |
-| `--space-8` | 32 | 主区分隔 |
+- 蓝色：主操作和当前选择。
+- 绿色：ready/success。
+- 黄色：warning/partial。
+- 红色：blocked/error。
+- 灰色：次级信息和不可用项。
 
-### 2.4 圆角与阴影
+布局最小可用高度由 `100vh` 网格保证，主内容区域独立滚动。
 
-```css
---radius-sm: 4px;   /* 徽章、tag */
---radius-md: 6px;   /* 按钮、输入框 */
---radius-lg: 8px;   /* 卡片、弹层 */
+## 10. 可访问性和交互约束
 
---shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
---shadow-md: 0 2px 6px rgba(0,0,0,0.06);
---shadow-lg: 0 8px 24px rgba(0,0,0,0.10);
-```
+- 原生 button/input 保留键盘焦点和 disabled 状态。
+- loading 时禁止重复提交。
+- 错误文本不能只靠颜色表达。
+- 模态可点击遮罩关闭，并提供明确关闭按钮。
+- 单据或格式不可用时应禁用，而不是提交后再猜测。
 
-克制原则：除弹层、抽屉、tooltip 外，主界面不使用阴影；优先用 1 px 边框分隔。
+## 11. 当前未实现 UI
 
-### 2.5 动画
+以下不应出现在当前使用说明中：
 
-```css
---motion-fast: 120ms;   /* hover、focus 反馈 */
---motion-base: 180ms;   /* 折叠、tab 切换 */
---motion-slow: 240ms;   /* 抽屉、模态进入 */
---ease-default: cubic-bezier(0.2, 0, 0.1, 1);
-```
+- 撤销/重做按钮。
+- 版本历史抽屉。
+- 模板预览工具。
+- 源数据到文档的反向高亮。
+- 原生系统文件选择对话框。
 
-**全局禁用过渡**的场景：grid 单元格更新（避免数据闪烁）、预览刷新（保持视觉同步）。
-
----
-
-## 3. 整体布局
-
-### 3.1 窗口尺寸
-
-| 维度 | 值 | 说明 |
-|---|---|---|
-| 最小宽度 | 1280 px | 三栏布局的最小可用宽度 |
-| 最小高度 | 720 px | 保证 PO 列表 + 数据视图 + 预览栏垂直堆叠时可读 |
-| 推荐宽度 | 1440 px+ | 多数笔记本 |
-
-低于最小尺寸时显示提示："请放大窗口至少 1280 × 720"。**不做响应式收缩**，因为本工具是离线桌面工作台，不优化移动设备和小屏。
-
-### 3.2 区域划分
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  顶部栏  TopBar                                       48 px  │
-├──────────┬──────────────────────────────┬───────────────────┤
-│          │                              │                   │
-│  PO 队列 │   主区  MainArea             │  文档预览栏        │
-│  240 px  │   弹性                       │  PreviewScreen    │
-│  可调    │                              │  480 px 起，可调   │
-│ 200-360  │   ├ DataCheckScreen          │                   │
-│          │   │  弹性                    │                   │
-│          │   ├ 分隔条 4 px               │                   │
-│          │   └ ChainAndMonth 200 px 高   │                   │
-│          │                              │                   │
-├──────────┴──────────────────────────────┴───────────────────┤
-│  底部栏  StatusBar                                   28 px   │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**分隔条**：左右两根可拖动，鼠标悬停时高亮 4 px 蓝色，按下时全屏遮罩避免内容选中。位置持久化到本地配置（按用户保存）。
-
-### 3.3 顶部栏
-
-```
-┌─ ●  base-2026-Q1.xlsx                                              ─┐
-│  ▢ undo  ▢ redo  │  ⌚ 历史  │                       [ 导出  ▾ ]  │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-- 左：base 文件名 + 状态点（绿=已加载干净 / 黄=有未保存改动 / 红=加载失败）。点击文件名打开"切换 base"对话框。
-- 中：撤销 / 重做 / 历史抽屉触发。
-- 右：导出主按钮 + 下拉（zip / 单文件 / 按链段拆分）。
-
-> 顶部栏不放搜索框、不放设置入口。设置走 `Cmd+,` 弹模态；搜索走主区。
-
-### 3.4 底部栏
-
-```
-│ ● Ready  │ ⚠ 2 阻断  ⚠ 5 警告  │  INV-001 / Invoice │ localhost:53421 │
-```
-
-固定显示：
-
-- 当前选中 PO 的状态点
-- 阻断 / 警告 计数（点击展开侧面板）
-- 当前上下文（PO 号或 Invoice 号 / 单据类型）
-- 启动器端口（点击复制，便于排查）
-
----
-
-## 4. PO 列表（左侧栏）
-
-### 4.1 行结构
-
-```
-┌──────────────────────────────────┐
-│ ●  4500030844                    │
-│    GS PTE → EMAX  ·  3 行        │
-└──────────────────────────────────┘
-```
-
-每行 56 px：
-
-- 第 1 行：状态点 + PO 号（mono 字体）
-- 第 2 行：链段标识 + 行数（fg-muted，text-xs）
-
-**状态点颜色**直接映射 §8.2 的四种状态，使用 `--status-*-bg` 实色填充：
-
-| 状态 | 视觉 |
-|---|---|
-| ready | ● 绿 |
-| partial | ◐ 黄（半圆暗示部分） |
-| blocked | ● 红 |
-| done | ○ 灰（空心暗示已结束） |
-
-行交互态：
-
-| 态 | 视觉 |
-|---|---|
-| 默认 | 透明背景 |
-| hover | `--surface-sunken` |
-| selected | `--accent-subtle` 背景 + 左侧 2 px 蓝色竖线 |
-| keyboard focus | 1 px 蓝色虚线外框 |
-
-### 4.2 顶部筛选条
-
-```
-┌──────────────────────────────────┐
-│ 🔍 搜索 PO / SAP / INV#          │
-│ [ 全部 ▾ ] [ 链段 ▾ ]             │
-└──────────────────────────────────┘
-```
-
-- 搜索：实时过滤，支持 PO 号前缀、SAP 全等、INV# 包含三种规则；输入时高亮匹配子串。
-- 状态筛选：默认 `全部`，可选 `ready / partial / blocked / done`，多选。
-- 链段筛选：从产品方案 §3.3 三段中多选。
-
-筛选状态持久化到 session（关闭工作台后重置），不写入用户配置。
-
-### 4.3 列表底部
-
-```
-┌──────────────────────────────────┐
-│ 显示 23 / 共 87                  │
-└──────────────────────────────────┘
-```
-
-显示当前过滤结果数 / 总数。点击"共 N"清空所有筛选。
-
-### 4.4 空状态
-
-| 场景 | 显示 |
-|---|---|
-| base 未加载 | 大号占位："拖入 base 文件，或点此选择" + 文件选择按钮 |
-| 加载中 | 居中 spinner + "解析 PO record..." |
-| 筛选无结果 | "没有匹配的 PO" + 清空筛选按钮 |
-| base 中无 PO | "PO record 中没有数据，检查源文件" + 重新加载按钮 |
-
----
-
-## 5. 主区上半：PO 数据视图
-
-### 5.1 表头
-
-第一行固定，包括：
-
-- PO 号（mono，text-md）
-- 链段徽章
-- Invoice 视角下显示当前 `display_invoice_no`
-- 行数 / 总数量 / 总金额（实时计算，mono）
-
-```
-PO 4500030844   [ GS PTE → EMAX ]
-3 行 · 280 件 · $13,440.00
-```
-
-### 5.2 Grid 单元格
-
-每个单元格四种基础态：
-
-| 态 | 视觉 |
-|---|---|
-| 默认 | 文本，无边框 |
-| hover | `--surface-sunken` 背景 |
-| 编辑中 | 蓝色 2 px 内边框 + input 接管 |
-| 已编辑（dirty） | 右上角 4 px 蓝色三角小标 |
-
-**校验态**叠加在基础态之上：
-
-| 态 | 视觉 | 行为 |
-|---|---|---|
-| 缺必填 | 红色 1 px 内边框 + 红点 | hover 显示"该字段影响 [Invoice 第 3 行]" |
-| 公式回退 | 橙色 1 px 内边框 + ⚙ 小图标 | hover 显示"由工作台按公式现算，建议在 Excel 中刷新" |
-| 警告（low） | 单元格左上角 6×6 黄点 | 不打断操作 |
-
-### 5.3 编辑流程
-
-```
-单击 cell → 显示蓝色 2px 边框（focus 态）
-双击 cell → 进入编辑（input 接管，全选当前值）
-回车 / Tab → 提交，进入下一格
-Esc → 放弃修改
-失焦 → 自动提交
-```
-
-**优化措施**：
-
-- 编辑期间预览栏不刷新，提交后再触发，避免抖动。
-- 提交后 200 ms 内预览栏对应单元格做 1 次蓝色脉冲（`--accent-subtle` 闪烁），强化"它收到了"的反馈。
-- 提交失败（值类型错误等）：单元格抖动 200 ms + 红色边框 + 底部 toast 显示原因。
-
-### 5.4 列设置
-
-- 必填列：左侧 4 px 蓝色窄条
-- 价格列：根据当前选中链段高亮（`--accent-subtle` 背景）
-- `SHIP QTY` 列：直接显示当前 `INV#` 对应的实际出货数量
-
-### 5.5 双向溯源（产品方案 §4.4）
-
-- 单元格右键 → "查看上游" / "查看下游"
-- "查看上游"：弹侧面板展示 `DATA BASE` 中匹配 SAP 的整行
-- "查看下游"：高亮预览栏中受此字段影响的单元格，并把 tab 切换到第一个受影响的单据
-
----
-
-## 6. 主区下半：链段图与出货摘要
-
-垂直分两栏。
-
-### 6.1 链段图（左 60%）
-
-```
-┌────────────────────────────────────────────────┐
-│  工厂 ─→ ●SK/YM─→ ○GS PTE─→ ○EMAX─→ ○PF       │
-│         价格列：SK/YM USD FOB                  │
-│         模板：templates/sk/                    │
-└────────────────────────────────────────────────┘
-```
-
-- 每段是一个 32 px 高的胶囊，鼠标 hover 时显示对应价格列名和模板路径。
-- 选中态：实心蓝色圆点 + 段下方 2 px 蓝色横线。
-- 未选中态：空心圆 + 灰色虚线。
-- 不合法段（产品方案 §3.3）：胶囊置灰 + 鼠标 hover 显示"PO 数据中无此段价格"。
-- 切换链段时数据视图、出货摘要、预览栏在 200 ms 内全部刷新。
-
-### 6.2 出货摘要（右 40%）
-
-```
-┌────────────────────────────┐
-│ Invoice / PL 出货           │
-│ SHIP QTY       280          │
-│ CTNS            12          │
-│ TOTAL CBM      4.8          │
-└────────────────────────────┘
-```
-
-- 汇总当前对象中 `SHIP QTY > 0` 的行，显示数量、箱数和体积。
-- PO 视角下出货摘要置灰；PI / PO 数量仍来自客户 PO 的 `Order Quantity`。
-
----
-
-## 7. 文档预览栏（右侧）
-
-### 7.1 标签栏
-
-```
-┌────────────────────────────────────────┐
-│ [ PO 视角 | Invoice 视角 ]             │
-│ [ PI ] [ PO ]                          │
-└────────────────────────────────────────┘
-```
-
-- 一级 segmented control 切换 `PO 视角 / Invoice 视角`。
-- PO 视角只显示 PI / PO；Invoice 视角只显示 Invoice / PL。
-- 当前 tab 下方 2 px 蓝色横线。
-- tab 上的小角标 `*` 表示该单据有未导出的修改。
-- 不可生成的 tab（如 SK 链段下的 PO）显示置灰 + lock 图标，hover 提示"该主体无 PO 模板"。
-
-### 7.2 预览容器
-
-预览使用后端返回的结构化 `DocumentModel` JSON，UI 层封装为：
-
-```
-PreviewScreen
-  ├─ Header（行级摘要：合计行数 / 数量 / 金额）
-  ├─ StructuredTable（按 layout / column_labels / lines / totals 渲染）
-  ├─ Overlay（缺字段红色 placeholder、悬停高亮、点击导航）
-  └─ Footer（操作行：在数据视图中定位 / 在外部打开）
-```
-
-Overlay 是单独一层，叠在结构化表格之上，保证：
-
-- 预览布局调整不影响溯源交互层
-- 缺字段高亮的几何坐标由后端提供（基于 mapping），UI 不解析单元格
-
-### 7.3 缺字段呈现
-
-```
-┌──────────────────────┐
-│ INV#:  ╭──────────╮  │
-│        │ [ 需填 ]  │  │
-│        ╰──────────╯  │
-└──────────────────────┘
-```
-
-- 红色虚线边框 + 红色文字"[ 需填 INV# ]"
-- 点击 → 左侧数据视图自动滚动并 focus 到对应单元格，进入编辑态
-- 该字段一旦填上，预览栏在 200 ms 内刷新
-
-### 7.4 悬停溯源
-
-鼠标悬停文档单元格 1.5 s 后：
-
-- 单元格自身蓝色边框
-- 左侧数据视图对应字段高亮 `--accent-subtle` + 滚动到可见区
-- 右下角 tooltip 显示来源："来自 PO record 第 17 行 SUBTOTAL"
-
-### 7.5 渲染状态
-
-| 态 | 视觉 |
-|---|---|
-| 渲染中 | 顶部 2 px 蓝色进度条 + 内容半透明 |
-| 失败 | 居中错误卡片 + 重试按钮 + 折叠的错误详情 |
-| 数据为空 | 居中"该 tab 当前无可装配数据" |
-
----
-
-## 8. 导出流程
-
-### 8.1 主按钮交互
-
-```
-[ 导出 ]
-   │
-   └─ 点击 → 切换到导出确认页
-             PO 视角勾选 PI / PO
-             Invoice 视角勾选 Invoice / PL
-             确认后调用后端导出接口
-```
-
-### 8.2 导出确认页
-
-```
-┌─ 导出内容确认 ─────────────┐ ┌─ 输出设置 ───────────────┐
-│ PO 视角：☑ PI  ☑ PO         │ │ 文件格式：ZIP              │
-│ 或                          │ │ 输出文件名：后端返回        │
-│ Invoice：☑ Invoice  ☑ PL    │ │ 输出目录：session 临时目录  │
-│                            │ │ [ 确认导出 ]               │
-└────────────────────────────┘ └──────────────────────────┘
-```
-
-- 导出确认页沿用进入前的视角和选中对象，不提供跨视角混选。
-- PO 视角只展示 PI / PO；SK / YM 主体不展示 PO 项。
-- Invoice 视角只展示 Invoice / PL，默认同时勾选二者。
-- Invoice + PL 组合导出为同一个 workbook 的两个 sheet。
-- 工作台后端统一返回 ZIP；ZIP 内保留实际生成的一个或多个 workbook。
-
-### 8.3 导出过程
-
-- 确认按钮进入 loading："导出中..."
-- 完成后状态栏显示生成文件名。
-- 失败：导出页展示核心包返回的错误信息。
-
-### 8.4 导出前阻断
-
-如果有 `blocking_errors`：
-
-- 主按钮置灰，hover 显示"还有 2 项阻断错误"
-- 点击仍触发：弹模态列出所有阻断项 + "在数据视图中查看"按钮（点击跳转到对应单元格）
-
----
-
-## 9. 历史与版本（抽屉）
-
-### 9.1 抽屉布局
-
-```
-┌─ 版本历史 ─────────────────────────────────┐
-│ 时间倒序                                    │
-│                                             │
-│ ┌───────────────────────────────────────┐  │
-│ │ 2026-06-02 14:23   ●                  │  │
-│ │ INV-001 / GS→EMAX                     │  │
-│ │ Invoice + PL  ·  1 个 workbook        │  │
-│ │ [ 打开输出目录 ] [ 与当前 diff ] [ ⋮ ] │  │
-│ └───────────────────────────────────────┘  │
-│                                             │
-│ ┌───────────────────────────────────────┐  │
-│ │ 2026-06-02 11:08                      │  │
-│ │ ...                                    │  │
-│ └───────────────────────────────────────┘  │
-│                                             │
-└─────────────────────────────────────────────┘
-```
-
-### 9.2 操作
-
-- 打开输出目录：调用启动器原生文件管理器
-- 与当前 diff：弹模态显示数据视图字段级差异（左旧右新）
-- ⋮ 菜单：基于此版本修正 / 删除此版本 / 标记为参考版本
-
----
-
-## 10. 模板预览工具（独立 tab）
-
-### 10.1 入口
-
-顶部栏 `设置 → 模板维护`，或 `Cmd+,` 设置面板里的"模板预览"。打开后是独立全屏视图，不与主工作台共享 PO 上下文。
-
-### 10.2 布局
-
-```
-┌──────────────────┬────────────────────────────────┐
-│  模板列表        │   预览                         │
-│                  │                                │
-│  GS              │   ┌──────────────────────┐     │
-│   ├ pi.xlsx     │   │  渲染后的 xlsx 视图   │     │
-│   ├ po.xlsx     │   │                       │     │
-│   ├ invoice.xlsx│   │  红框: mapping 引用   │     │
-│   └ pl.xlsx     │   │  橙框: 模板存在但      │     │
-│  EMAX            │   │        mapping 未引用 │     │
-│  SK              │   └──────────────────────┘     │
-│  YM              │                                │
-│                  │   下方:校验报告               │
-│  + 切换 base ▾   │   ✗ pi.yaml: B5 在模板中不存在 │
-│                  │   ⚠ 模板版本 v2 但 mapping v1 │
-└──────────────────┴────────────────────────────────┘
-```
-
-### 10.3 关能力
-
-- 切换 base：使用任意一份样本数据预览 mapping 结果
-- 校验报告：每条引用的 (mapping 字段, 模板单元格) 一一列出，错误用红色，警告用橙色
-- 一键定位：点击校验报告中某条目，预览栏自动滚动并高亮对应位置
-
----
-
-## 11. 状态机
-
-### 11.1 应用级 session
-
-```
-empty ──── 选择/拖入 base ────→ loading
-                                  │
-                  解析失败 ←──────┤
-                  │               ↓
-                  ↓             ready
-              error_workbook      │
-                                  │ 编辑
-                                  ↓
-                                dirty
-                                  │ 自动保存
-                                  ↓
-                                ready
-                                  │ 导出
-                                  ↓
-                              exporting
-                                  │
-                                  ↓
-                             ready (有版本快照)
-```
-
-`empty` / `loading` / `error_workbook` 三态显示全屏占位，覆盖整个工作台。`ready` / `dirty` / `exporting` 三态共享主界面，仅顶部栏状态点不同。
-
-### 11.2 PO 级状态
-
-承自产品方案 §8.2 的 `ready / partial / blocked / done`。每个 PO 状态由后端在 base 加载和每次编辑后实时计算，前端不重复推断。
-
-### 11.3 单元格级状态
-
-```
-idle ─ click ─→ focused ─ dblclick ─→ editing
-                  │                       │
-                  └──── enter/blur ←──────┘
-                          │
-                          ↓
-                     submitting
-                       │     │
-                  失败 ←     → 成功
-                  │             │
-                  ↓             ↓
-                error          dirty (短暂) → idle
-```
-
-`submitting` 通常在 200 ms 内完成（仅本机 IO），不显式显示进度。
-
----
-
-## 12. 键盘交互（最小集）
-
-> 产品方案删除了原 §8.9 的完整快捷键表。这里只保留与"实时预览 + 直接操作"原则强绑定的最小集，其他交互全部走鼠标。
-
-| 操作 | 快捷键 |
-|---|---|
-| PO 列表上下 | `↑` / `↓` |
-| 数据视图导航 | `↑` `↓` `←` `→` |
-| 进入编辑 | `Enter` 或 `F2` |
-| 提交并下一格 | `Enter` |
-| 提交并右一格 | `Tab` |
-| 放弃编辑 | `Esc` |
-| 撤销 / 重做 | `Cmd+Z` / `Cmd+Shift+Z` |
-| 全局搜索 | `Cmd+F` |
-| 设置 | `Cmd+,` |
-
-不实现 `Cmd+E` 导出、`Cmd+P` 全局搜索等组合键的原因：减少与系统快捷键的冲突 + 让用户用鼠标走完整流程，更符合"克制的业务工具"定位。
-
----
-
-## 13. 反馈与提示
-
-### 13.1 Toast
-
-- 位置：右下角，距边 16 px
-- 同时最多 3 条，超出折叠为"还有 N 条..."
-- 颜色：成功（蓝）/ 警告（黄）/ 错误（红）
-- 自动消失：成功 4 s / 警告 6 s / 错误不自动消失，必须手动关闭
-
-### 13.2 Tooltip
-
-- 延迟：500 ms 出现，离开立即消失
-- 最大宽度：320 px
-- 不嵌入操作（无按钮、无链接），只显示静态信息
-
-### 13.3 模态
-
-仅用于：导出选项、设置、需要用户确认的破坏性操作（如删除版本）。**校验报告、缺字段补全等不使用模态**——它们在主界面就近呈现。
-
-### 13.4 加载
-
-- 局部加载：组件内 spinner + "加载中..."
-- 全屏加载：仅 base 切换时使用
-
----
-
-## 14. 无障碍
-
-最低标准：WCAG 2.1 AA。
-
-- 所有交互元素 keyboard reachable，焦点环可见
-- 颜色对比度 ≥ 4.5:1（正文）/ 3:1（大字号、UI 控件）
-- 状态不能仅靠颜色传达：状态点配图标变化（●/◐/●/○），警告配图标
-- 输入控件有 label，error 状态用 `aria-invalid` + `aria-describedby` 关联说明
-- grid 用 ARIA grid pattern：`role="grid"`、`role="row"`、`role="gridcell"`、`aria-rowindex`、`aria-colindex`
-
-测试基线：Phase 3 完成时通过 axe-core 自动扫描，0 critical / 0 serious 违规。
-
----
-
-## 15. 推荐技术栈
-
-> 最终选型在 Phase 0 spike 阶段确认，本节给出基线。
-
-| 层 | 推荐 | 理由 |
-|---|---|---|
-| 框架 | Vue 3 + TypeScript | 响应式系统对"改一处多处联动"的工作台场景表达直接；`<script setup>` 单文件组件与"克制的业务工具"定位匹配；runtime 体积小，对启动器分发安装包大小有利 |
-| 构建 | Vite | Vue 官方默认构建工具，启动快、HMR 稳定、配置少 |
-| 样式 | CSS Modules + token 文件 | 不依赖 Tailwind 等 utility 系统，与"克制业务工具"定位匹配；token 通过 CSS 变量统一管理 |
-| 状态 | Pinia | Vue 官方推荐；对工作台 session 这种"多个独立子模块共享一个全局状态"的场景表达直接；devtools 集成完整 |
-| 路由 | 不用 | 工作台是单页应用，所有视图通过状态切换；模板预览作为独立窗口由启动器拉起 |
-| Grid | `@tanstack/vue-table` + 自定义渲染 | TanStack Table 官方 Vue adapter，headless，能满足 inline 编辑、虚拟滚动、列宽拖动等需求，不绑定 UI 风格 |
-| 预览 | SheetJS 或 Luckysheet（Phase 0 选定） | 见产品方案 §16 Phase 0。两者均为框架无关的 JS 库 |
-| 图表 | 不用图表库 | 当前界面只显示数值型出货摘要 |
-| 测试 | Vitest + Vue Test Utils + Playwright（端到端） | Vite 原生集成，端到端覆盖关键交互 |
-
-**禁用清单**（避免引入复杂度）：
-
-- 设计系统库（Element Plus / Naive UI / Vuetify / Ant Design Vue）：与定制视觉冲突
-- CSS-in-JS 运行时方案：本工作台对包体大小敏感
-- 状态管理重型方案（Vuex 4 等遗留方案）：场景不复杂，过度；使用 Pinia 已足够
-
----
-
-## 16. 实施分期
-
-对齐产品方案 §16 的 Phase 划分，前端工作量分布：
-
-| Phase | 前端任务 |
-|---|---|
-| Phase 0 spike | 预览组件选型 + 启动器 → 浏览器 → Vue app 链路打通 + token 体系雏形 |
-| Phase 1（后端先行） | 不开始前端开发，等待后端 API 稳定 |
-| Phase 2（多主体模板） | 不开始前端开发 |
-| Phase 3（工作台 MVP） | 全部前端开发：布局 / PO 列表 / 数据视图 / 链段与出货摘要 / 预览 / 导出 / 历史 / 模板预览 |
-| Phase 4（加固） | 性能优化（500+ PO 下虚拟滚动）、无障碍审计、视觉一致性回归 |
-
-> Phase 3 是前端集中投入期。建议先在 Phase 1 / 2 期间用静态 mock 数据搭出布局骨架和 token 体系，让后端 API 落地时前端能立即接入。
-
----
-
-## 17. 待决问题
-
-以下事项需要在 Phase 0 / Phase 3 启动前明确：
-
-1. **预览组件最终选型**：SheetJS（轻量、纯渲染） vs Luckysheet（重、可编辑但 MVP 不需要编辑能力）。倾向 SheetJS。
-2. **数据视图组件方案**：纯自研 vs `@tanstack/vue-table` vs AG Grid Community。倾向 `@tanstack/vue-table`。
-3. **i18n**：MVP 是否需要英文？数据本身是中英混合（产品描述英文、表头部分中文）。倾向 MVP 仅中文 UI，但 token 与文案分离便于将来加英文。
-4. **导出文件名是否暴露给用户在导出前编辑**：当前设计是按 §12.1 规则自动生成。是否给用户一个"自定义文件名"逃生口？倾向不给，保持命名一致性。
-5. **多链段并排视图下数据视图如何呈现**：当前设计是只显示当前选中链段的数据。是否支持"全选链段"时数据视图分组显示？需要在 Phase 0 与设计师对齐。
+新增这些能力时，先更新产品说明，再补 API/store/组件/E2E，并同步本文档。

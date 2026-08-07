@@ -1,624 +1,267 @@
-# RO 单据工作台实施指南
+# RO 单据工作台工程指南
 
-> 本文档是动手写代码前的工程准备文件，覆盖：仓库结构、工作流约定、Phase 0 spike 验收标准、Phase 0 与 Phase 1 的细粒度任务清单。
->
-> 产品决策、业务规则、UI 交互不在本文重复——以 [产品方案](../product/ro-document-generator-product-plan.md) 和 [UI 设计](./ro-document-workbench-ui-design.md) 为准。
->
-> **文档增量规则**（参见 CLAUDE.md "文档增量规则"）：当前 Phase 和下一 Phase 才有细粒度任务清单，更后续 Phase 仅在产品方案 §16 中保留目标级描述。Phase 完成后再追加下一 Phase 的细粒度清单。
+> 本文描述当前代码结构、修改路径和验证方式。历史 Phase 任务清单已完成并删除，不再作为工程事实源。
 
----
-
-## 1. 文档定位
-
-| 类型 | 文档 | 谁负责 |
-|---|---|---|
-| 产品决策 | `docs/product/ro-document-generator-product-plan.md` | PM |
-| UI 与交互 | `docs/development/ro-document-workbench-ui-design.md` | 前端 + PM |
-| 字段映射主文档 | `docs/单据模板字段取值规则汇总.md` | 核心包维护者 |
-| Agent 修复手册 | `docs/development/agent-field-fix-playbook.md` | 核心包维护者 |
-| 字段修复案例库 | `docs/development/field-fix-case-library.md` | 核心包维护者 |
-| 工程实施 | 本文档 | Tech Lead |
-| 仓库使用规则 | `CLAUDE.md` | Tech Lead |
-
-冲突时优先级：产品方案 > UI 设计 > 本文档 > CLAUDE.md。
-
----
-
-## 2. 仓库结构
-
-monorepo，Python 多包共仓库，前端独立子目录。
+## 1. 仓库结构
 
 ```text
-ro-reader/
-├── pyproject.toml                    # Python workspace 根配置
-├── packages/
-│   ├── ro_generator/                 # 核心包：业务规则唯一源
-│   │   ├── pyproject.toml
-│   │   ├── src/ro_generator/
-│   │   └── tests/
-│   ├── ro_workbench_api/             # FastAPI 后端（Phase 3）
-│   │   ├── pyproject.toml
-│   │   ├── src/ro_workbench_api/
-│   │   └── tests/
-│   └── ro_workbench_launcher/        # PyInstaller 启动器（Phase 3）
-│       ├── pyproject.toml
-│       └── src/ro_workbench_launcher/
-├── frontend/                         # Vue 3 前端（Phase 3）
-│   ├── package.json
-│   ├── src/
-│   └── tests/
-├── templates/                        # 受控 .xlsx 模板资产
-│   ├── gs/  emax/  sk/  ym/
-├── tests/
-│   ├── fixtures/                     # 合成 base 文件
-│   └── e2e/                          # Playwright 端到端
-├── docs/
-│   ├── product/
-│   └── development/
-├── .github/workflows/
-└── CLAUDE.md
+packages/
+  ro_generator/          核心业务包和 CLI
+  ro_workbench_api/      FastAPI 薄包装层
+  ro_workbench_launcher/ PyInstaller 启动器
+frontend/                Vue 3 工作台
+templates/               Excel 模板、mapping、base schema
+tests/fixtures/          合成 base 生成脚本
+docs/                    当前产品、UI、工程和字段规则
+.github/workflows/       Python、前端/E2E、启动器 CI
 ```
 
-### 2.1 Python workspace
+根 `pyproject.toml` 是 uv workspace。前端单独使用 pnpm lockfile。
 
-使用 **uv workspace**（替代 pip + setuptools 多包管理），原因：
+## 2. 环境准备
 
-- 原生支持 monorepo workspace
-- 锁文件统一，依赖一致性可保证
-- 安装与构建速度比 pip 快一个数量级
-- 与 PyInstaller 集成无障碍
-
-根 `pyproject.toml` 用 `[tool.uv.workspace]` 声明 `packages/*`。每个子包有独立 `pyproject.toml`，通过 path 互相依赖：
-
-```toml
-# packages/ro_workbench_api/pyproject.toml 示例
-[project]
-dependencies = [
-  "ro-generator",
-  "fastapi>=0.110",
-  "uvicorn>=0.27",
-]
-
-[tool.uv.sources]
-ro-generator = { workspace = true }
+```bash
+uv sync --all-packages
+cd frontend && pnpm install && cd ..
+uv run python tests/fixtures/generate_synthetic_base.py
 ```
 
-### 2.2 前端工作区
+真实业务 Excel 被 gitignore，不得提交。
 
-`frontend/` 用 **pnpm**。MVP 不引入 monorepo 工具链（Turborepo / Nx），保持简单。
+## 3. 核心包模块
 
-### 2.3 模板资产
+| 模块 | 职责 |
+| --- | --- |
+| `models.py` | Product、OrderLine、DocumentRequest、GenerationResult |
+| `base_schema.py` / `schema.py` | 配置、Sheet、表头、主体、价格列 |
+| `workbook_reader.py` | 读取公式值和缓存值，规范化表头 |
+| `validator.py` | 三张 Sheet 和最小必需表头 |
+| `resolver.py` | PO/SAP/客户PO join、数量、价格、公式回退 |
+| `seller_filter.py` | SK/YM Category 主体规则 |
+| `invoice_groups.py` | 实际出货票据组和稳定 key |
+| `invoice_inspection.py` | 票据组解析、成员行和冲突 |
+| `document_model.py` | 六种单据共享的领域装配 |
+| `line_rules.py` | 明细字段来源分派 |
+| `header_rules.py` | header 字段来源分派 |
+| `totals_rules.py` | 合计来源和预览规则 |
+| `template_mapping.py` | YAML 加载和模板引用校验 |
+| `document_preview.py` | DocumentModel → 结构化预览 |
+| `renderer.py` | DocumentModel → Excel 模板 |
+| `pdf_convert.py` | LibreOffice xlsx → pdf |
+| `packager.py` | 文件命名、冲突策略和 ZIP |
+| `source_index.py` | 文档单元格与源字段双向索引 |
+| `workbook_snapshot.py` | 一次读取后的 PO/Invoice 索引 |
+| `workbook_cache.py` | 文件签名缓存和 TTL |
+| `workbook_editor.py` | 字段级写回和 per-file lock |
+| `workbench_service.py` | 工作台用核心服务编排 |
+| `generator.py` | preview/export 总入口 |
+| `cli.py` | argparse 和 JSON 协议 |
 
-- `templates/<entity>/*.xlsx`：受控装配模板。
-- `templates/<entity>/mappings/*.yaml`：每模板一份字段映射。
+## 4. PO 流水线
 
-模板文件随 git 跟踪（体积小，~ 20–80 KB / 个）。Mapping 必须含 `template_version` 字段（产品方案 §13.2）。
-
----
-
-## 3. 工作流约定
-
-### 3.1 分支策略
-
-**Trunk-based**：
-
-- 主干：`main`
-- 功能：`feat/<scope>-<short-desc>`
-- 修复：`fix/<scope>-<short-desc>`
-- spike：`spike/<topic>`（spike 完成后**只保留结论文档，代码丢弃**，分支可删除）
-
-PR 寿命目标 < 3 天。超过 1 周的长分支需提前拆分。
-
-### 3.2 提交信息
-
-`<type>(<scope>): <subject>` 格式：
-
+```text
+DocumentRequest
+  → validate_workbook_structure
+  → resolve_po_lines / resolve_po_rows
+  → seller + buyer 推导
+  → invoice_no 候选（票据类单据）
+  → build_document_model
+  → load_template_mapping
+  ├─ preview: build_preview
+  └─ export: render_document / render_document_bundle
+                └─ optional convert_to_pdf
 ```
-feat(generator): add SAP resolver
-fix(api): handle missing INV# correctly
-docs(impl): add Phase 1 task list
-chore(deps): bump openpyxl to 3.1.5
+
+`generate()` 读磁盘，适合 CLI 和 PO 导出。`preview_from_snapshot()` 复用 session 快照，避免每次预览重新读取整个 workbook。
+
+## 5. Invoice 票据组流水线
+
+打开 session 时，`build_workbook_snapshot()`：
+
+1. 读取三张 Sheet。
+2. 构建产品索引、PO 行索引和客户 PO 索引。
+3. 对 PO record 行做宽松解析以获得出货和发票标识。
+4. 只保留 `SHIP QTY > 0` 且有发票标识的行。
+5. 构建票据组 summary、成员行 index 和 header context。
+
+Invoice 路由只从 snapshot 取结果：
+
+- inspection：`inspect_invoice_group_from_snapshot`
+- preview：`preview_invoice_group_from_snapshot`
+- export：`export_invoice_group_from_snapshot`
+
+不得在 API 或前端重新实现分组。
+
+## 6. FastAPI 层
+
+`app.py` 当前有 18 个 `/api` 端点。职责仅限：
+
+- Pydantic 请求模型。
+- session header 和生命周期。
+- 核心 dataclass/结果的 JSON 序列化。
+- 临时输出目录。
+- 受限下载。
+- 生产静态资源挂载。
+
+下载端点必须验证请求 path 位于 session temp directory 内，防止路径穿越。
+
+Session 默认一小时过期；清理任务每五分钟运行。单个 base 路径复用现有 session。
+
+## 7. 前端层
+
+```text
+App.vue
+  ├─ TopBar
+  ├─ QueueSidebar
+  ├─ DataCheckScreen
+  ├─ PreviewScreen
+  ├─ ExportScreen
+  ├─ StatusBar
+  └─ LibreOfficePrompt
 ```
 
-`type` 枚举：`feat / fix / refactor / test / docs / chore / spike`。
-`scope` 枚举：`generator / api / launcher / frontend / templates / impl / product`。
+`stores/api.ts` 维护 HTTP 类型和 `X-Session-Id`。`stores/workbench.ts` 维护选择、数据、预览、导出和错误状态。
 
-### 3.3 PR 检查项
+组合预览由前端并行请求两种真实单据；核心导出仍负责把配对单据写入一个 workbook/PDF。
 
-PR 必须满足：
+## 8. 模板和 mapping
 
-- 所有相关包测试通过（pytest / vitest）
-- 类型检查通过（mypy / vue-tsc）
-- 格式化无差异（ruff / prettier）
-- 涉及业务规则变更时，PR 描述说明对应产品方案章节
-- 涉及 API 契约变更时，前后端代码同 PR 提交（避免阶段性破坏）
+目录约定：
 
-### 3.4 CI
+```text
+templates/<seller>/
+  *.xlsx
+  mappings/
+    pi.yaml
+    po.yaml          # 仅 gs/emax
+    invoice.yaml
+    pl.yaml
+    ci.yaml          # 仅 sk/ym
+    ro_pl.yaml       # 仅 sk/ym
+```
 
-GitHub Actions，三个独立 job 并行：
+当前共 12 个 workbook、18 份 mapping。
 
-- `python`：所有 Python 包的 lint + type check + test
-- `frontend`：前端 lint + type check + unit test + build
-- `e2e`：Playwright 端到端（启动 backend + frontend 后跑）
+### 8.1 修改模板
 
-**Phase 0 阶段只跑 `python` 和 `frontend`**，e2e 在 Phase 3 工作台 MVP 接入。
+1. 明确主体、单据类型和 Sheet。
+2. 在 `.xlsx` 中修改版式。
+3. 同步 YAML 坐标、`template_version`、`table_header_row`、`style_source_row`。
+4. 清理无效空配置。
+5. 运行 mapping loader 和 renderer 测试。
+6. 打开渲染结果做视觉检查，尤其是打印区、合并单元格和插入行后的底部区域。
+7. 更新字段规则文档。
 
-发布构建（PyInstaller 打包）作为单独的 manual-trigger workflow，不阻塞 PR。
+### 8.2 插入行陷阱
 
-### 3.5 工具版本
+`openpyxl.Worksheet.insert_rows()` 不移动 `row_dimensions`。正确顺序是：
 
-| 工具 | 版本 |
-|---|---|
-| Python | 3.11+ |
-| uv | 最新稳定 |
-| Node | 20 LTS |
-| pnpm | 9+ |
-| Vue | 3.4+ |
-| Vite | 5+ |
-| FastAPI | 0.110+ |
+1. 倒序把插入点及之后的 `row_dimensions` key 加一。
+2. 调用 `insert_rows()`。
+3. 复制真实样式来源行的样式、行高和必要公式。
+4. 调整 mapping 后续区域坐标。
 
-锁定到 `pyproject.toml` 和 `package.json`，CI 使用同一版本。
+不要用普通 `insert_rows()` 代替 `renderer._insert_styled_row`。
 
----
+## 9. 字段规则修改
 
-## 4. Phase 0 spike 验收标准
+字段问题先按 [`agent-field-fix-playbook.md`](./agent-field-fix-playbook.md) 定位层级：
 
-三个 spike 必须全部通过才进入 Phase 1。失败时按各自的回退方案处理。
+- 源表头或列变化：`base_schema.yaml`。
+- 主体/单据字段来源：`line_rules.py`、`header_rules.py`、`totals_rules.py`。
+- 领域计算：`resolver.py` 或 `document_model.py`。
+- 模板坐标或固定文案：mapping YAML。
+- 仅展示序列化：`document_preview.py`。
 
-### 4.1 spike A：模板样式保留
+业务来源规则不能只修预览，也不能只修 renderer；两条路径必须共享同一规则。
 
-> **状态**：✅ 已通过。结论见 [`phase-0-spike-results.md`](./phase-0-spike-results.md)。本节验收标准保留供未来回归参考。
+## 10. PDF
 
-**目标**：验证 openpyxl 在真实 Invoice 模板上做"读取 → 写入 → 插入行 → 复制样式 → 保存"后，模板样式不被破坏。
+PDF 不是独立排版器：
 
-**输入**：
+```text
+DocumentModel → renderer → .xlsx → LibreOffice → .pdf
+```
 
-- 模板：`templates/gs/invoice&pl.xlsx`（Invoice 与 PL 共用 workbook）
-- 数据：3 行虚拟 PO 数据（手工构造，包含 SAP、数量、单价、金额）
+`find_soffice()` 按环境变量、PATH 和平台常见路径查找。转换使用临时 `UserInstallation`，失败转换为核心错误类型。
 
-**操作步骤**：
+如果同时需要 xlsx 和 pdf，工作台服务为每种格式使用独立子目录，避免 PDF 流程删除中间 xlsx 时影响 Excel 产物。
 
-1. openpyxl 加载模板（保留公式）
-2. 在 `start_row` 写入 2 行数据
-3. 在 `start_row + 2` 处 `insert_rows(1)` + 复制 `start_row + 1` 的样式（cell.style、行高、合并）
-4. 在新行写入第 3 条数据
-5. 写入合计单元格
-6. 保存为新文件
+## 11. CLI
 
-**通过判定**（写自动化测试断言）：
+实际参数：
 
-- 文件能被 openpyxl 重新打开，无 corruption 警告
-- 所有原有合并单元格区域保持不变（`ws.merged_cells.ranges` 集合相等）
-- 打印区域 `ws.print_area` 与原模板一致或正确扩展（覆盖新增行）
-- 列宽 `ws.column_dimensions[col].width` 完全一致
-- 行高 `ws.row_dimensions[row].height` 在新插入行处为模板样板行的值
-- LibreOffice 命令行打开后无错误（`soffice --headless --convert-to pdf`），生成的 PDF 与原模板填入数据后的视觉一致
+```text
+--base --po --docs --seller --invoice-no
+--output-format {xlsx,zip}
+--output-dir --on-conflict --input --json
+```
 
-**回退方案**：
+`buyer` 由 seller 推导。当前没有 `invoice_month` 参数，也没有 CLI PDF choice。
 
-- 如果插入行失败：改为模板内预留足够多空白行（如 50 行），渲染时只填值不插入，多余行保持隐藏。代价：模板需要预先准备空行，行数硬上限。
-- 如果整体失败：评估替代库（如 `xlsxwriter`，但不支持读取模板，需要从零构建工作簿）。
+退出码和 JSON stdout 是稳定协议。新增参数时必须补 `test_cli.py` 并同步 README/AGENTS。
 
-**预期工作量**：1–2 个工作日。
+## 12. 测试
 
-### 4.2 spike B：预览渲染组件
+### 12.1 Python
 
-> **状态**：✅ 已通过。选定 SheetJS（`xlsx@^0.18`）。结论见 [`phase-0-spike-results.md`](./phase-0-spike-results.md)。
+```bash
+uv run pytest packages/ro_generator packages/ro_workbench_api -q
+uv run pytest packages/ro_generator/tests/test_generator.py -v
+uv run pytest packages/ro_workbench_api/tests/test_app.py -v
+```
 
-**目标**：选定前端预览组件，验证能加载渲染后的 `.xlsx` 并保持视觉与导出一致。
+截至 2026-08-07，全量为 465 个测试。
 
-**候选**：
+### 12.2 前端
 
-- SheetJS（`xlsx` 包）+ 自渲染：轻量、纯只读、无编辑能力
-- Luckysheet：完整在线 Excel 替代品，体积大（~ 1 MB），有编辑但 MVP 不需要
+```bash
+cd frontend
+pnpm run type-check
+pnpm run build
+pnpm run test:e2e
+```
 
-**输入**：spike A 产出的 Invoice 文件。
+Playwright 使用合成 fixture，并启动真实 Vite/FastAPI 服务。CI 安装 LibreOffice 以覆盖 PDF。
 
-**操作步骤**：
+### 12.3 质量检查
 
-1. 各自搭一个 Vue 3 demo 页面
-2. fetch 同一份 `.xlsx` 文件，用候选库渲染
-3. 与 LibreOffice 转 PDF 的视觉对比
+```bash
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy packages
+```
 
-**通过判定**（两个候选各自评分）：
+## 13. CI
 
-- 必须项：合并单元格正确呈现、数字格式（千分位、货币符号）正确、列宽行高匹配
-- 必须项：能在容器内滚动、缩放（缩放比例至少 50%–150%）
-- 必须项：包体积 ≤ 800 KB（gzip 后）
-- 加分项：能高亮指定坐标（用于产品方案 §4.4 双向溯源）
-- 加分项：能监听单元格 hover 事件
+| Workflow | 内容 |
+| --- | --- |
+| `python.yml` | sync、ruff、format、mypy、fixture、pytest |
+| `frontend.yml` | install、type-check、build、Playwright + LibreOffice |
+| `build-launcher.yml` | macOS DMG、Windows ZIP |
 
-**结论形式**：选定一个并把决策写入 UI 设计文档 §15。
+前端 `lint` 和 `test` script 当前是占位命令；真实静态验证由 `type-check`/`build`，真实行为验证由 Playwright 完成。
 
-**回退方案**：
+## 14. 启动器和发布
 
-- 两个都不行：使用 `xlsx-viewer` 或自研最小渲染（仅展示文本和合并，放弃格式保真）
-- 实在不行：预览改为"列出装配出的关键字段值"的文字摘要，导出后再用户自行打开
+本地构建：
 
-**预期工作量**：2–3 个工作日。
+```bash
+cd frontend && pnpm run build && cd ..
+uv run pyinstaller packages/ro_workbench_launcher/ro-workbench.spec --noconfirm
+```
 
-### 4.3 spike C：启动器打包
+启动器行为：随机端口、后台 uvicorn、30 秒健康检查、浏览器、托盘、单实例锁文件和优雅退出。
 
-> **状态**：⏳ 推迟到 Phase 3 启动前必须完成。理由：Spike C 不影响 Phase 1（核心包 + CLI）和 Phase 2（多主体模板），仅在工作台 MVP 上线时变成关键路径。本机为 macOS arm64，跨平台和公证验证需要 CI runner / Apple Developer 账号支持。
+CI 发布版本来自 `build-launcher.yml` 的 `APP_VERSION`。发布前同时核对该值、界面版本文本、Python/FastAPI metadata 和安装包文件名。
 
-**目标**：验证 PyInstaller 能把"FastAPI + 自动开浏览器 + 托盘"打包为单可执行文件，在 macOS（含 Apple Silicon 和 Intel）和 Windows 上双击启动。
+## 15. 文档维护
 
-**输入**：
+- `README.md` 面向使用者和新开发者。
+- 产品说明只记录当前范围与明确 roadmap。
+- UI 文档只记录当前交互。
+- 本文只记录当前工程路径。
+- 字段规则文档保留业务字段事实。
+- 一次性 spec/plan 完成后，把长期结论合并到上述文档并删除临时文件。
 
-- 最小 FastAPI app（一个 `/health` 路由）
-- 启动逻辑：探测可用端口、启动 server、`webbrowser.open(http://localhost:<port>)`
-- 托盘：使用 `pystray` 或 `rumps`（macOS 专用，更原生）
-
-**操作步骤**：
-
-1. 写最小启动器（< 100 行 Python）
-2. PyInstaller 打包：`--onefile` 模式
-3. 在 macOS arm64 / macOS x86_64 / Windows x86_64 上分别测试
-4. 验证 macOS 签名：用本地 ad-hoc 签名跑一次，记录公证流程文档
-5. 验证 Windows SmartScreen 拦截，记录绕过和签名方案
-
-**通过判定**：
-
-- 三个平台双击都能在 5 秒内打开浏览器并显示 `/health` 响应
-- 关闭浏览器 tab 后 server 仍运行，托盘"退出"菜单可正常退出
-- 第二次双击触发单实例锁，把已有 tab 调到前台
-- macOS 安装包（`.app` 在 `.dmg` 中）≤ 80 MB
-- Windows `.exe` ≤ 80 MB
-
-**回退方案**：
-
-- 如果 PyInstaller 跨平台不稳定：评估 `Nuitka`（编译式，更稳定但更慢）
-- 如果托盘集成有问题：MVP 阶段可以暂不做托盘，仅靠 server 持续运行 + 关闭浏览器即终止
-
-**预期工作量**：3–5 个工作日（多平台测试和签名是大头）。
-
-### 4.4 全部通过的判定
-
-三个 spike 各自独立通过即可。结论汇总写入 `docs/development/phase-0-spike-results.md`（spike 结束后创建），明确：
-
-- 每个 spike 的最终选型
-- 失败项及其回退方案（如果有）
-- 影响 Phase 1 的具体决策（如选定 SheetJS 而非 Luckysheet 后，前端依赖列表确定）
-
----
-
-## 5. Phase 0 任务清单
-
-### 5.1 工程准备（不依赖 spike）
-
-- [x] 初始化 monorepo 结构（创建 `packages/`、`frontend/`、`templates/` 目录骨架）
-- [x] 配置根 `pyproject.toml` 用 uv workspace
-- [x] 配置 `.github/workflows/python.yml` 和 `frontend.yml`（lint + test）
-- [x] 配置 ruff（Python lint + format）和 prettier（前端 format）
-- [x] 配置 mypy（Python 类型检查，strict 模式）
-- [x] 配置 commitlint 强制提交信息格式（参见 §3.2）
-- [x] 把 `templates/` 下原有 `.xls` 模板转成 `.xlsx`
-  - 已完成：EMAX Invoice / PL 已以 `templates/emax/invoice&pl.xlsx` 接入，原 `.xls` 不参与构建。
-
-### 5.2 Spike A：模板样式保留 ✅
-
-- [x] 创建 `spike/template-style-preservation` 分支
-- [x] 把 GS Invoice/PL 模板接入为 `templates/gs/invoice&pl.xlsx`
-- [x] 写最小 spike 脚本完成 §4.1 操作步骤（`tests/spike/test_template_style_preservation.py`，10 个断言全过）
-- [x] 写自动化断言（合并单元格、列宽、行高、打印区域、公式平移等）
-- [ ] LibreOffice 转 PDF 视觉对比（**跳过**：本机未安装 LibreOffice。结构性断言已覆盖关键不变量；视觉对比延后到 Phase 3 工作台 MVP 阶段做端到端验证）
-- [x] 撰写 spike 结论（见 [`phase-0-spike-results.md`](./phase-0-spike-results.md) Spike A 节）
-
-### 5.3 Spike B：预览渲染组件 ✅
-
-- [x] 创建 `spike/preview-component` 分支
-- [x] 在 `frontend/` 下初始化 Vue 3 + Vite 项目骨架
-- [x] 用 Vite 构建测量两个候选库的 gzip bundle 体积
-- [x] 验证 SheetJS `sheet_to_html` 的合并单元格 + 坐标 ID 输出
-- [x] 撰写 spike 结论 + 锁定前端预览依赖为 `xlsx@^0.18`
-
-### 5.4 Spike C：启动器打包 ⏳ 推迟
-
-按 §4.3 的状态说明，本 spike 推迟到 Phase 3 启动前必须完成。Phase 1 / Phase 2 不依赖启动器，可继续推进。
-
-启动 Phase 3 前必须完成的子项：
-
-- [ ] 创建 `spike/launcher-packaging` 分支
-- [ ] 在 `packages/ro_workbench_launcher/` 下写最小启动器（FastAPI + 端口探测 + `webbrowser.open` + 托盘）
-- [ ] 配置 PyInstaller 构建脚本（`build-launcher.sh` / `.ps1`）
-- [ ] CI matrix 覆盖 macOS arm64 / macOS x86_64 / Windows x86_64 三个平台的打包构建
-- [ ] 在 macOS arm64 本地双击启动验证
-- [ ] 在 CI 上构建 Windows artifact，下载手测
-- [ ] 记录 macOS 公证流程到 `docs/development/macos-codesign.md`
-- [ ] 撰写 spike 结论并并入 [`phase-0-spike-results.md`](./phase-0-spike-results.md)
-
-### 5.5 收尾
-
-- [x] 创建 `docs/development/phase-0-spike-results.md`，汇总三个 spike 结论（Spike A/B 完整、Spike C 占位）
-- [x] Spike A 代码以测试形式保留在 `tests/spike/`，Spike B 临时构建脚手架已清理
-- [x] 在 CLAUDE.md 中标记 Phase 0 实质完成（Spike C 推迟到 Phase 3 启动前）
-- [x] Phase 1 的细粒度任务清单已存在于本文档 §6
-
----
-
-## 6. Phase 1 任务清单（核心包 + CLI）
-
-> 目标：核心包能解析 base、校验数据、按 mapping 渲染**一种单据**（Invoice）。CLI 用于命令行装配和后续测试。
->
-> 入口条件：Phase 0 三个 spike 全部通过。
->
-> 退出条件：CLI 能针对黄金 PO `4500030844` 装配出与人工 Invoice 模板逐字段一致的 `.xlsx` 文件。
-
-### 6.1 核心包基础
-
-- [x] 在 `packages/ro_generator/` 创建包骨架
-- [x] 定义领域模型 `models.py`：`Product` / `OrderLine` / `DocumentRequest` / `GenerationResult` / `ValidationMessage`（冻结 dataclass，金额 `Decimal`、日期 `date`）
-- [x] 定义错误类 `errors.py`：`RoGeneratorError`（根） / `WorkbookOpenError` / `MappingError` / `TemplateError` / `InvalidRequestError` / `InternalError`，每个都有稳定 `code`
-- [x] 定义 `schema.py`：必需 sheet、必需表头、表头别名、`MONTH_COLUMNS`、`HEADER_ROW`、`LEGAL_CHAIN_SEGMENTS`、`normalize_header()` 函数
-
-### 6.2 Workbook Reader
-
-- [x] 实现 `workbook_reader.py`：用 openpyxl 加载 base、按表头第 4 行 / 数据第 5 行解析两张 sheet
-- [x] 处理表头规范化（参见 CLAUDE.md "源数据结构"中"换行和多余空格"）
-- [x] 跳过完全空白行
-- [x] 单元测试覆盖：合成 fixture 的最小 workbook、缺 sheet、缺表头、空数据
-
-### 6.3 Validator
-
-- [x] 实现 `validator.py`：校验 sheet、表头是否齐全
-- [x] 输出 `ValidationMessage(kind="blocking_error")`，code 为 `SHEET_MISSING` / `HEADER_MISSING`
-- [x] 行级校验（PO 是否存在、SAP 是否能解析、INV# 是否齐等）留给 §6.4 resolver 处理
-- [x] 单元测试覆盖每条校验规则的正反例
-
-### 6.4 PO Resolver
-
-- [x] 实现 `resolver.py`：按 PO 号筛选行、SAP 匹配产品、按所有合法链段读取价格列
-- [x] 公式回退逻辑（产品方案 §10.4）：CTNS / TOTAL CBM 读到 None 时按 §10.2 公式现算并 high warning
-- [x] 单元测试覆盖：combo 类、`SHIP QTY`、缺 SAP 阻断、SAP 在 DATA BASE 找不到、价格全缺、部分行失败
-
-### 6.5 Document Model（Invoice）
-
-- [x] 实现 `document_model.py` 中 Invoice 的视图模型构建
-- [x] 数量来源切换：`客户PO.Order Quantity` vs `PO record.SHIP QTY`
-- [x] 合计计算：总数量、总金额（PL 合计字段在 Phase 2 加）
-- [x] 单元测试覆盖 `SHIP QTY` 行筛选、空行剔除（产品方案 §10.3）、链段定价缺失、Invoice 必填字段
-
-### 6.6 Template Mapping
-
-- [x] 实现 `template_mapping.py`：从 YAML 加载 mapping、校验 `template_version`、校验所有引用单元格在模板中存在，并支持可选 `table_header_row` 显式保护 `start_row` 上方的真实表格表头
-- [x] 创建 `templates/gs/mappings/invoice.yaml`（用 spike A 验证过的模板）
-- [x] 单元测试覆盖：mapping 引用了不存在的单元格、mapping 缺 `template_version`、mapping 字段缺失
-
-### 6.7 Renderer + Packager
-
-- [x] 实现 `renderer.py`：用 spike A 验证过的方案写入模板、写值前统一预留明细区样式、超行时插入并复制样式
-- [x] 实现 `packager.py`：按命名规则（产品方案 §12.1）输出文件，支持 zip 打包、冲突策略、版本目录
-- [x] 集成测试：用 spike A 的断言验证装配输出的样式完整性
-
-### 6.8 双向溯源索引
-
-- [x] 在 `source_index.py` 中定义 `SourceLocation` / `SourceIndex` / `SourceIndexBuilder`
-- [x] `OrderLine` / `DocumentLine` 增加 `source_row` 字段，由 resolver 从 `__row_number__` 注入
-- [x] renderer 在每个写入操作上累积条目，最终通过 `RenderResult.source_index` 返回
-- [x] 索引随渲染结果返回，前端在 Phase 3 消费
-
-### 6.9 Generator 流水线
-
-- [x] 实现 `generator.py`：串联 reader → validator → resolver → document_model → renderer → packager
-- [x] 统一返回 `GenerationResult`，含 status (success/error/needs_input)、files、output_file、warnings、errors、missing_inputs、options、source_index
-- [x] 集成测试：成功路径、需选择发票号、需补充链段、未知 PO、缺字段、不支持的单据/链段
-
-### 6.10 CLI
-
-- [x] 实现 `cli.py`：argparse 参数 + `--input request.json` + `--json` + 稳定退出码
-- [x] 注册 `ro-generate` entry point（`pyproject.toml`：`ro_generator.cli:cli_entry`）
-- [x] 命令行测试：成功路径、JSON 输出 schema、参数错误、阻断错误、needs_input
-
-### 6.11 测试 fixture
-
-- [ ] 与团队确认是否能提交真实 base 文件作为 fixture
-- [x] 编写合成 fixture 生成脚本 `tests/fixtures/generate_synthetic_base.py`
-- [x] 合成 fixture 覆盖（参见 AGENTS.md "测试 fixture"）：combo/rod/reel、`SHIP QTY`、缺 SAP；多 INV# 留待 Phase 2 实现
-- [x] 端到端 CLI 验证：单月 success、跨月 needs_input、缺 SAP error 三种退出码全部正确
-
-### 6.12 收尾
-
-- [ ] 黄金 PO `4500030844` 装配的 Invoice 与人工模板逐字段对比，达到 §14.2 一致性
-  - 现状：合成 fixture（含 PO `4500030844` 三行跨月数据）端到端装配通过，自动化断言验证了样式保留、合并单元格、列宽、公式平移、数据正确写入。逐字段视觉对比依赖真实 `RO DATA BASE.xlsx`，**Phase 2 真实模板接入时一并验证**。
-- [x] CI 中 Python 包测试覆盖率 ≥ 80%（当前核心包 + API 可收集 428 个 pytest 用例）
-- [x] 在 CLAUDE.md 中标记 Phase 1 完成
-- [x] 把 Phase 2 的细粒度任务清单写入本文档 §7（覆盖当前占位）
-
----
-
-## 7. Phase 2 任务清单（多单据 + 多主体模板 + 模板预览 CLI）
-
-> 目标：在 Phase 1 已实现的 Invoice + GS PTE 基础上，扩展到四类单据 × 四个主体的全套模板矩阵，并提供模板预览工具供模板维护者使用。
->
-> 入口条件：Phase 1 完成。
->
-> 退出条件：
-> - 14 份 mapping（产品方案 §13.1 模板矩阵）全部通过自动加载校验
-> - 装配 PI / PO / Invoice / PL 四类单据均能写到 GS、EMAX、SK、YM 主体的对应模板（SK/YM 无 PO）
-> - 真实 `RO DATA BASE.xlsx`（如团队同意入库）或扩展合成 fixture 在所有合法链段下端到端装配成功
-> - SK/YM 主体请求 PO 单据时返回阻断错误
-
-### 7.1 .xls 模板转换（Phase 0 遗留）
-
-- [x] 使用 LibreOffice 或等效工具，把 EMAX Invoice/PL 老格式模板转换为 `.xlsx`
-- [x] 转换后放入 `templates/emax/invoice&pl.xlsx` 并接入对应 mapping
-- [x] 原 `.xls` 不参与构建；业务方今后只在 `.xlsx` 模板上修改
-
-### 7.2 PI / PO / PL document model
-
-- [x] `document_model.py` 增加 `build_pi_model()` / `build_po_model()` / `build_pl_model()`
-- [x] PI / PO 使用 `客户PO.Order Quantity`，不要求 INV# / FACTORY DOC NO.
-- [x] PL 在 Invoice 字段基础上必须填充：`carton_count` / `net_weight` / `gross_weight` / `cbm`，以及合计字段 `total_*`
-- [x] PL 缺装箱字段时返回阻断错误（产品方案 §11）
-- [x] 单元测试覆盖每类单据的字段集与必填校验
-
-### 7.3 多 mapping × 多模板
-
-- [x] 为每个 (entity, document) 组合编写 mapping YAML（14 份，模板矩阵已覆盖）
-- [x] 每份 mapping 都通过 `load_template_mapping` 的引用校验
-- [x] 每份 mapping 含 `template_version`
-
-### 7.4 Generator 多文档支持
-
-- [x] `generator.py` 解除 "Phase 1 仅支持 INVOICE" 限制
-- [x] 一次请求多种单据类型时，对每种调用对应 `build_*_model` + 对应 mapping，输出多个文件
-- [x] 多文件场景按 `output_format`：只有一个生成文件时直接返回 `.xlsx`；多个文件且 `output_format=zip` 时调用 `package_zip` 打包
-- [x] SK/YM 的 Invoice + PL 组合导出为同一个 workbook 的两个 sheet
-- [x] SK/YM 明确选择主体时按 `PO record.CATEGORY` 过滤：1/2 属于 YM，3 属于 SK，不再把另一主体自动拆成额外文件
-- [x] SK / YM 主体请求 PO 时返回 `MAPPING_NOT_FOUND` 阻断（产品方案 §13.1）
-- [x] `_builtin_mapping_path` 支持按 `templates/<entity>/mappings/<doc>.yaml` 扫描
-
-### 7.5 多 INV# needs_input 支持
-
-- [ ] resolver 收集每个 PO 行的 `INV#`，generator 检测同一 PO 下多个 INV# 时返回 `needs_input` + `options`
-- [ ] CLI 接受 `--invoice-no` 参数（已支持），同时填充 request 时优先用之
-- [ ] 单元测试：`PO 4500099999` 跨两个 INV# 触发 needs_input
-
-### 7.6 模板预览 CLI 工具
-
-- [ ] 新建命令 `ro-template-preview`（或子命令 `ro-generate preview-mapping`）
-- [ ] 输入：base 文件 + mapping YAML 路径（多份）
-- [ ] 输出：每份 mapping 的所有引用单元格 + 模板内对应位置摘要，便于模板维护者排查漂移
-- [ ] 错误用 high-severity 标识：mapping 引用了不存在的单元格、`template_version` 缺失、列字母超界
-- [ ] 单元测试覆盖每类诊断输出
-
-### 7.7 跨链段一致性回归
-
-- [x] 合成 fixture 覆盖三段链路（SK/YM→GS、GS→EMAX、EMAX→PF）
-- [x] 端到端 CLI 验证：SK/YM→GS 段 Invoice + PI 装配成功；GS→EMAX 段 Invoice 装配成功
-- [ ] 真实 `RO DATA BASE.xlsx` 接入决策落地（团队确认是否可入库）
-
-### 7.8 收尾
-
-- [x] CI 测试覆盖率 ≥ 80%（当前核心包 + API 可收集 428 个 pytest 用例）
-- [x] CLAUDE.md 标记 Phase 2 完成
-- [x] 把 Phase 3 的细粒度任务清单写入本文档 §8（覆盖当前占位）
-
----
-
-## 8. Phase 3 任务清单（工作台 MVP）
-
-> 目标：FastAPI 后端 + Vue 3 前端 + PyInstaller 启动器，按 UI 设计文档实现完整工作台。
->
-> 入口条件：
-> - Phase 2 完成
-> - **Phase 0 Spike C（启动器打包）必须在此之前完成**（CLAUDE.md 已标注）
->
-> 退出条件：
-> - 双击启动器，浏览器自动打开工作台界面
-> - PO 列表显示合成 fixture 中的 3 个 PO，按状态着色
-> - 点击 PO 能实时预览 Invoice（GS PTE → EMAX PTE 段）
-> - inline 编辑后预览 200ms 内刷新
-> - 双向溯源悬停工作
-> - 导出按钮正常生成 .xlsx 文件
-
-### 8.1 Spike C 完成（Phase 0 遗留）
-
-- [ ] 在 `packages/ro_workbench_launcher/` 实现最小启动器：端口探测 + FastAPI 子进程 + `webbrowser.open` + 托盘
-- [ ] PyInstaller 打包为单可执行文件
-- [ ] macOS arm64 双击启动验证
-- [ ] GitHub Actions 构建 macOS x86_64 / Windows artifact
-- [ ] macOS 公证流程文档（延到发布前）
-
-### 8.2 工作台后端 API
-
-- [x] `packages/ro_workbench_api/` 实现 FastAPI app
-- [x] `POST /session/open` — 打开 base 文件，返回 session ID + PO 列表（含状态着色）
-- [x] `GET /po/{po_no}` — 返回 PO 行数据视图（grid 数据）
-- [x] `POST /po/{po_no}/dry-run` / `POST /po/{po_no}/preview` — 返回装配预览（不写文件）+ source_index
-- [x] `POST /po/{po_no}/edit` — 接受字段编辑，写回 base 文件
-- [x] `POST /po/{po_no}/export` — 执行真实导出并返回文件路径；请求支持 `documents` 数组，兼容 `INVOICE_PL` / `INVOICE&PL`
-
-### 8.3 前端核心交互
-
-- [x] `frontend/` 下按 UI 设计文档 §3 实现三栏布局（PO 列表 + 主区 + 预览栏）
-- [x] PO 列表：按状态着色 + 搜索筛选
-- [x] 数据视图：inline 编辑（双击→填入→Enter 提交→后端回写→预览刷新）
-- [x] 链段选择器（胶囊按钮组）+ `SHIP QTY` 出货摘要
-- [x] 文档预览栏：SheetJS `sheet_to_html` 渲染 + 悬停溯源 tooltip
-- [x] 导出流程（TopBar 导出按钮 + 导出确认页 + StatusBar 已导出路径）
-- [x] 缺字段高亮（DataCheckScreen 必填字段为空时红色边框 + 粉色背景）
-- [x] 预览 tab 切换按单据类型独立生成（PI/PO/Invoice/PL 各调 dry-run）
-- [x] 导出确认页支持勾选单据；SK/YM 主体隐藏 PO；Invoice/PL 默认组合导出
-- [x] 预览栏布局增宽（flex:1.6）+ 缩放控件（50%-150%）
-- [ ] 公式回退橙色边框标记、模态导出选项、版本历史抽屉（UI 细节延后）
-
-### 8.4 工作台后端 ↔ 前端联调
-
-- [x] 打开合成 fixture → PO 列表正确着色
-- [x] 点击单个 PO → 数据视图 + 文档预览（SheetJS 渲染 Invoice 表格）
-- [x] inline 编辑字段 → 值写回磁盘 → 前端自动刷新
-- [x] 切换链段 → 预览切换对应定价段
-- [x] 导出按钮 → 文件落盘，状态栏显示文件名
-- [x] 零浏览器 console errors
-
-### 8.5 启动器 + 安装包
-
-- [x] 构建脚本 + PyInstaller spec：内嵌 FastAPI（后台线程），无需子进程
-- [x] macOS arm64 `.app` bundle 24 MB（≤ 80 MB 目标）
-- [x] GitHub Actions CI（`build-launcher.yml`）：macOS + Windows 双平台构建
-- [ ] README 说明首次启动绕过 Gatekeeper / SmartScreen（延后到发布前）
-- [ ] macOS 公证  + Windows 签名（延后到发布前，需 Apple Developer 账号）
-
-### 8.6 收尾
-
-- [x] Playwright 端到端测试（Phase 4 已接入）
-- [x] 前端 production build + Vite dev server 联调通过
-- [x] 标记 Phase 3 完成
-- [x] 追加 Phase 4 细粒度任务清单
-
----
-
-## 9. Phase 4 任务清单（加固）
-
-> 目标：测试覆盖率加固、性能优化、模板版本管理、发布就绪。
-
-### 9.1 Playwright 端到端测试
-
-- [x] 核心场景：打开 base → 选 PO → 看预览 → 编辑字段 → 预览刷新 → 导出
-- [x] 阻断错误场景：缺 SAP 的 PO 正确显示 blocked
-- [x] CI 中接入 e2e job（frontend.yml 新增 e2e job）
-- [ ] needs_input 场景 E2E 测试（延后）
-
-### 9.2 性能优化
-
-- [ ] 大 base 文件（500+ PO）下 PO 列表加载 < 2 秒
-- [ ] inline edit → 预览刷新 < 500 ms
-- [ ] 前端虚拟滚动
-
-### 9.3 发布准备
-
-- [ ] macOS Gatekeeper 公证 + Windows 签名
-- [ ] README 用户安装说明
-- [ ] PDF 导出评估
-
-### 9.4 遗留项收尾
-
-- [x] EMAX Invoice/PL `.xls`→`.xlsx` 转换
-- [ ] 模板预览 CLI
-- [ ] 前端 UI 细节：公式回退标记、版本历史
-
-### 9.5 代码质量改造（已完成）
-
-- [x] `line_rules.py`：`resolve_line_field_spec()` 从 if-chain 改为声明式三层分派（`_DOC_FAMILY_OVERRIDES` + `_SELLER_LINE_OVERRIDES`）
-- [x] `header_rules.py`：新增 `resolve_header_field_spec()`，对称于 `line_rules.py`；新增 `_HEADER_SELLER_OVERRIDES`
-- [x] `document_preview.py`：移除 `_build_source_entries()` 中的硬编码 seller 判断，改用 `resolve_header_field_spec()`
-- [x] `generator.py`：`_preview()` 从 110 行精简为 10 行委托调用；`preview` 从 `__all__` 移除（死公开 API）
-- [x] 前端 `workbench.ts`：`previewError` / `exportError` 不再静默吞掉，存入 store
-- [x] `PreviewScreen.vue`：预览失败时展示错误信息；`LayoutTopZone.vue` 抽取消除三处重复渲染逻辑
-- [x] `ExportScreen.vue`：导出失败时展示错误信息
-- [x] 修复 4 处预先存在的测试失败（YAML null 值、单元格引用错误、溯源断言错误、缺 fixture 数据）
-
----
-
-## 10. Phase 5：Invoice 只读检查视图
-
-> 目标：让用户在装配前看到票据组实际出货行，并集中理解 resolver、发票标识和跨 PO 抬头问题。
-
-- [x] 核心包新增 `InvoiceGroupInspection` / `InvoiceInspectionRow` 和共享票据组解析入口。
-- [x] inspection、Invoice/PL 预览与导出复用同一成员行和冲突判断。
-- [x] 新增 `GET /api/invoice/{invoice_group_key}/inspection`，仅从 session 获取 base 文件。
-- [x] 前端增加独立 inspection 状态、只读出货行表格和明确的 loading/error/empty 状态。
-- [x] PO 与 Invoice 检查复用同一个阻断/警告摘要组件；PO 行内编辑保持不变。
-- [x] 数据检查页恢复 `PO 视角 / Invoice 视角`切换，并分别记忆选中对象。
-- [x] 核心/API/Playwright 覆盖成员行、冲突原因、只读约束和 PO 回归。
+修改 API、CLI、Sheet、单据矩阵、mapping、输出命名、PDF 或 session 行为时，文档必须与代码同一提交更新。
