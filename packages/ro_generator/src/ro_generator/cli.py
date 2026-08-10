@@ -22,9 +22,10 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import IO, Any
 
-from ro_generator.errors import RoGeneratorError
+from ro_generator.errors import ProfileNotFoundError, RoGeneratorError
 from ro_generator.generator import generate
 from ro_generator.models import DocumentRequest, GenerationResult, ValidationMessage
+from ro_generator.profiles import GenerationContext, default_profile_registry
 from ro_generator.source_index import SourceIndex
 
 EXIT_SUCCESS = 0
@@ -66,7 +67,17 @@ def main(
         return EXIT_USAGE
 
     try:
-        result = generate(request)
+        profile = default_profile_registry().get(args.profile)
+    except ProfileNotFoundError as exc:
+        # Profile 是 CLI 调用上下文的一部分；未知 ID 属于参数错误，不能
+        # 进入 generator 后再被当作业务阻断错误处理。
+        print(f"[参数错误] {exc.code}: {exc.message}", file=err)
+        return EXIT_USAGE
+
+    context = GenerationContext(profile=profile, base_file=Path(request.base_file))
+
+    try:
+        result = generate(request, context=context)
     except RoGeneratorError as exc:
         # generator 已捕获大多数情况，这里是兜底
         if args.json:
@@ -102,6 +113,11 @@ def _build_parser() -> argparse.ArgumentParser:
         description="RO 单据装配工具：从 base 文件装配 PI / PO / Invoice / PL。",
     )
     parser.add_argument("--base", help="base xlsx 文件路径", default=None)
+    parser.add_argument(
+        "--profile",
+        help="Customer Profile ID（缺省为 ro；CLI 不读取工作台当前配置）",
+        default="ro",
+    )
     parser.add_argument("--po", help="PO 号", default=None)
     parser.add_argument(
         "--docs",

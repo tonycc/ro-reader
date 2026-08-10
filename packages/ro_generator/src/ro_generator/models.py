@@ -88,6 +88,19 @@ class Product:
 
     # 价格表（key 由 resolver 定义，例 "GS PTE/combo"）
     prices: dict[str, Decimal] = field(default_factory=dict)
+    invoice_prices: dict[str, Decimal] = field(default_factory=dict)
+    # Combo 成本拆分价格（key 由 Profile 配置定义，例如 "GS PTE/rod"）。
+    # 只有声明了对应来源列且单元格有值时才会填充；缺失时不推断。
+    component_prices: dict[str, Decimal] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class CostBreakdownItem:
+    """Combo 成本拆分中的一个组件价格。"""
+
+    component: str
+    unit_price: Decimal
+    source_field: str
 
 
 # —————————————————————————————————————
@@ -120,15 +133,21 @@ class OrderLine:
 
     # 可选业务字段
     po_record_category: int | None = None
+    po_record_item_line_no: str = ""  # PO record "ITEM LINE#" 列
     cp_item: str = ""  # 客户PO "Item" 列，SK/YM PI 模板"PO item Line Number"来源
+    customer_po_no: str | None = None  # 客户PO "PO#" 列
+    customer_po_material: str | None = None  # 客户PO "Material" 列
     ship_to: str | None = None
     manufacturer_address: str | None = None  # 客户PO "manufacturer" 列
     final_destination: str | None = None  # 客户PO "final destination" 列
     brand: str | None = None
     invoice_no: str | None = None  # `INV#`
     ship_qty: Decimal | None = None  # SHIP QTY
+    ship_qty_source_field: str | None = None  # 实际出货数量来源列（PF 为 2601–2612）
     balance_qty: Decimal | None = None  # BALANCE QTY
     po_record_description: str | None = None
+    customer_po_description: str | None = None  # 客户PO "Material Description" 列
+    customer_po_document_date: date | None = None  # 客户PO "PO Creation Date" 列
     sk_ym_invoice_no: str | None = None  # SK/YM INVOICE NO.
     reel_sap: str | None = None
     reel_description: str | None = None
@@ -140,6 +159,7 @@ class OrderLine:
     delivery_date: date | None = None
     confirmed_ex_factory_date: date | None = None
     po_ex_factory_date: date | None = None  # PO record "FINAL EX-FACTORY DATE"，SK/YM PI 使用
+    actual_ex_factory_date: date | None = None
     etd_on_board: date | None = None
 
     # 装箱（部分字段在 PO record 中维护，部分回退到 product）

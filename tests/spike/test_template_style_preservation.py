@@ -33,16 +33,16 @@ from openpyxl.cell.cell import Cell
 from openpyxl.worksheet.worksheet import Worksheet
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-TEMPLATE_PATH = REPO_ROOT / "templates" / "gs" / "invoice.xlsx"
+TEMPLATE_PATH = REPO_ROOT / "customer_profiles" / "ro" / "templates" / "gs" / "invoice.xlsx"
 
-# Phase 0 Spike A 已完成（见 CLAUDE.md）。其样板模板 templates/gs/invoice.xlsx
+# Phase 0 Spike A 已完成（见 CLAUDE.md）。其样板模板已迁移到 customer_profiles/ro/templates/gs。
 # 在模板改名为 invoice&pl.xlsx 后已不存在，且断言行号（18/19/27）绑定旧版式。
 # insert_rows / 行高平移 / 样式复制的回归覆盖现由 test_renderer.py 承担
 # （test_totals_shifted_by_insertion_count / test_inserted_rows_have_styles 等）。
 # 缺模板时整体跳过，避免 CI 收集报错；若日后恢复该模板则自动重新参与。
 pytestmark = pytest.mark.skipif(
     not TEMPLATE_PATH.exists(),
-    reason="Phase 0 spike 样板模板 templates/gs/invoice.xlsx 已随模板改名移除；行为已由 test_renderer.py 覆盖",
+    reason="Phase 0 spike 样板模板已随模板改名移除；行为已由 test_renderer.py 覆盖",
 )
 
 # 业务认知（来自 §6.7 题目检查）：

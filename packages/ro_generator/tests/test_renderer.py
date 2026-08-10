@@ -11,7 +11,8 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font
 from ro_generator.document_model import (
     DocumentModel,
     build_invoice_model,
@@ -21,7 +22,7 @@ from ro_generator.document_model import (
 )
 from ro_generator.errors import TemplateError
 from ro_generator.models import OrderLine, Product
-from ro_generator.renderer import render_document
+from ro_generator.renderer import _insert_styled_row, render_document
 from ro_generator.schema import (
     ENTITY_EMAX_PTE,
     ENTITY_GS_PTE,
@@ -31,11 +32,12 @@ from ro_generator.source_index import COMPUTED_SHEET
 from ro_generator.template_mapping import load_template_mapping
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-GS_INVOICE_MAPPING = REPO_ROOT / "templates" / "gs" / "mappings" / "invoice.yaml"
-GS_INVOICE_TEMPLATE = REPO_ROOT / "templates" / "gs" / "invoice&pl.xlsx"
-EMAX_PI_MAPPING = REPO_ROOT / "templates" / "emax" / "mappings" / "pi.yaml"
-EMAX_PO_MAPPING = REPO_ROOT / "templates" / "emax" / "mappings" / "po.yaml"
-EMAX_PL_MAPPING = REPO_ROOT / "templates" / "emax" / "mappings" / "pl.yaml"
+RO_TEMPLATES = REPO_ROOT / "customer_profiles" / "ro" / "templates"
+GS_INVOICE_MAPPING = RO_TEMPLATES / "gs" / "mappings" / "invoice.yaml"
+GS_INVOICE_TEMPLATE = RO_TEMPLATES / "gs" / "invoice&pl.xlsx"
+EMAX_PI_MAPPING = RO_TEMPLATES / "emax" / "mappings" / "pi.yaml"
+EMAX_PO_MAPPING = RO_TEMPLATES / "emax" / "mappings" / "po.yaml"
+EMAX_PL_MAPPING = RO_TEMPLATES / "emax" / "mappings" / "pl.yaml"
 
 
 # ————————————————————————————————————————
@@ -466,6 +468,23 @@ class TestRenderBasic:
 
 
 class TestRenderOverflow:
+    def test_insert_before_style_source_copies_original_source_style(
+        self,
+    ) -> None:
+        workbook = Workbook()
+        ws = workbook.active
+        assert ws is not None
+        ws["A20"] = "footer"
+        ws["A20"].font = Font(bold=True)
+        ws.row_dimensions[20].height = 33
+
+        _insert_styled_row(ws, insert_at=20, style_src=20)
+
+        assert ws["A21"].value == "footer"
+        assert ws["A20"].font.bold is True
+        assert ws.row_dimensions[20].height == 33
+        workbook.close()
+
     def test_all_ten_lines_present(self, tmp_path: Path) -> None:
         mapping = load_template_mapping(GS_INVOICE_MAPPING)
         model = build_overflowing_invoice()
@@ -655,7 +674,9 @@ class TestSourceIndex:
     def test_gs_pi_fixed_ship_to_header_has_no_base_source_trace(self, tmp_path: Path) -> None:
         from ro_generator.template_mapping import load_template_mapping as ltm
 
-        gs_pi_mapping = REPO_ROOT / "templates" / "gs" / "mappings" / "pi.yaml"
+        gs_pi_mapping = (
+            REPO_ROOT / "customer_profiles" / "ro" / "templates" / "gs" / "mappings" / "pi.yaml"
+        )
         mapping = ltm(gs_pi_mapping)
         model = build_pi_model(
             (
@@ -701,4 +722,4 @@ class TestSourceIndex:
         assert loc is not None
         assert loc.sheet == "客户PO"
         assert loc.row is None
-        assert loc.field == "item"
+        assert loc.field == "Item"

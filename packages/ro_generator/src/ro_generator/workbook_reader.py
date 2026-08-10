@@ -25,13 +25,12 @@ from openpyxl import load_workbook
 from openpyxl.workbook.workbook import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
-from ro_generator.base_schema import base_schema
+from ro_generator.base_schema import BaseSchema, SheetConfig, base_schema
 from ro_generator.errors import WorkbookOpenError
-from ro_generator.schema import FIRST_DATA_ROW, HEADER_ROW, normalize_header
+from ro_generator.schema import normalize_header
 
 ROW_NUMBER_KEY: Final = "__row_number__"
 CELL_NUMBER_FORMATS_KEY: Final = "__cell_number_formats__"
-_BASE_SCHEMA = base_schema()
 
 
 @dataclass(frozen=True)
@@ -71,8 +70,9 @@ class WorkbookReader:
     也可以不用 context manager，手动 `close()`。
     """
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(self, path: str | Path, *, schema: BaseSchema | None = None) -> None:
         self._path = Path(path)
+        self._schema = schema or base_schema()
         if not self._path.exists():
             raise WorkbookOpenError(f"base 文件不存在：{self._path}")
         if not self._path.is_file():
@@ -117,6 +117,12 @@ class WorkbookReader:
     def has_sheet(self, name: str) -> bool:
         return name in self._wb.sheetnames
 
+    @property
+    def schema(self) -> BaseSchema:
+        """返回本 reader 绑定的 Profile schema。"""
+
+        return self._schema
+
     # —————————————————————————————————————
     # 主接口
     # —————————————————————————————————————
@@ -124,13 +130,15 @@ class WorkbookReader:
     def read_headers(
         self,
         sheet_name: str,
-        header_row: int = HEADER_ROW,
+        header_row: int | None = None,
     ) -> SheetHeaders:
         """只读取一个 sheet 的表头，不消费数据行。"""
         if sheet_name not in self._wb.sheetnames:
             raise WorkbookOpenError(f"workbook 中找不到 sheet：{sheet_name!r}")
 
         ws: Worksheet = self._wb[sheet_name]
+        if header_row is None:
+            header_row = self._sheet_config(sheet_name).header_row
         headers, header_columns, max_data_col = self._read_headers(ws, sheet_name, header_row)
         return SheetHeaders(
             sheet_name=sheet_name,
@@ -142,8 +150,8 @@ class WorkbookReader:
     def read_sheet(
         self,
         sheet_name: str,
-        header_row: int = HEADER_ROW,
-        first_data_row: int = FIRST_DATA_ROW,
+        header_row: int | None = None,
+        first_data_row: int | None = None,
     ) -> SheetData:
         """读取一个 sheet 并返回结构化结果。
 
@@ -151,6 +159,9 @@ class WorkbookReader:
         - sheet 不存在抛 `WorkbookOpenError`（结构性问题，validator 不必再处理）。
         - 完全空白的数据行被跳过；只要任意一列非空就视为有效行。
         """
+        config = self._sheet_config(sheet_name)
+        header_row = config.header_row if header_row is None else header_row
+        first_data_row = config.first_data_row if first_data_row is None else first_data_row
         header_data = self.read_headers(sheet_name, header_row=header_row)
         ws: Worksheet = self._wb[sheet_name]
         rows = tuple(
@@ -173,8 +184,14 @@ class WorkbookReader:
     # internals
     # —————————————————————————————————————
 
-    @staticmethod
+    def _sheet_config(self, sheet_name: str) -> SheetConfig:
+        """返回 schema 配置；非业务测试 sheet 使用默认兼容布局。"""
+
+        config = self._schema.sheet_config_for_name(sheet_name)
+        return config or SheetConfig(name=sheet_name, header_row=4, first_data_row=5)
+
     def _read_headers(
+        self,
         ws: Worksheet,
         sheet_name: str,
         header_row: int,
@@ -202,8 +219,15 @@ class WorkbookReader:
         ordered_headers: list[str] = []
         seen: dict[str, int] = {}
         for col_idx, raw in enumerate(header_cells, start=1):
-            normalized = normalize_header(_cell_value(raw))
-            normalized = _BASE_SCHEMA.canonical_header(sheet_name, normalized)
+            raw_value = _cell_value(raw)
+            # PF 的月度出货列使用数字表头 2601–2612；只在 Excel reader 边界
+            # 转成稳定字符串，保留 normalize_header 的公共兼容契约。
+            if isinstance(raw_value, int) and not isinstance(raw_value, bool):
+                raw_value = str(raw_value)
+            elif isinstance(raw_value, float) and raw_value.is_integer():
+                raw_value = str(int(raw_value))
+            normalized = normalize_header(raw_value)
+            normalized = self._schema.canonical_header(sheet_name, normalized)
             if not normalized:
                 continue
             if normalized not in seen:

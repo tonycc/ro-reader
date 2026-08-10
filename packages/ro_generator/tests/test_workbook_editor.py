@@ -6,8 +6,9 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, cast
 
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
+from ro_generator.profiles import create_pf_profile
 from ro_generator.workbook_editor import edit_workbook_cell
 
 
@@ -117,3 +118,33 @@ def test_edit_preserves_other_data():
         wb.close()
     finally:
         Path(path).unlink(missing_ok=True)
+
+
+def test_edit_profile_resolves_logical_sheet_to_physical_sheet(tmp_path: Path) -> None:
+    wb = Workbook()
+    data_base = wb.active
+    assert data_base is not None
+    data_base.title = "DATA BASE TEMPLATE"
+    data_base.cell(row=2, column=1, value="SAP")
+    po_record = wb.create_sheet("PO RECORD 26")
+    po_record.cell(row=1, column=1, value="SAP Number")
+    po_record.cell(row=2, column=1, value="OLD")
+    customer_po = wb.create_sheet("new PO template")
+    customer_po.cell(row=1, column=1, value="PO#")
+    base_file = tmp_path / "pf-base.xlsx"
+    wb.save(base_file)
+    wb.close()
+
+    result = edit_workbook_cell(
+        str(base_file),
+        "PO record",
+        row=2,
+        field="sap",
+        value="NEW",
+        profile=create_pf_profile(),
+    )
+
+    assert result.ok, result.message
+    edited = load_workbook(base_file, data_only=True)
+    assert edited["PO RECORD 26"]["A2"].value == "NEW"
+    edited.close()

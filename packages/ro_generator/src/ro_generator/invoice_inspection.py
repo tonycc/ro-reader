@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from contextlib import nullcontext
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import TYPE_CHECKING, Final
 
-from ro_generator.base_schema import base_schema
 from ro_generator.invoice_groups import InvoiceHeaderContext, InvoiceInspection
 from ro_generator.models import OrderLine, ValidationMessage
+from ro_generator.profiles import GenerationContext
+from ro_generator.profiles.runtime import current_profile, current_schema, profile_scope
 from ro_generator.resolver import resolve_po_rows
 from ro_generator.schema import SELLERS
 from ro_generator.seller_filter import factory_seller_for_line
@@ -20,8 +22,6 @@ if TYPE_CHECKING:
 
 CODE_INVOICE_GROUP_NOT_FOUND: Final = "INVOICE_GROUP_NOT_FOUND"
 CODE_INVOICE_GROUP_HEADER_CONFLICT: Final = "INVOICE_GROUP_HEADER_CONFLICT"
-
-_bs = base_schema()
 
 
 @dataclass(frozen=True)
@@ -79,6 +79,17 @@ def dedupe_messages(
 def resolve_invoice_group_from_snapshot(
     snapshot: WorkbookSnapshot,
     invoice_group_key: str,
+    *,
+    context: GenerationContext | None = None,
+) -> InvoiceGroupResolution:
+    scope = profile_scope(context.profile) if context is not None else nullcontext()
+    with scope:
+        return _resolve_invoice_group_from_snapshot(snapshot, invoice_group_key)
+
+
+def _resolve_invoice_group_from_snapshot(
+    snapshot: WorkbookSnapshot,
+    invoice_group_key: str,
 ) -> InvoiceGroupResolution:
     summary = next(
         (item for item in snapshot.invoice_summary if item.invoice_group_key == invoice_group_key),
@@ -99,7 +110,7 @@ def resolve_invoice_group_from_snapshot(
         )
 
     member_rows = snapshot.invoice_rows_for_group(invoice_group_key)
-    po_field = _bs.field("PO record", "po_no")
+    po_field = current_schema().field("PO record", "po_no")
     lines: list[OrderLine] = []
     blocking_errors: list[ValidationMessage] = []
     warnings: list[ValidationMessage] = []
@@ -133,8 +144,19 @@ def resolve_invoice_group_from_snapshot(
 def inspect_invoice_group_from_snapshot(
     snapshot: WorkbookSnapshot,
     invoice_group_key: str,
+    *,
+    context: GenerationContext | None = None,
 ) -> InvoiceGroupInspection:
-    resolution = resolve_invoice_group_from_snapshot(snapshot, invoice_group_key)
+    scope = profile_scope(context.profile) if context is not None else nullcontext()
+    with scope:
+        return _inspect_invoice_group_from_snapshot(snapshot, invoice_group_key)
+
+
+def _inspect_invoice_group_from_snapshot(
+    snapshot: WorkbookSnapshot,
+    invoice_group_key: str,
+) -> InvoiceGroupInspection:
+    resolution = _resolve_invoice_group_from_snapshot(snapshot, invoice_group_key)
     if resolution.summary is None:
         return InvoiceGroupInspection(
             invoice_group_key=invoice_group_key,
@@ -228,7 +250,9 @@ def _sellers_for_line(line: OrderLine) -> tuple[str, ...]:
     factory_seller = factory_seller_for_line(line)
     if line.sk_ym_invoice_no and factory_seller:
         sellers.append(factory_seller)
-    return tuple(seller for seller in SELLERS if seller in sellers)
+    profile = current_profile()
+    active_sellers = profile.capabilities.sellers if profile is not None else SELLERS
+    return tuple(seller for seller in active_sellers if seller in sellers)
 
 
 __all__ = [

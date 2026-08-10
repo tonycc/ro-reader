@@ -16,7 +16,6 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ro_generator.base_schema import base_schema
 from ro_generator.document_model import invoice_no_for_line
 from ro_generator.errors import WorkbookOpenError
 from ro_generator.invoice_groups import (
@@ -26,14 +25,17 @@ from ro_generator.invoice_groups import (
     build_invoice_groups,
 )
 from ro_generator.models import OrderLine, Product
-from ro_generator.resolver import build_product_index_from_rows, resolve_po_rows
-from ro_generator.schema import SELLERS, SHEET_CUSTOMER_PO, SHEET_DATA_BASE, SHEET_PO_RECORD
+from ro_generator.profiles import CustomerProfile, GenerationContext, default_profile_registry
+from ro_generator.profiles.runtime import current_profile, current_rules, profile_scope
+from ro_generator.resolver import (
+    CUSTOMER_PO_ONLY_ROW_KEY,
+    build_product_index_from_rows,
+    resolve_po_rows,
+)
+from ro_generator.schema import SELLERS
 from ro_generator.seller_filter import factory_seller_for_line, has_factory_categories, int_or_none
 from ro_generator.validator import validate_workbook_structure
 from ro_generator.workbook_reader import ROW_NUMBER_KEY, WorkbookReader
-
-_bs = base_schema()
-
 
 # —————————————————————————————————————
 # PO 状态模型（原在 workbench_service，移到此处避免循环导入）
@@ -51,6 +53,11 @@ class PoInspection:
     exportable_documents_by_seller: dict[str, tuple[str, ...]]
     blocking_count: int
     date: str | None
+
+
+def _active_sellers() -> tuple[str, ...]:
+    profile = current_profile()
+    return profile.capabilities.sellers if profile is not None else SELLERS
 
 
 # —————————————————————————————————————
@@ -102,6 +109,7 @@ class WorkbookSnapshot:
     headers_data_base: tuple[str, ...]
     headers_po_record: tuple[str, ...]
     headers_customer_po: tuple[str, ...] = ()
+    profile_id: str = "ro"
     product_index: dict[str, Product] = field(default_factory=dict)
     po_rows: tuple[dict[str, object], ...] = ()
     po_index: dict[str, tuple[int, ...]] = field(default_factory=dict)
@@ -133,10 +141,31 @@ class WorkbookSnapshot:
 # —————————————————————————————————————
 
 
-def build_workbook_snapshot(base_file: str) -> WorkbookSnapshot:
-    """一次性读取 workbook，构建完整快照。"""
+def build_workbook_snapshot(
+    base_file: str,
+    *,
+    context: GenerationContext | None = None,
+    profile: CustomerProfile | None = None,
+) -> WorkbookSnapshot:
+    """一次性读取 workbook，构建绑定 Profile 的完整快照。"""
+
+    if context is None:
+        active_profile = profile or current_profile() or default_profile_registry().default
+        context = GenerationContext(profile=active_profile, base_file=Path(base_file))
+    elif Path(base_file).expanduser().resolve() != context.base_path.expanduser().resolve():
+        raise ValueError(
+            "GenerationContext.base_file 与 build_workbook_snapshot 的 base_file 不一致"
+        )
+    with profile_scope(context.profile):
+        return _build_workbook_snapshot(context)
+
+
+def _build_workbook_snapshot(context: GenerationContext) -> WorkbookSnapshot:
+    """在已绑定 Profile 作用域内构建快照。"""
+
+    base_file = str(context.base_path)
     try:
-        reader = WorkbookReader(base_file)
+        reader = WorkbookReader(base_file, schema=context.schema)
     except WorkbookOpenError as exc:
         raise BuildSnapshotError(
             f"无法打开 base 文件 {base_file}: {exc.message if hasattr(exc, 'message') else exc}"
@@ -144,18 +173,18 @@ def build_workbook_snapshot(base_file: str) -> WorkbookSnapshot:
 
     try:
         # 结构校验
-        struct = validate_workbook_structure(reader)
+        struct = validate_workbook_structure(reader, schema=context.schema)
         if struct:
             raise BuildSnapshotError(
                 f"base 文件结构校验失败: {struct[0].message if struct else '未知错误'}"
             )
 
         # 读取 sheet 头
-        db_sheet = reader.read_sheet(SHEET_DATA_BASE)
-        po_sheet = reader.read_sheet(SHEET_PO_RECORD)
-        cp_config = _bs.sheet("客户PO")
+        db_sheet = reader.read_sheet(context.schema.sheet("DATA BASE").name)
+        po_sheet = reader.read_sheet(context.schema.sheet("PO record").name)
+        cp_config = context.schema.sheet("客户PO")
         cp_sheet = reader.read_sheet(
-            SHEET_CUSTOMER_PO,
+            context.schema.sheet("客户PO").name,
             header_row=cp_config.header_row,
             first_data_row=cp_config.first_data_row,
         )
@@ -167,7 +196,7 @@ def build_workbook_snapshot(base_file: str) -> WorkbookSnapshot:
         product_index = build_product_index_from_rows(db_sheet.rows)
 
         # 构建 po_rows 和 po_index
-        po_field_name = _bs.field("PO record", "po_no")
+        po_field_name = context.schema.field("PO record", "po_no")
         all_rows: list[dict[str, object]] = []
         po_index_builder: dict[str, list[int]] = {}
 
@@ -182,12 +211,8 @@ def build_workbook_snapshot(base_file: str) -> WorkbookSnapshot:
                 continue
             po_index_builder.setdefault(po_no, []).append(idx)
 
-        po_rows = tuple(all_rows)
-        po_index: dict[str, tuple[int, ...]] = {k: tuple(v) for k, v in po_index_builder.items()}
-
-        # 构建 po_summary
         # 构建 customer_po_rows 和 customer_po_index
-        cp_field_name = _bs.field("客户PO", "purchasing_document")
+        cp_field_name = context.schema.field("客户PO", "purchasing_document")
         cp_all_rows: list[dict[str, object]] = []
         cp_index_builder: dict[str, list[int]] = {}
 
@@ -205,6 +230,18 @@ def build_workbook_snapshot(base_file: str) -> WorkbookSnapshot:
         cp_rows = tuple(cp_all_rows)
         cp_index: dict[str, tuple[int, ...]] = {k: tuple(v) for k, v in cp_index_builder.items()}
 
+        if current_rules().include_customer_po_only_orders:
+            _append_customer_po_only_rows(
+                all_rows,
+                po_index_builder,
+                cp_rows,
+                cp_index,
+                product_index,
+            )
+
+        po_rows = tuple(all_rows)
+        po_index: dict[str, tuple[int, ...]] = {k: tuple(v) for k, v in po_index_builder.items()}
+
         po_summary = _build_po_summary(
             po_index,
             po_rows,
@@ -221,7 +258,8 @@ def build_workbook_snapshot(base_file: str) -> WorkbookSnapshot:
         )
 
         return WorkbookSnapshot(
-            base_file=str(Path(base_file).resolve()),
+            base_file=str(context.base_path),
+            profile_id=context.profile_id,
             headers_data_base=headers_db,
             headers_po_record=headers_po,
             headers_customer_po=headers_cp,
@@ -237,6 +275,55 @@ def build_workbook_snapshot(base_file: str) -> WorkbookSnapshot:
         )
     finally:
         reader.close()
+
+
+def _append_customer_po_only_rows(
+    all_rows: list[dict[str, object]],
+    po_index_builder: dict[str, list[int]],
+    customer_po_rows: tuple[dict[str, object], ...],
+    customer_po_index: dict[str, tuple[int, ...]],
+    products: dict[str, Product],
+) -> None:
+    """为尚未进入 PO record 的客户订单建立只用于 PI/PO 的最小解析行。"""
+
+    profile = current_profile()
+    if profile is None:
+        return
+    schema = profile.schema
+    cp_material = schema.field("客户PO", "material")
+    cp_item = schema.field("客户PO", "item")
+    cp_description = schema.field("客户PO", "description")
+    cp_document_date = schema.field("客户PO", "document_date")
+    cp_ship_date = schema.field("客户PO", "ship_date")
+    po_no_field = schema.field("PO record", "po_no")
+    item_field = schema.field("PO record", "item_line")
+    sap_field = schema.field("PO record", "sap")
+    description_field = schema.field("PO record", "description")
+    category_field = schema.field("PO record", "category")
+    order_date_field = schema.field("PO record", "order_date")
+    final_ex_factory_field = schema.field("PO record", "final_ex_factory_date")
+
+    for po_no, row_indices in customer_po_index.items():
+        if po_no in po_index_builder:
+            continue
+        for customer_index in row_indices:
+            customer_row = customer_po_rows[customer_index]
+            sap_raw = customer_row.get(cp_material)
+            sap = str(sap_raw).removesuffix(".0").strip() if sap_raw is not None else ""
+            product = products.get(sap)
+            row = {
+                CUSTOMER_PO_ONLY_ROW_KEY: True,
+                po_no_field: po_no,
+                item_field: customer_row.get(cp_item),
+                sap_field: sap_raw,
+                description_field: customer_row.get(cp_description),
+                category_field: product.category if product is not None else None,
+                order_date_field: customer_row.get(cp_document_date),
+                final_ex_factory_field: customer_row.get(cp_ship_date),
+            }
+            index = len(all_rows)
+            all_rows.append(row)
+            po_index_builder.setdefault(po_no, []).append(index)
 
 
 # —————————————————————————————————————
@@ -284,7 +371,7 @@ def _build_po_summary(
             PoInspection(
                 po_no=po_no,
                 status=status,
-                sellers=tuple(SELLERS),
+                sellers=_active_sellers(),
                 line_count=len(resolve_result.lines) or len(rows),
                 invoice_nos=tuple(sorted(invoice_nos)),
                 invoice_options_by_seller=invoice_options_by_seller,
@@ -333,7 +420,7 @@ def _build_invoice_options_by_seller(lines: tuple[OrderLine, ...]) -> dict[str, 
 
     SK/YM 的 Invoice/PL 使用 `SK/YM INVOICE NO.`；EMAX 使用追加 `-P` 后的发票号。
     """
-    return {seller: _invoice_options_for_seller(lines, seller) for seller in SELLERS}
+    return {seller: _invoice_options_for_seller(lines, seller) for seller in _active_sellers()}
 
 
 def _invoice_options_for_seller(lines: tuple[OrderLine, ...], seller: str) -> tuple[str, ...]:
@@ -348,7 +435,7 @@ def _invoice_options_for_seller(lines: tuple[OrderLine, ...], seller: str) -> tu
 def _build_exportable_documents_by_seller(
     lines: tuple[OrderLine, ...],
 ) -> dict[str, tuple[str, ...]]:
-    return {seller: _exportable_documents_for_seller(lines, seller) for seller in SELLERS}
+    return {seller: _exportable_documents_for_seller(lines, seller) for seller in _active_sellers()}
 
 
 def _exportable_documents_for_seller(
@@ -358,22 +445,36 @@ def _exportable_documents_for_seller(
     seller_lines = _lines_for_invoice_options(lines, seller)
     if not seller_lines:
         return ()
-    if seller in {"SK", "YM"}:
-        documents: list[str] = []
-        if _has_factory_pi_number(seller_lines, seller):
+    profile = current_profile()
+    supported = (
+        profile.capabilities.documents_for(seller)
+        if profile is not None
+        else ("PI", "PO", "INVOICE", "PL", "CI", "RO_PL")
+    )
+    documents: list[str] = []
+    if "PI" in supported:
+        pi_no, _missing_field = current_rules().pi_no_for_lines(
+            seller_lines,
+            seller,
+            seller_lines[0].po_no,
+        )
+        if pi_no:
             documents.append("PI")
+    if "PO" in supported:
+        documents.append("PO")
+    if (
+        "INVOICE" in supported
+        and "PL" in supported
+        and _invoice_options_for_seller(seller_lines, seller)
+    ):
         documents.append("INVOICE_PL")
+    if (
+        "CI" in supported
+        and "RO_PL" in supported
+        and _invoice_options_for_seller(seller_lines, seller)
+    ):
         documents.append("CI_PL")
-        return tuple(documents)
-    return ("PI", "PO", "INVOICE_PL")
-
-
-def _has_factory_pi_number(lines: tuple[OrderLine, ...], seller: str) -> bool:
-    if seller == "SK":
-        return any(line.e10_po for line in lines)
-    if seller == "YM":
-        return any(line.ym_po for line in lines)
-    return True
+    return tuple(documents)
 
 
 def _lines_for_invoice_options(lines: tuple[OrderLine, ...], seller: str) -> tuple[OrderLine, ...]:

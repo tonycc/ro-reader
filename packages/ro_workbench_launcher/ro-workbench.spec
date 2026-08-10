@@ -15,7 +15,8 @@ ROOT = Path(SPECPATH).parent.parent
 DATAS = []
 for source, target in [
     (ROOT / "frontend" / "dist", "frontend/dist"),
-    (ROOT / "templates", "templates"),
+    (ROOT / "customer_profiles", "customer_profiles"),
+    (ROOT / "packages" / "ro_workbench_launcher" / "resources", "resources"),
 ]:
     if source.exists():
         DATAS.append((str(source), target))
@@ -38,6 +39,10 @@ COMMON = dict(
         "ro_generator.validator",
         "ro_generator.resolver",
         "ro_generator.resources",
+        "ro_generator.profiles",
+        "ro_generator.profiles.base",
+        "ro_generator.profiles.registry",
+        "ro_generator.profiles.ro",
         "ro_generator.document_model",
         "ro_generator.template_mapping",
         "ro_generator.renderer",

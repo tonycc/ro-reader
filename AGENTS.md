@@ -11,17 +11,20 @@ packages/ro_generator/          Python 核心业务包
 packages/ro_workbench_api/      FastAPI 网络包装层
 packages/ro_workbench_launcher/ PyInstaller 桌面启动器
 frontend/                       Vue 3 + TypeScript + Pinia
-templates/                      12 个 workbook + 18 份 mapping + base schema
+customer_profiles/ro/           12 个 workbook + 18 份 mapping + base schema
+customer_profiles/pf/           10 个 workbook + 10 份 mapping + base schema
 ```
 
-截至 2026-08-07，Python 全量测试为 465 个，前端 Playwright 文件为 23 个场景。数量会随代码变化；执行测试命令比引用固定数字更可靠。
+截至 2026-08-09，Python 全量测试为 531 个，默认前端 Playwright 为 29 个场景，另有 1 个隔离真实 HTTP 验收场景。数量会随代码变化；执行测试命令比引用固定数字更可靠。
 
 ## 文档事实源
 
 - `README.md`：安装、使用、CLI/API 和开发入口。
 - `docs/product/ro-document-generator-product-plan.md`：当前产品能力与范围。
+- `docs/product/multi-customer-workspace-design.md`：已确认的多客户工作区设计；`ro`、`pf` 两个 Profile 已接入，实施状态以对应实施方案为准。
 - `docs/development/ro-document-workbench-ui-design.md`：当前前端行为。
 - `docs/development/implementation-guide.md`：当前工程结构和修改流程。
+- `docs/development/multi-customer-workspace-implementation-plan.md`：多客户工作区 Phase 4.5–7 的实施记录与验收门槛；Phase 8 仍为目标级。
 - `docs/单据模板字段取值规则汇总.md`：字段来源业务基准。
 - `docs/development/agent-field-fix-playbook.md`：字段问题排查流程。
 - `docs/development/field-fix-case-library.md`：字段修复案例。
@@ -72,15 +75,14 @@ Excel
 
 ## 输入数据
 
-base workbook 有三张必需 Sheet：
+base workbook 有三张逻辑 Sheet，实际名称由当前 Profile schema 决定：
 
-| Sheet | 表头 | 数据开始 |
-| --- | ---: | ---: |
-| `DATA BASE` | 4 | 5 |
-| `PO record` | 4 | 5 |
-| `客户PO` | 1 | 2 |
+| Profile | 产品主数据 | PO/出货记录 | 客户订单 |
+| --- | --- | --- | --- |
+| RO | `DATA BASE`（4/5） | `PO record`（4/5） | `客户PO`（1/2） |
+| PF | `DATA BASE TEMPLATE`（2/3） | `PO RECORD 26`（1/2） | `new PO template`（1/2） |
 
-真实名称、别名、价格列和发票金额列以 `templates/base_schema.yaml` 为准。不要在 Python 中重复硬编码可配置的表头名称。
+真实名称、别名和价格列以 `customer_profiles/<profile_id>/base_schema.yaml` 为准。不要在 Python 中重复硬编码可配置的表头名称。PF 的月份表头 `2601`–`2612` 可能以 Excel 数字形式存在，只在 reader 边界转为字符串。
 
 表头必须先通过 `schema.normalize_header()` 规范化。客户 PO 通过 `(Purchasing Document, Material)` 与 PO/SAP 数据关联。
 
@@ -94,21 +96,22 @@ SK → YM → GS PTE → EMAX PTE → PF
 
 内部单据类型为：`PI`、`PO`、`INVOICE`、`PL`、`CI`、`RO_PL`。
 
-- GS PTE、EMAX PTE：PI、PO、INVOICE、PL。
-- SK、YM：PI、INVOICE、PL、CI、RO_PL；没有 PO。
+- RO：GS PTE/EMAX PTE 支持 PI、PO、INVOICE、PL；SK/YM 支持 PI、INVOICE、PL、CI、RO_PL，没有 PO。
+- PF：GS PTE/EMAX PTE 支持 PI、PO、INVOICE、PL；SK/YM 仅支持 PI。
 - SK/YM 工厂主体：Category 1/2 → YM，Category 3 → SK。
-- 同时导出 INVOICE+PL 或 CI+RO_PL 时渲染为双 Sheet workbook；PDF 是其整体转换结果。
+- 配对 mapping 使用同一模板时渲染为双 Sheet workbook（RO）；使用不同模板时分别渲染并打 ZIP（PF）。
 
 ## 业务规则
 
-- PI/PO 数量：`客户PO.Order Quantity`。
-- INVOICE/PL/CI/RO_PL 数量：`PO record.SHIP QTY`，零或空不进入票据。
-- SK/YM 发票号：`SK/YM INVOICE NO.`。
-- GS PTE 发票号：`INV#`。
-- EMAX PTE 发票号：`INV#` 加 `-P`，过滤时兼容原值。
+- PI/PO 数量：当前 Profile 的客户订单 `Order Quantity`。
+- RO 票据数量：`PO record.SHIP QTY`；PF 票据数量：按 `INV#` 的 YYMM 读取 `2601`–`2612` 月度列。
+- RO SK/YM 发票号：`SK/YM INVOICE NO.`；GS PTE：`INV#`；EMAX PTE：`INV#` 加 `-P`。
+- PF GS/EMAX 发票号保持 `INV#` 原值。
 - `amount = quantity × unit_price`。
 - `CTNS = quantity / 外箱`。
 - `TOTAL CBM = L × W × H / 1,000,000 × CTNS`。
+- PF 对同一 PO、同一 SAP 的客户订单数量聚合后检查 `MOQ` 和 `round value`，返回 `MOQ_NOT_MET` / `FULL_CARTON_NOT_MET` high warning，不阻断导出。
+- PF 新 PO 可先只存在于 `new PO template` 并进入 PI/PO；没有 PO record 月度出货前不进入票据组。
 - 缺失 SAP、订单数量、发票号或 mapping 时不得编造兜底值。
 - 金额用 `Decimal`，日期用 `date`，领域对象不依赖 Excel 坐标。
 
@@ -131,6 +134,8 @@ API 不得自行聚合票据组。
 - 单元格坐标只写在 YAML mapping，不写在 Python。
 - mapping 必须包含 `template_version`，加载时验证引用单元格。
 - `table_header_row` 显式保护真实表头。
+- `preview_content.column_labels` 只决定预览列和顺序；显示文案由 mapping loader 从实际 `table_header_row` 解析。特殊多行模板可用 `column_label_rows` 选择其子集，前端不得复制表头文案。
+- 需要忠实复现 Excel 抬头的 mapping 必须用 `preview_content.template_fields` 引用标题和出具方单元格，并用 `layout` 声明区域；header 字段标签由 loader 从对应值单元格所在行解析，前端不得维护另一套抬头。
 - `style_source_row` 必须指向真实明细样式行。
 - 清理空 `to_label`、旧 `terms: {}` 等无效配置，不保留噪音。
 - 模板修改后同时更新 mapping、字段规则文档和渲染测试。
@@ -142,7 +147,7 @@ openpyxl 的 `insert_rows()` 不会平移 `row_dimensions`。插入明细行前�
 
 - `workbook_editor.py` 集中处理 base 文件写回，并使用 per-file lock。
 - 编辑成功后必须使 `WorkbookCacheManager` 对应快照失效。
-- 快照按文件签名自动重建，默认缓存 TTL 为一小时。
+- 快照按文件签名自动重建，默认缓存 TTL 为 30 分钟。
 - API 导出写入 session 临时目录；下载路径必须限制在该目录内。
 - session 一小时无活动后清理，定时器每五分钟检查一次。
 
@@ -195,7 +200,8 @@ uv run pyinstaller packages/ro_workbench_launcher/ro-workbench.spec --noconfirm
 - 黄金回归 PO：`4500030844`。
 - 合成 fixture：`tests/fixtures/synthetic_base.xlsx`，由生成脚本创建并被 gitignore。
 - 真实业务 Excel 不入库。
-- 测试应覆盖 combo/rod/reel、三张 Sheet、主体过滤、SHIP QTY、多发票号、缺 SAP、缺客户 PO、模板插行、票据组、PDF 错误路径和 API session 边界。
+- PF 真实文件只用于本机只读验收；自动回归使用 `test_pf_snapshot.py` 和 `test_order_constraints.py` 的合成 workbook。
+- 测试应覆盖 combo/rod/reel、Profile 实际 Sheet、主体过滤、RO SHIP QTY、PF 月度数量、多发票号、缺 SAP、客户 PO 先行、MOQ/整箱、模板插行、票据组、PDF 错误路径和 API session 边界。
 
 ## 文档维护
 

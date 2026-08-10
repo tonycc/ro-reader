@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import threading
 import time
+from dataclasses import replace
+from typing import cast
 
 from openpyxl import Workbook
+from ro_generator.profiles import create_ro_profile
+from ro_generator.profiles.ro import RoRules
 from ro_generator.workbook_cache import WorkbookCacheManager
 
 # —————————————————————————————————————
@@ -267,6 +271,29 @@ class TestBuildLockCleanup:
         )
         cache = WorkbookCacheManager(ttl_seconds=3600)
         cache.get_snapshot(path)
-        assert path in cache._build_locks  # pyright: ignore[reportPrivateUsage]
+        assert ("ro", path) in cache._build_locks  # pyright: ignore[reportPrivateUsage]
         cache.invalidate(path)
-        assert path not in cache._build_locks  # pyright: ignore[reportPrivateUsage]
+        assert ("ro", path) not in cache._build_locks  # pyright: ignore[reportPrivateUsage]
+
+
+def test_same_base_path_isolated_by_profile(tmp_path):
+    path = make_base_file(
+        tmp_path,
+        data_base_rows=[COMBO_PRODUCT],
+        po_record_rows=[basic_po_row()],
+    )
+    ro_profile = create_ro_profile()
+    profile_b = replace(
+        ro_profile,
+        profile_id="customer-b",
+        display_name="Customer B",
+        rules=replace(cast(RoRules, ro_profile.rules), profile_id="customer-b"),
+    )
+    cache = WorkbookCacheManager(ttl_seconds=3600)
+
+    ro_snapshot = cache.get_snapshot(path, profile=ro_profile)
+    customer_b_snapshot = cache.get_snapshot(path, profile=profile_b)
+
+    assert ro_snapshot is not customer_b_snapshot
+    assert ro_snapshot.profile_id == "ro"
+    assert customer_b_snapshot.profile_id == "customer-b"

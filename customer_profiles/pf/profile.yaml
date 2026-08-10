@@ -1,0 +1,18 @@
+profile_id: pf
+display_name: PF
+version: pf_v1
+
+assets:
+  schema: base_schema.yaml
+  template_root: templates
+  mapping_root: templates
+  seller_directories:
+    GS PTE: gs
+    EMAX PTE: emax
+    SK: sk
+    YM: ym
+  mapping_filenames:
+    PI: pi.yaml
+    PO: po.yaml
+    INVOICE: invoice.yaml
+    PL: pl.yaml

@@ -20,17 +20,23 @@ from ro_generator.template_mapping import (
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-GS_INVOICE_MAPPING = REPO_ROOT / "templates" / "gs" / "mappings" / "invoice.yaml"
-GS_PI_MAPPING = REPO_ROOT / "templates" / "gs" / "mappings" / "pi.yaml"
-GS_PO_MAPPING = REPO_ROOT / "templates" / "gs" / "mappings" / "po.yaml"
-EMAX_PI_MAPPING = REPO_ROOT / "templates" / "emax" / "mappings" / "pi.yaml"
-EMAX_PO_MAPPING = REPO_ROOT / "templates" / "emax" / "mappings" / "po.yaml"
-EMAX_INVOICE_MAPPING = REPO_ROOT / "templates" / "emax" / "mappings" / "invoice.yaml"
-EMAX_PL_MAPPING = REPO_ROOT / "templates" / "emax" / "mappings" / "pl.yaml"
-SK_PI_MAPPING = REPO_ROOT / "templates" / "sk" / "mappings" / "pi.yaml"
-SK_PL_MAPPING = REPO_ROOT / "templates" / "sk" / "mappings" / "pl.yaml"
-YM_PI_MAPPING = REPO_ROOT / "templates" / "ym" / "mappings" / "pi.yaml"
-YM_PL_MAPPING = REPO_ROOT / "templates" / "ym" / "mappings" / "pl.yaml"
+RO_TEMPLATES = REPO_ROOT / "customer_profiles" / "ro" / "templates"
+PF_TEMPLATES = REPO_ROOT / "customer_profiles" / "pf" / "templates"
+GS_INVOICE_MAPPING = RO_TEMPLATES / "gs" / "mappings" / "invoice.yaml"
+GS_PI_MAPPING = RO_TEMPLATES / "gs" / "mappings" / "pi.yaml"
+GS_PO_MAPPING = RO_TEMPLATES / "gs" / "mappings" / "po.yaml"
+EMAX_PI_MAPPING = RO_TEMPLATES / "emax" / "mappings" / "pi.yaml"
+EMAX_PO_MAPPING = RO_TEMPLATES / "emax" / "mappings" / "po.yaml"
+EMAX_INVOICE_MAPPING = RO_TEMPLATES / "emax" / "mappings" / "invoice.yaml"
+EMAX_PL_MAPPING = RO_TEMPLATES / "emax" / "mappings" / "pl.yaml"
+SK_PI_MAPPING = RO_TEMPLATES / "sk" / "mappings" / "pi.yaml"
+SK_PL_MAPPING = RO_TEMPLATES / "sk" / "mappings" / "pl.yaml"
+YM_PI_MAPPING = RO_TEMPLATES / "ym" / "mappings" / "pi.yaml"
+YM_PL_MAPPING = RO_TEMPLATES / "ym" / "mappings" / "pl.yaml"
+PF_GS_PL_MAPPING = PF_TEMPLATES / "gs" / "mappings" / "pl.yaml"
+PF_GS_PI_MAPPING = PF_TEMPLATES / "gs" / "mappings" / "pi.yaml"
+PF_SK_PI_MAPPING = PF_TEMPLATES / "sk" / "mappings" / "pi.yaml"
+PF_YM_PI_MAPPING = PF_TEMPLATES / "ym" / "mappings" / "pi.yaml"
 
 
 class TestRealGsInvoiceMapping:
@@ -92,6 +98,129 @@ class TestRealMappingsTableHeaderRows:
     def test_declares_table_header_row(self, mapping_path: Path, expected_rows: list[int]) -> None:
         mapping = load_template_mapping(mapping_path)
         assert mapping.table_header_row == expected_rows
+
+
+class TestPreviewColumnHeaders:
+    @pytest.mark.parametrize("mapping_path", [SK_PI_MAPPING, YM_PI_MAPPING])
+    def test_sk_ym_pi_uses_exact_template_header(self, mapping_path: Path) -> None:
+        mapping = load_template_mapping(mapping_path)
+
+        assert dict(mapping.preview_column_labels)["A"] == "Country of The Origin"
+
+    def test_emax_pi_uses_exact_item_header(self) -> None:
+        mapping = load_template_mapping(EMAX_PI_MAPPING)
+
+        assert dict(mapping.preview_column_labels)["item_line_no"] == "Item Number"
+
+    def test_multiline_invoice_headers_come_from_declared_template_rows(self) -> None:
+        mapping = load_template_mapping(EMAX_INVOICE_MAPPING)
+
+        labels = dict(mapping.preview_column_labels)
+        assert labels["description"] == "GOODS\nDESCRIPT"
+        assert labels["unit_price"] == "REEL\nFOB, USD"
+        assert labels["unit_label"] == ""
+        assert labels["amount"] == "TOTAL\nAMOUNT"
+        assert mapping.preview_column_letters["unit_label"] == "G"
+
+    def test_merged_pf_pl_headers_are_flattened_with_line_breaks(self) -> None:
+        mapping = load_template_mapping(PF_GS_PL_MAPPING)
+
+        labels = dict(mapping.preview_column_labels)
+        assert labels["sap"] == "DESCRIPTION OF GOODS\nITEM#"
+        assert labels["description"] == "DESCRIPTION"
+        assert labels["quantity"] == "QUANTITY\n(PCS)"
+        assert labels["width"] == "W"
+
+    @pytest.mark.parametrize(
+        "mapping_path",
+        [PF_GS_PL_MAPPING, PF_TEMPLATES / "emax" / "mappings" / "pl.yaml"],
+    )
+    def test_pf_pl_exposes_merged_header_rows(self, mapping_path: Path) -> None:
+        mapping = load_template_mapping(mapping_path)
+
+        assert len(mapping.preview_header_rows) == 3
+        first_row = list(mapping.preview_header_rows[0])
+        assert {cell["label"] for cell in first_row} >= {
+            "PO#",
+            "DESCRIPTION OF GOODS",
+            "MEASUREMENT",
+        }
+        description_group = next(
+            cell for cell in first_row if cell["label"] == "DESCRIPTION OF GOODS"
+        )
+        measurement_group = next(cell for cell in first_row if cell["label"] == "MEASUREMENT")
+        assert description_group["colspan"] == 2
+        assert description_group["rowspan"] == 2
+        assert measurement_group["colspan"] == 3
+
+
+class TestPreviewDocumentHeaders:
+    @pytest.mark.parametrize(
+        ("mapping_path", "expected_company"),
+        [
+            (
+                PF_SK_PI_MAPPING,
+                "GUANGDONG GLOBALSINO OUTDOOR SPORTS EQUIPMENT LIMITED",
+            ),
+            (PF_YM_PI_MAPPING, "WEIHAI E-MAX SPORT APPARATUS CO.,LTD"),
+        ],
+    )
+    def test_pf_sk_ym_pi_header_comes_from_template(
+        self,
+        mapping_path: Path,
+        expected_company: str,
+    ) -> None:
+        mapping = load_template_mapping(mapping_path)
+
+        assert mapping.preview_static_values["title"] == ("PROFORMA INVOICE",)
+        assert mapping.preview_static_values["seller_info"][0] == expected_company
+        assert mapping.preview_header_labels["pi_no"] == "PI Number:"
+        assert mapping.preview_header_labels["etd_baseline"] == "ETD (Baseline Date for FOB Term):"
+        assert mapping.preview_header_labels["manufacturer"] == ("Actual Manufacturer Company Name")
+        assert mapping.preview_content["layout"]
+
+    @pytest.mark.parametrize("mapping_path", [PF_SK_PI_MAPPING, PF_YM_PI_MAPPING])
+    def test_pf_sk_ym_pi_hash_addresses_are_not_truncated(self, mapping_path: Path) -> None:
+        mapping = load_template_mapping(mapping_path)
+
+        assert mapping.header_fixed["bill_to_line2"] == (
+            "10 KAKI BUKIT ROAD 2, #01-37, FIRST EAST CENTRE"
+        )
+        assert mapping.header_fixed["ship_to_line2"] == (
+            "10 KAKI BUKIT ROAD 2, #01-37, FIRST EAST CENTRE"
+        )
+
+    def test_pf_continuation_rows_do_not_borrow_the_opposite_column_label(self) -> None:
+        mapping = load_template_mapping(PF_GS_PI_MAPPING)
+
+        assert mapping.preview_header_labels["bill_to_line2"] == ""
+        assert mapping.preview_header_labels["ship_to_line2"] == ""
+        assert mapping.preview_header_labels["manufacturer_address_2"] == ""
+
+    def test_pf_gs_pi_declares_material_column_and_customer_creation_date(self) -> None:
+        mapping = load_template_mapping(PF_GS_PI_MAPPING)
+
+        assert mapping.lines.columns.item_number == "D"
+        assert mapping.lines.columns.sap is None
+        assert dict(mapping.preview_column_labels)["item_number"] == "Item Number"
+        assert mapping.header_fixed["ex_factory_date"] == "SEE BELOW"
+        assert mapping.totals["signature_date"].value_mode == "model_date"
+
+    def test_pf_emax_pi_declares_screenshot_header_rules(self) -> None:
+        mapping = load_template_mapping(PF_TEMPLATES / "emax" / "mappings" / "pi.yaml")
+
+        assert mapping.header_fixed["ex_factory_date"] == "SEE BELOW"
+        assert mapping.totals["signature_date"].value_mode == "model_date"
+
+    def test_pf_gs_po_declares_material_column_and_customer_creation_date(self) -> None:
+        mapping = load_template_mapping(PF_TEMPLATES / "gs" / "mappings" / "po.yaml")
+
+        assert mapping.lines.columns.item_number == "D"
+        assert mapping.lines.columns.sap is None
+        assert dict(mapping.preview_column_labels)["item_number"] == "Item Number"
+        assert mapping.header_fixed["incoterm"] == "FOB Qingdao"
+        assert mapping.header_fixed["ex_factory_date"] == "SEE BELOW"
+        assert mapping.totals["signature_date"].value_mode == "model_date"
 
 
 # ————————————————————————————————————————

@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from ro_generator.invoice_groups import build_invoice_group_key, build_invoice_groups
 from ro_generator.models import OrderLine, Product
+from ro_generator.profiles import create_pf_profile, profile_scope
 
 
 def _line(
@@ -99,6 +100,31 @@ def test_factory_reel_group_is_available_to_sk() -> None:
     assert summary.display_invoice_no == "SK-001"
     assert summary.sellers == ("SK",)
     assert summary.seller_invoice_numbers == {"SK": "SK-001"}
+
+
+def test_pf_invoice_numbers_do_not_inherit_ro_suffix_or_factory_sellers() -> None:
+    profile = create_pf_profile()
+
+    with profile_scope(profile):
+        result = build_invoice_groups(
+            (
+                (
+                    0,
+                    _line(
+                        po_no="PO-1",
+                        invoice_no="G26020201A",
+                        factory_invoice_no="FACTORY-001",
+                        category=3,
+                    ),
+                ),
+            )
+        )
+
+    summary = result.summaries[0]
+    assert summary.seller_invoice_numbers == {
+        "GS PTE": "G26020201A",
+        "EMAX PTE": "G26020201A",
+    }
 
 
 def test_header_context_no_conflicts_when_no_attributes_checked() -> None:

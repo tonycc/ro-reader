@@ -126,6 +126,12 @@ export interface DryRunResult {
 }
 
 export interface PreviewColumnLabel { key: string; label: string }
+export interface PreviewHeaderCell {
+  key?: string
+  label: string
+  colspan?: number
+  rowspan?: number
+}
 
 export interface PreviewLayout {
   top: { left: string[]; center: string[]; right: string[] }
@@ -133,6 +139,11 @@ export interface PreviewLayout {
 }
 
 export interface PreviewLine {
+  _index: number; _source_row: number | null
+  [key: string]: unknown
+}
+
+export interface PreviewCostBreakdownLine {
   _index: number; _source_row: number | null
   [key: string]: unknown
 }
@@ -156,8 +167,12 @@ export interface PreviewPayload {
   po_no: string; pi_no: string | null; invoice_no: string | null
   ship_to: string | null; seller_info: string[]; to_label: string
   terms: Record<string, string>
+  header_labels: Record<string, string>
   column_labels: PreviewColumnLabel[]
+  column_header_rows?: PreviewHeaderCell[][]
   lines: PreviewLine[]
+  cost_breakdown_column_labels?: PreviewColumnLabel[]
+  cost_breakdown?: PreviewCostBreakdownLine[]
   totals: Record<string, unknown> & {
     _extra_items?: PreviewTotalExtraItem[]
     _footer_items?: PreviewFooterItem[]

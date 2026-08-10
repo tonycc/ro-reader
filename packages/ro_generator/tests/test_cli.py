@@ -25,6 +25,8 @@ from ro_generator.cli import (
     EXIT_USAGE,
     main,
 )
+from ro_generator.models import GenerationResult
+from ro_generator.profiles import GenerationContext
 
 # ————————————————————————————————————————
 # 复用 generator 测试的 fixture builder
@@ -257,6 +259,68 @@ class TestSuccess:
         assert stripped.endswith("}")
         json.loads(stripped)
 
+    def test_explicit_ro_profile_keeps_default_behavior(self, tmp_path: Path) -> None:
+        base = make_base_file(tmp_path)
+        code, stdout, _stderr = _run(
+            [
+                "--profile",
+                "ro",
+                "--base",
+                str(base),
+                "--po",
+                "4500030844",
+                "--docs",
+                "invoice",
+                "--seller",
+                "GS PTE",
+                "--invoice-no",
+                "INV-001",
+                "--output-dir",
+                str(tmp_path / "out"),
+            ]
+        )
+        assert code == EXIT_SUCCESS
+        assert "装配成功" in stdout
+
+    def test_cli_passes_explicit_context_and_ignores_workspace_config(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """CLI 绑定 Profile + base，不读取工作台的持久化工作区。"""
+        import ro_generator.cli as cli_module
+
+        captured: dict[str, object] = {}
+
+        def fake_generate(request: object, *, context: object) -> GenerationResult:
+            captured["request"] = request
+            captured["context"] = context
+            return GenerationResult(status="success")
+
+        monkeypatch.setattr(cli_module, "generate", fake_generate)
+        monkeypatch.setenv("RO_WORKBENCH_CONFIG_DIR", str(tmp_path / "invalid-config"))
+
+        base = tmp_path / "base.xlsx"
+        code, stdout, stderr = _run(
+            [
+                "--profile",
+                "ro",
+                "--base",
+                str(base),
+                "--po",
+                "4500030844",
+                "--docs",
+                "invoice",
+                "--json",
+            ]
+        )
+
+        assert code == EXIT_SUCCESS
+        assert stderr == ""
+        assert json.loads(stdout)["status"] == "success"
+        context = captured["context"]
+        assert isinstance(context, GenerationContext)
+        assert context.profile_id == "ro"
+        assert context.base_path == base.absolute()
+
 
 # ————————————————————————————————————————
 # --input request.json
@@ -359,6 +423,25 @@ class TestUsageErrors:
     def test_argparse_unknown_flag(self) -> None:
         code, _, _ = _run(["--unknown-flag", "x"])
         assert code == EXIT_USAGE
+
+    def test_unknown_profile_is_usage_error(self, tmp_path: Path) -> None:
+        base = make_base_file(tmp_path)
+        code, stdout, stderr = _run(
+            [
+                "--profile",
+                "not-registered",
+                "--base",
+                str(base),
+                "--po",
+                "4500030844",
+                "--docs",
+                "invoice",
+                "--json",
+            ]
+        )
+        assert code == EXIT_USAGE
+        assert stdout == ""
+        assert "PROFILE_NOT_FOUND" in stderr
 
 
 # ————————————————————————————————————————

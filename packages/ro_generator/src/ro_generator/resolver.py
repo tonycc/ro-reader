@@ -18,23 +18,14 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Final, cast
 
-from ro_generator.base_schema import base_schema
 from ro_generator.line_rules import resolve_line_field_spec
 from ro_generator.models import OrderLine, Product, ValidationMessage
-from ro_generator.schema import (
-    CATEGORY_NAMES,
-    DATA_BASE_PRICE_COLUMNS,
-    INVOICE_AMOUNT_COLUMNS,
-    SELLER_PRICE_COLUMNS,
-    SELLER_TO_BUYER,
-    SHEET_CUSTOMER_PO,
-    SHEET_DATA_BASE,
-    SHEET_PO_RECORD,
-)
+from ro_generator.order_constraints import validate_customer_order_constraints
+from ro_generator.profiles.base import CustomerProfile
+from ro_generator.profiles.runtime import current_rules, current_schema, profile_scope
+from ro_generator.schema import CATEGORY_NAMES, SELLER_PRICE_COLUMNS, SELLER_TO_BUYER
 from ro_generator.seller_filter import int_or_none
 from ro_generator.workbook_reader import ROW_NUMBER_KEY, WorkbookReader, row_decimal_places
-
-_bs = base_schema()
 
 # —————————————————————————————————————
 # 校验消息 code
@@ -47,6 +38,7 @@ CODE_QTY_MISSING: Final = "QTY_MISSING"
 CODE_QTY_INVALID: Final = "QTY_INVALID"
 CODE_NO_PRICES: Final = "NO_PRICES"
 CODE_FORMULA_FALLBACK: Final = "FORMULA_FALLBACK"
+CUSTOMER_PO_ONLY_ROW_KEY: Final = "__customer_po_only__"
 
 
 # —————————————————————————————————————
@@ -55,15 +47,27 @@ CODE_FORMULA_FALLBACK: Final = "FORMULA_FALLBACK"
 
 
 def _db(key: str) -> str:
-    return _bs.field("DATA BASE", key)
+    return current_schema().field("DATA BASE", key)
 
 
 def _po(key: str) -> str:
-    return _bs.field("PO record", key)
+    return current_schema().field("PO record", key)
 
 
 def _cp(key: str) -> str:
-    return _bs.field("客户PO", key)
+    return current_schema().field("客户PO", key)
+
+
+def _db_sheet() -> str:
+    return current_schema().sheet("DATA BASE").name
+
+
+def _po_sheet() -> str:
+    return current_schema().sheet("PO record").name
+
+
+def _cp_sheet() -> str:
+    return current_schema().sheet("客户PO").name
 
 
 # PO record 价格列，从 (seller, buyer) → 列名
@@ -84,6 +88,22 @@ class ResolveResult:
 
 
 def resolve_po_lines(
+    reader: WorkbookReader,
+    po_no: str,
+    *,
+    products: dict[str, Product] | None = None,
+    row_filter: Callable[[dict[str, object]], bool] | None = None,
+    profile: CustomerProfile | None = None,
+) -> ResolveResult:
+    """解析指定 PO 号的所有订单行，并可显式绑定 Customer Profile。"""
+
+    if profile is None:
+        return _resolve_po_lines(reader, po_no, products=products, row_filter=row_filter)
+    with profile_scope(profile):
+        return _resolve_po_lines(reader, po_no, products=products, row_filter=row_filter)
+
+
+def _resolve_po_lines(
     reader: WorkbookReader,
     po_no: str,
     *,
@@ -117,6 +137,35 @@ def resolve_po_rows(
     *,
     customer_po_rows: tuple[dict[str, object], ...] = (),
     require_customer_po: bool = True,
+    profile: CustomerProfile | None = None,
+) -> ResolveResult:
+    """从已过滤的 PO record 行解析订单行，并可显式绑定 Profile。"""
+
+    if profile is None:
+        return _resolve_po_rows(
+            rows,
+            products,
+            po_no=po_no,
+            customer_po_rows=customer_po_rows,
+            require_customer_po=require_customer_po,
+        )
+    with profile_scope(profile):
+        return _resolve_po_rows(
+            rows,
+            products,
+            po_no=po_no,
+            customer_po_rows=customer_po_rows,
+            require_customer_po=require_customer_po,
+        )
+
+
+def _resolve_po_rows(
+    rows: tuple[dict[str, object], ...],
+    products: dict[str, Product],
+    po_no: str | None = None,
+    *,
+    customer_po_rows: tuple[dict[str, object], ...] = (),
+    require_customer_po: bool = True,
 ) -> ResolveResult:
     """从已过滤的 PO record 行解析 OrderLine 列表。
 
@@ -135,7 +184,7 @@ def resolve_po_rows(
                         kind="blocking_error",
                         code=CODE_PO_NOT_FOUND,
                         message=f"PO 号 {po_no!r} 在 PO record 中不存在",
-                        sheet=SHEET_PO_RECORD,
+                        sheet=_po_sheet(),
                     ),
                 ),
             )
@@ -149,6 +198,16 @@ def resolve_po_rows(
         messages.extend(row_msgs)
         if line is not None:
             lines.append(line)
+    if require_customer_po:
+        messages.extend(
+            validate_customer_order_constraints(
+                customer_po_rows,
+                products,
+                target_saps={line.sap for line in lines},
+                checks=current_rules().order_constraint_checks,
+                schema=current_schema(),
+            )
+        )
     return ResolveResult(lines=tuple(lines), messages=tuple(messages))
 
 
@@ -157,56 +216,97 @@ def resolve_po_rows(
 # —————————————————————————————————————
 
 
-def build_product_index(reader: WorkbookReader) -> dict[str, Product]:
+def build_product_index(
+    reader: WorkbookReader,
+    *,
+    profile: CustomerProfile | None = None,
+) -> dict[str, Product]:
     """从 DATA BASE sheet 建立 SAP 到产品主数据的索引。"""
-    sheet = reader.read_sheet(SHEET_DATA_BASE)
-    return build_product_index_from_rows(tuple(sheet.rows))
+    if profile is None:
+        sheet = reader.read_sheet(current_schema().sheet("DATA BASE").name)
+        return build_product_index_from_rows(tuple(sheet.rows))
+    with profile_scope(profile):
+        sheet = reader.read_sheet(current_schema().sheet("DATA BASE").name)
+        return build_product_index_from_rows(tuple(sheet.rows))
 
 
-def build_product_index_from_rows(rows: tuple[dict[str, object], ...]) -> dict[str, Product]:
+def build_product_index_from_rows(
+    rows: tuple[dict[str, object], ...],
+    *,
+    profile: CustomerProfile | None = None,
+) -> dict[str, Product]:
     """从已读取的 DATA BASE 行建立 SAP 到产品主数据的索引。"""
+    if profile is not None:
+        with profile_scope(profile):
+            return _build_product_index_from_rows(rows)
+    return _build_product_index_from_rows(rows)
+
+
+def _build_product_index_from_rows(rows: tuple[dict[str, object], ...]) -> dict[str, Product]:
     index: dict[str, Product] = {}
+    active_schema = current_schema()
+    active_rules = current_rules()
     for row in rows:
-        sap = _str_or_none(row.get(_db("sap")))
+        sap = _str_or_none(row.get(active_schema.field("DATA BASE", "sap")))
         if not sap:
             continue
-        category = int_or_none(row.get(_db("category")))
+        category = active_rules.category_for_value(
+            row.get(active_schema.field("DATA BASE", "category"))
+        )
         if category is None:
             continue
         # 按品类读取 DATA BASE 中的价格（9 列：3 卖方 × 3 品类）
         prices: dict[str, Decimal] = {}
         cat_name = CATEGORY_NAMES.get(category, "")
         if cat_name:
-            for price_key, col_name in DATA_BASE_PRICE_COLUMNS.items():
+            for price_key, col_name in active_rules.data_base_price_columns.items():
                 seller_cat = price_key.split("/")
                 if len(seller_cat) == 2 and seller_cat[1] == cat_name:
                     p = _decimal_from_row(row, col_name)
                     if p is not None:
                         prices[price_key] = p
 
+        invoice_prices: dict[str, Decimal] = {}
+        for price_key, col_name in active_rules.invoice_data_base_price_columns.items():
+            p = _decimal_from_row(row, col_name)
+            if p is not None:
+                invoice_prices[price_key] = p
+
+        component_prices: dict[str, Decimal] = {}
+        for price_key, col_name in active_rules.data_base_component_price_columns.items():
+            p = _decimal_from_row(row, col_name)
+            if p is not None:
+                component_prices[price_key] = p
+
         index[sap] = Product(
             sap=sap,
-            description=_str_or_empty(row.get(_db("description"))),
+            description=_str_or_empty(row.get(active_schema.field("DATA BASE", "description"))),
             category=category,
-            gs_model=_str_or_none(row.get(_db("gs_model"))),
-            sub_category=_str_or_none(row.get(_db("sub_category"))),
-            moq=int_or_none(row.get(_db("moq"))),
-            fob_lt=int_or_none(row.get(_db("fob_lt"))),
-            brand=_str_or_none(row.get(_db("brand"))),
-            rfid=_str_or_none(row.get(_db("rfid"))),
-            packing_type=_str_or_none(row.get(_db("packing_type"))),
-            main_part_no=_str_or_none(row.get(_db("main_part_no"))),
-            reel_sap=_str_or_none(row.get(_db("reel_sap"))),
-            reel_description=_str_or_none(row.get(_db("reel_description"))),
-            inner_case_value=_decimal_from_row(row, _db("inner_case_value")),
-            carton_qty=_decimal_from_row(row, _db("carton_qty")),
-            net_weight=_decimal_from_row(row, _db("net_weight")),
-            gross_weight=_decimal_from_row(row, _db("gross_weight")),
-            length=_decimal_from_row(row, _db("length")),
-            width=_decimal_from_row(row, _db("width")),
-            height=_decimal_from_row(row, _db("height")),
-            cbm=_decimal_from_row(row, _db("cbm")),
+            gs_model=_str_or_none(row.get(active_schema.field("DATA BASE", "gs_model"))),
+            sub_category=_str_or_none(row.get(active_schema.field("DATA BASE", "sub_category"))),
+            moq=int_or_none(row.get(active_schema.field("DATA BASE", "moq"))),
+            fob_lt=int_or_none(row.get(active_schema.field("DATA BASE", "fob_lt"))),
+            brand=_str_or_none(row.get(active_schema.field("DATA BASE", "brand"))),
+            rfid=_str_or_none(row.get(active_schema.field("DATA BASE", "rfid"))),
+            packing_type=_str_or_none(row.get(active_schema.field("DATA BASE", "packing_type"))),
+            main_part_no=_str_or_none(row.get(active_schema.field("DATA BASE", "main_part_no"))),
+            reel_sap=_str_or_none(row.get(active_schema.field("DATA BASE", "reel_sap"))),
+            reel_description=_str_or_none(
+                row.get(active_schema.field("DATA BASE", "reel_description"))
+            ),
+            inner_case_value=_decimal_from_row(
+                row, active_schema.field("DATA BASE", "inner_case_value")
+            ),
+            carton_qty=_decimal_from_row(row, active_schema.field("DATA BASE", "carton_qty")),
+            net_weight=_decimal_from_row(row, active_schema.field("DATA BASE", "net_weight")),
+            gross_weight=_decimal_from_row(row, active_schema.field("DATA BASE", "gross_weight")),
+            length=_decimal_from_row(row, active_schema.field("DATA BASE", "length")),
+            width=_decimal_from_row(row, active_schema.field("DATA BASE", "width")),
+            height=_decimal_from_row(row, active_schema.field("DATA BASE", "height")),
+            cbm=_decimal_from_row(row, active_schema.field("DATA BASE", "cbm")),
             prices=prices,
+            invoice_prices=invoice_prices,
+            component_prices=component_prices,
         )
     return index
 
@@ -223,7 +323,7 @@ def _read_po_record_rows(
     reader: WorkbookReader,
     po_no: str,
 ) -> tuple[dict[str, object], ...]:
-    sheet = reader.read_sheet(SHEET_PO_RECORD)
+    sheet = reader.read_sheet(current_schema().sheet("PO record").name)
     target = po_no.strip()
     matched: list[dict[str, object]] = []
     for row in sheet.rows:
@@ -238,9 +338,9 @@ def _read_customer_po_rows(
     po_no: str,
 ) -> tuple[dict[str, object], ...]:
     cp_sheet = reader.read_sheet(
-        SHEET_CUSTOMER_PO,
-        header_row=_bs.sheet("客户PO").header_row,
-        first_data_row=_bs.sheet("客户PO").first_data_row,
+        current_schema().sheet("客户PO").name,
+        header_row=current_schema().sheet("客户PO").header_row,
+        first_data_row=current_schema().sheet("客户PO").first_data_row,
     )
     purchasing_document_field = _cp("purchasing_document")
     target = po_no.strip()
@@ -268,7 +368,7 @@ def _resolve_row(
                 kind="blocking_error",
                 code=CODE_SAP_MISSING,
                 message="行缺少 SAP Number",
-                sheet=SHEET_PO_RECORD,
+                sheet=_po_sheet(),
                 row=row_number,
                 field=_po("sap"),
             )
@@ -282,7 +382,7 @@ def _resolve_row(
                 kind="blocking_error",
                 code=CODE_SAP_NOT_IN_DATA_BASE,
                 message=f"SAP {sap!r} 在 DATA BASE 中不存在",
-                sheet=SHEET_DATA_BASE,
+                sheet=_db_sheet(),
                 row=row_number,
                 field=_po("sap"),
             )
@@ -331,7 +431,7 @@ def _resolve_row(
                             f"客户PO row {_row_label(qty_row)}（Material {sap}）的 "
                             f"Order Quantity 不是有效数字：{qty_raw!r}"
                         ),
-                        sheet=SHEET_CUSTOMER_PO,
+                        sheet=_cp_sheet(),
                         row=_row_number(qty_row),
                         field=_cp("order_quantity"),
                     )
@@ -347,10 +447,10 @@ def _resolve_row(
                 kind="warning",
                 code=CODE_NO_PRICES,
                 message=f"SAP {sap!r} 在所有链段下均无可用价格",
-                sheet=SHEET_DATA_BASE,
+                sheet=_db_sheet(),
                 row=None,
-                field=next(iter(DATA_BASE_PRICE_COLUMNS.values()))
-                if DATA_BASE_PRICE_COLUMNS
+                field=next(iter(current_rules().data_base_price_columns.values()))
+                if current_rules().data_base_price_columns
                 else "price",
                 severity="high",
             )
@@ -380,6 +480,11 @@ def _resolve_row(
     po_net_weight = _decimal_from_row(row, _po("net_weight"))
     po_gross_weight = _decimal_from_row(row, _po("gross_weight"))
 
+    ship_qty_raw, ship_qty_field = current_rules().shipment_quantity_for_row(
+        row,
+        current_schema(),
+    )
+
     line = OrderLine(
         po_no=_str_or_empty(row.get(_po("po_no"))),
         item_line_no=_resolve_customer_po_material(
@@ -392,11 +497,22 @@ def _resolve_row(
             field_name=_cp("item"),
         )
         or "",
+        customer_po_no=_resolve_customer_po_field(
+            sap=sap,
+            customer_po_lookup=customer_po_lookup,
+            field_name=_cp("purchasing_document"),
+        ),
+        customer_po_material=_resolve_customer_po_field(
+            sap=sap,
+            customer_po_lookup=customer_po_lookup,
+            field_name=_cp("material"),
+        ),
         sap=sap,
         description=product.description,
         category=product.category,
         quantity=quantity,
-        po_record_category=int_or_none(row.get(_po("category"))),
+        po_record_category=current_rules().category_for_value(row.get(_po("category"))),
+        po_record_item_line_no=_str_or_empty(row.get(_po("item_line"))),
         product=product,
         ship_to=_resolve_ship_to(
             sap=sap,
@@ -414,9 +530,23 @@ def _resolve_row(
         ),
         brand=_str_or_none(row.get(_po("brand"))) or product.brand,
         invoice_no=_str_or_none(row.get(_po("inv_no"))),
-        ship_qty=_decimal_or_none(row.get(_po("ship_qty"))),
+        ship_qty=_decimal_or_none(
+            ship_qty_raw,
+            decimal_places=row_decimal_places(row, ship_qty_field),
+        ),
+        ship_qty_source_field=ship_qty_field,
         balance_qty=_decimal_or_none(row.get(_po("balance_qty"))),
         po_record_description=_str_or_none(row.get(_po("description"))),
+        customer_po_description=_resolve_customer_po_field(
+            sap=sap,
+            customer_po_lookup=customer_po_lookup,
+            field_name=_cp("description"),
+        ),
+        customer_po_document_date=_resolve_customer_po_date(
+            sap=sap,
+            customer_po_lookup=customer_po_lookup,
+            field_name=_cp("document_date"),
+        ),
         sk_ym_invoice_no=_str_or_none(row.get(_po("sk_ym_invoice_no"))),
         reel_sap=_str_or_none(row.get(_po("reel_sap"))) or product.reel_sap,
         reel_description=_str_or_none(row.get(_po("reel_description"))) or product.reel_description,
@@ -438,6 +568,7 @@ def _resolve_row(
             field_name=_cp("ship_date"),
         ),
         po_ex_factory_date=_date_or_none(row.get(_po("final_ex_factory_date"))),
+        actual_ex_factory_date=_date_or_none(row.get(_po("actual_ex_factory_date"))),
         etd_on_board=_date_or_none(row.get(_po("etd_on_board"))),
         source_row=row_number,
     )
@@ -559,7 +690,7 @@ def _resolve_customer_po_quantity_entry(
                     f"客户PO中没有 PO {po_no} 的记录，无法按 SAP {sap} "
                     "匹配 Material 并读取 Order Quantity"
                 ),
-                sheet=SHEET_CUSTOMER_PO,
+                sheet=_cp_sheet(),
                 row=None,
                 field=_cp("purchasing_document"),
             ),
@@ -576,7 +707,7 @@ def _resolve_customer_po_quantity_entry(
                 message=(
                     f"客户PO中有 PO {po_no}，但没有 Material = {sap} 的行，无法读取 Order Quantity"
                 ),
-                sheet=SHEET_CUSTOMER_PO,
+                sheet=_cp_sheet(),
                 row=None,
                 field=_cp("material"),
             ),
@@ -599,7 +730,7 @@ def _resolve_customer_po_quantity_entry(
                 f"客户PO row {_row_label(first_row)}（Material {sap}）的 "
                 "Order Quantity 为空，请补齐后再生成"
             ),
-            sheet=SHEET_CUSTOMER_PO,
+            sheet=_cp_sheet(),
             row=_row_number(first_row),
             field=field_name,
         ),
@@ -648,8 +779,8 @@ def _collect_prices(
     """从 DATA BASE 的按主体 + Category 价格矩阵读取价格，计算小计。"""
     prices: dict[tuple[str, str], Decimal] = {}
     subtotals: dict[tuple[str, str], Decimal] = {}
-    for seller in SELLER_TO_BUYER:
-        buyer = SELLER_TO_BUYER.get(seller, "")
+    rules = current_rules()
+    for seller, buyer in rules.seller_to_buyer.items():
         segment = (seller, buyer)
         category_name = CATEGORY_NAMES.get(product.category, "")
         if not category_name:
@@ -666,7 +797,7 @@ def _collect_prices(
 def _collect_invoice_amounts(row: dict[str, object]) -> dict[str, Decimal]:
     """从 PO record 读取各链段的发票金额。"""
     amounts: dict[str, Decimal] = {}
-    for key, col_name in INVOICE_AMOUNT_COLUMNS.items():
+    for key, col_name in current_schema().invoice_amount_columns.items():
         v = _decimal_from_row(row, col_name)
         if v is not None:
             amounts[key] = v
@@ -686,11 +817,13 @@ def _read_with_fallback(
             return value, None
     computed = fallback_fn()
     if computed is not None:
+        if row.get(CUSTOMER_PO_ONLY_ROW_KEY) is True:
+            return computed, None
         msg = ValidationMessage(
             kind="warning",
             code=CODE_FORMULA_FALLBACK,
             message=f"字段 {field_name!r} 为空，使用公式回退计算",
-            sheet=SHEET_PO_RECORD,
+            sheet=_po_sheet(),
             row=row_number,
             field=field_name,
             severity="high",
@@ -795,6 +928,7 @@ __all__ = [
     "CODE_QTY_MISSING",
     "CODE_SAP_MISSING",
     "CODE_SAP_NOT_IN_DATA_BASE",
+    "CUSTOMER_PO_ONLY_ROW_KEY",
     "PO_PRICE_COLUMNS",
     "ResolveResult",
     "build_product_index",

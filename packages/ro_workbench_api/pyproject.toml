@@ -1,11 +1,12 @@
 [project]
 name = "ro-workbench-api"
-version = "0.0.0"
+version = "1.1.0"
 description = "工作台后端：核心包的 FastAPI 网络包装层"
 requires-python = ">=3.11"
 dependencies = [
     "ro-generator",
     "fastapi>=0.110",
+    "platformdirs>=4.0",
     "uvicorn[standard]>=0.27",
 ]
 

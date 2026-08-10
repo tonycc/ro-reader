@@ -1,0 +1,84 @@
+document: ci
+template_version: '2026.07'
+template: templates/sk/ci&pl.xlsx
+sheet: CI
+header:
+  invoice_no: H5
+  invoice_date: H6
+  term: H7
+  from: A10
+  to: B11
+header_fixed:
+  term: T/T 90 DAYS AFTER BL DATE
+  from: GUANGDONG, CHINA
+  to: WEIHAI CITY
+table_header_row:
+  - 12
+  - 13
+lines:
+  start_row: 16
+  style_source_row: 16
+  row_fixed:
+    G: PCS
+  columns:
+    po_no: B
+    description: C
+    sap: D
+    unit_price: E
+    quantity: F
+    amount: H
+totals:
+  quantity: F23
+  amount: H23
+style:
+  bold:
+    - A1
+    - A2
+    - A4
+    - A5
+    - A6
+    - A7
+    - A10
+    - A11
+    - A12
+    - A13
+    - B12
+    - C12
+    - D12
+    - E12
+    - F12
+    - G12
+    - H12
+    - A23
+    - F23
+    - H23
+  underline:
+    - H5
+    - H6
+preview_content:
+  title: COMMERCIAL INVOICE
+  static_terms:
+    term: T/T 90 DAYS AFTER BL DATE
+    from: GUANGDONG, CHINA
+    to: WEIHAI CITY
+  notes:
+    - ORIGIN IN CHINA
+  column_labels:
+    po_no: PO#
+    description: GOODS DESCRIPT
+    sap: SAP ITEM#
+    unit_price: REEL FOB, USD
+    quantity: QTY
+    G: ""
+    amount: TOTAL AMOUNT
+  seller_info:
+    - GUANGDONG GLOBALSINO OUTDOOR SPORTS EQUIPMENT LIMITED
+    - NO.40 BAIJIA STREET HIGH-TECH INDUSTRIAL DEVELOPMENT ZONE QINGYUAN 511500, GUANGDONG CHINA
+  layout:
+    top:
+      left: [seller_info]
+      center: []
+      right: [title]
+    info:
+      left: [from, to]
+      right: [invoice_no, invoice_date, term]

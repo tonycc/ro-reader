@@ -7,6 +7,7 @@ import json
 from dataclasses import dataclass
 
 from ro_generator.models import OrderLine
+from ro_generator.profiles.runtime import current_profile, current_rules
 from ro_generator.schema import SELLERS
 from ro_generator.seller_filter import factory_seller_for_line
 
@@ -37,6 +38,11 @@ class InvoiceHeaderContext:
     values: dict[str, tuple[str, ...]]
     conflicts: tuple[str, ...]
     source_rows: dict[str, tuple[int, ...]]
+
+
+def _active_sellers() -> tuple[str, ...]:
+    profile = current_profile()
+    return profile.capabilities.sellers if profile is not None else SELLERS
 
 
 def build_invoice_group_key(identifiers: tuple[str, ...]) -> str:
@@ -102,7 +108,7 @@ def build_invoice_groups(
             status="blocked" if blocking_count else "ready",
             po_nos=po_nos,
             po_count=len(po_nos),
-            sellers=tuple(seller for seller in SELLERS if seller in seller_numbers),
+            sellers=tuple(seller for seller in _active_sellers() if seller in seller_numbers),
             seller_invoice_numbers=seller_numbers,
             blocking_count=blocking_count,
             conflict_count=conflict_count,
@@ -163,24 +169,26 @@ def _seller_invoice_numbers(
     entries: list[tuple[int, OrderLine, tuple[str, ...]]],
 ) -> tuple[dict[str, str], int]:
     candidates: dict[str, set[str]] = {}
-    for _, line, _ in entries:
-        raw_number = _clean(line.invoice_no)
-        if raw_number:
-            candidates.setdefault("GS PTE", set()).add(raw_number)
-            candidates.setdefault("EMAX PTE", set()).add(_append_suffix(raw_number, "-P"))
-        factory_number = _clean(line.sk_ym_invoice_no)
-        factory_seller = factory_seller_for_line(line)
-        if factory_number and factory_seller:
-            candidates.setdefault(factory_seller, set()).add(factory_number)
+    profile = current_profile()
+    rules = current_rules()
+    for seller in _active_sellers():
+        if profile is not None and not profile.capabilities.supports(seller, "INVOICE"):
+            continue
+        for _, line, _ in entries:
+            if seller in {"SK", "YM"} and factory_seller_for_line(line) != seller:
+                continue
+            invoice_number = _clean(
+                rules.invoice_no_for_line(line, document_type="INVOICE", seller=seller)
+            )
+            if invoice_number:
+                candidates.setdefault(seller, set()).add(invoice_number)
 
     conflicts = sum(max(0, len(values) - 1) for values in candidates.values())
     return {
-        seller: sorted(candidates[seller])[0] for seller in SELLERS if candidates.get(seller)
+        seller: sorted(candidates[seller])[0]
+        for seller in _active_sellers()
+        if candidates.get(seller)
     }, conflicts
-
-
-def _append_suffix(value: str, suffix: str) -> str:
-    return value if value.endswith(suffix) else f"{value}{suffix}"
 
 
 def _clean(value: str | None) -> str:

@@ -30,7 +30,11 @@ StatusBar（30px）
 
 | 组件 | 职责 |
 | --- | --- |
-| `TopBar.vue` | base 路径设置、路径检测和加载 |
+| `TopBar.vue` | 当前工作区显示、切换入口、启动 bootstrap 和旧路径迁移 |
+| `WorkspaceSwitcher.vue` | 顶部工作区下拉切换和激活失败提示 |
+| `WorkspaceSettings.vue` | 工作区列表、CRUD、检测和激活 |
+| `WorkspaceForm.vue` | Customer Profile/base 路径表单及不落盘检测 |
+| `WorkspaceStatusBadge.vue` | 工作区路径/Profile/schema 状态 |
 | `QueueSidebar.vue` | PO/Invoice 业务对象列表、选择和筛选 |
 | `DataCheckScreen.vue` | PO/Invoice 数据检查切换 |
 | `InvoiceDataCheck.vue` | 票据组只读成员行 |
@@ -43,16 +47,18 @@ StatusBar（30px）
 
 ## 3. TopBar
 
-顶部栏显示当前 base 文件名、PO 数量和加载状态。
+正式模式顶部栏显示当前工作区、Customer Profile 和 base 文件名；下拉菜单调用真实 HTTP `WorkspaceService` 激活工作区，旧页面在切换期间保留并显示 busy 状态。
 
-“系统设置”打开模态面板：
+“管理工作区”打开工作区设置：
 
-- 输入完整 `.xlsx` 路径。
-- “检测”调用 `/api/check-path`。
-- “保存”把路径写入 `localStorage`，key 为 `ro-workbench-base-path`。
-- “加载数据”打开或复用后端 session。
+- 列表支持新增、编辑、删除、检测和设为当前；当前工作区不能直接删除。
+- 新增/编辑表单的“检测路径”调用 `POST /api/workspaces/validate`，只读取 Profile 与 base，不落盘。
+- “保存工作区”和“设为当前”是两个独立操作，避免误把保存配置当成激活。
+- 编辑当前工作区后旧 session 暂时保留，但卡片和顶部栏显示“待重新激活”，并把“设为当前”变为可操作的“重新激活”；激活成功才替换 session 和工作台数据。
+- 启动先调用 `GET /api/bootstrap`。旧版本 `localStorage` 的 `ro-workbench-base-path` 只在没有当前工作区时迁移；创建和激活都成功后才删除旧 key，失败时保留并打开设置。
+- 正式模式使用 `frontend/src/services/workspace.http.ts`；访问 `?workspace-prototype=1` 时仅在开发环境切换到 mock，供交互评审和失败回滚测试。
 
-当前 TopBar 不提供撤销、重做、版本历史或文件选择器；用户输入绝对路径。
+当前 TopBar 不提供撤销、重做、版本历史或文件选择器；用户输入本机 `.xlsx` 路径。若 HTTP 工作区服务不可用，临时回退到旧系统设置入口以保持 RO 兼容流程。
 
 ## 4. QueueSidebar
 
@@ -73,6 +79,8 @@ PO 摘要包含主体、行数、发票候选、可导出单据和阻断数量�
 
 编辑成功后重新加载当前 PO、问题和预览。当前 store 固定写入 `PO record`，不允许从 UI 编辑 `DATA BASE` 或 `客户PO`。
 
+PF 的新订单可以只存在于 `new PO template`。此时队列和 PI/PO 预览仍可用，但数据表中的 PO record 字段是只读解析投影；需要调整客户订单数量时应回到源 workbook 修改 `new PO template`。
+
 ### 5.2 Invoice 视角
 
 从 `GET /api/invoice/{key}/inspection` 获取票据组实际出货行。表格只读，展示源行号、PO、SAP、描述、Category、SHIP QTY、发票号、SK/YM 发票号和可用主体。
@@ -83,12 +91,19 @@ loading、error 和 empty 状态彼此独立，不能沿用上一个票据组数
 
 PO 和 Invoice 复用 `IssueSummaryBar`。详情由后端返回的 code、message、Sheet、row、field 和 severity 驱动；前端不重新判断严重度。
 
+PF 会在这里显示两类非阻断 high warning：
+
+- `MOQ_NOT_MET`：同一 PO、同一 SAP 的订单合计低于 MOQ；
+- `FULL_CARTON_NOT_MET`：订单合计不是 `round value` 的整数倍。
+
+提示详情直接显示 `new PO template / row / Order Quantity`，前端不自行读取 MOQ 或计算余数。
+
 ## 6. 单据预览
 
 ### 6.1 两种作用域
 
 - `po`：PI、PO。
-- `invoice`：INVOICE、PL、INVOICE_PL，以及 SK/YM 的 CI、RO_PL、CI_PL。
+- `invoice`：RO 的 INVOICE_PL，以及 PF 的独立 INVOICE、PL；SK/YM 额外支持 CI_PL。
 
 切换作用域时分别恢复已选 PO/票据组和主体。
 
@@ -98,8 +113,11 @@ PO 和 Invoice 复用 `IssueSummaryBar`。详情由后端返回的 code、messag
 
 - `INVOICE_PL` 在前端并行请求 `INVOICE` 和 `PL`。
 - `CI_PL` 在前端并行请求 `CI` 和 `RO_PL`。
+- PF Profile 的 Invoice 与 PL 使用不同模板，预览页分别请求并展示单个文档，不使用 `INVOICE_PL` 合并页。
 
 每张单据独立保留 preview、errors 和 warnings；一张失败不应隐藏另一张结果。
+
+组合导出的物理文件由核心包决定：RO 的同模板 Invoice/PL 合并为双 Sheet workbook；PF 的两个独立模板分别生成并打 ZIP。导出页仍只表达“组合选择”，不判断模板是否相同；预览页按 Profile 的单据页面规则展示。
 
 ### 6.3 PreviewPayload
 
@@ -108,13 +126,17 @@ PO 和 Invoice 复用 `IssueSummaryBar`。详情由后端返回的 code、messag
 ```text
 document_type / title / seller / buyer
 po_no / pi_no / invoice_no / ship_to
-seller_info / to_label / terms
+seller_info / to_label / terms / header_labels
 layout / resolved_values
 column_labels / lines / totals / notes
 source_entries
 ```
 
 `PreviewDocumentPanel` 按 `layout.top`、`layout.info`、明细表、合计和备注渲染，不依赖 Excel 坐标。
+
+标题和出具方文本由 mapping loader 按 `preview_content.template_fields` 指向的模板单元格读取；`header_labels` 则来自各 header 值单元格同一行的模板标签。`layout` 决定这些字段位于顶部或左右信息区。映射存在但业务值为空的字段仍保留空白横线，连续地址行不重复显示标签。前端只呈现这些结构化结果，不写 SK、YM、GS 或 EMAX 的专属抬头。
+
+`column_labels` 已由核心包从当前 mapping 对应的 Excel 表头解析：YAML 键只决定列及顺序，实际文案来自 `table_header_row`。对于 mapping 声明 `merged_headers: true` 的模板，核心包还返回 `column_header_rows` 的 `rowspan/colspan` 结构，前端按 Excel 的合并关系渲染；其他多行表头仍以换行符呈现，不维护主体或单据专属列名。
 
 ### 6.4 来源信息
 
@@ -162,6 +184,7 @@ source_entries
 异步请求必须记录请求上下文，避免较慢的旧请求覆盖新选择。
 
 `stores/api.ts` 只封装 fetch、session header、类型和 HTTP 错误，不含业务规则。
+`stores/workspace.ts` 管理 Profile、工作区列表、当前工作区 ID、`needsActivation`、bootstrap 和激活事务；`workspace.http.ts` 只做 FastAPI 协议转换，`workspace.mock.ts` 仅用于开发原型。
 
 ## 9. 样式
 

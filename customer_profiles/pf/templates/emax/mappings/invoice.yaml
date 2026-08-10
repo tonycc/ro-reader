@@ -1,0 +1,88 @@
+document: INVOICE
+template_version: pf_2026.1
+template: templates/emax/invoice.xlsx
+sheet: PF Standard Invoice format
+header:
+  invoice_no: B6
+  etd_baseline: G6
+  incoterm: B7
+  payment_terms: B8
+  document_date: G7
+  ex_factory_date: G8
+  bill_to: B10
+  bill_to_line2: B11
+  bill_to_line3: B12
+  ship_to: G10
+  ship_to_line2: G11
+  ship_to_line3: G12
+  port_of_loading: B14
+  final_destination: B15
+  number_of_cartons: B16
+  manufacturer_code: G14
+  manufacturer: G15
+  manufacturer_address: G16
+  manufacturer_address_2: G17
+header_fixed:
+  incoterm: DDP USA
+  payment_terms: Net 60 days
+  bill_to: Accounts Payable
+  bill_to_line2: Pure Fishing America
+  bill_to_line3: 7 Science Court, Columbia, SC 29203, USA
+  ship_to: Pure Fishing Distribution
+  ship_to_line2: 10220 NW TRANSCON DRIVE
+  ship_to_line3: Kansas City MO 64153, USA
+  port_of_loading: Qingdao, China
+  final_destination: USA
+  manufacturer_code: "134102"
+  manufacturer: E MAX SPORT PTE. LTD.
+  manufacturer_address: 8 KAKI BUKIT AVENUE 4
+  manufacturer_address_2: "#08-32, PREMIER @ KAKI BUKIT, SINGAPORE 415875"
+table_header_row: 19
+lines:
+  start_row: 20
+  style_source_row: 20
+  row_fixed:
+    A: CHINA
+  columns:
+    po_no: B
+    item_line_no: C
+    sap: D
+    description: E
+    unit_price: F
+    quantity: G
+    amount: H
+totals:
+  subtotal: H21
+  amount: H22
+  signature:
+    cell: G24
+    value_mode: fixed
+    value: Tina
+  signature_date:
+    cell: G25
+    value_mode: current_date
+preview_content:
+  title: INVOICE
+  template_fields:
+    title: A4
+    seller_info: [A1, A2]
+  terms_fields: [incoterm, payment_terms, port_of_loading, final_destination]
+  column_labels:
+    A: Country of The Origin
+    po_no: PO Number
+    item_line_no: PO item Line Number
+    sap: Item Number
+    description: Description
+    unit_price: USD Unit Price
+    quantity: Quantity
+    amount: USD Amount
+  notes:
+    - Combo cost breakdown section is retained in the workbook template.
+  layout:
+    top:
+      left: [seller_info]
+      center: [title]
+      right: []
+    info:
+      left: [invoice_no, incoterm, payment_terms, bill_to, bill_to_line2, bill_to_line3, port_of_loading, final_destination, number_of_cartons]
+      right: [etd_baseline, document_date, ex_factory_date, ship_to, ship_to_line2, ship_to_line3, manufacturer_code, manufacturer, manufacturer_address, manufacturer_address_2]

@@ -74,7 +74,7 @@
 
 | 字段类型 | 典型字段 | 首选修改位置 |
 | --- | --- | --- |
-| Base 列映射 | `SAP`、`FINALQTY`、`INV#` | `templates/base_schema.yaml` |
+| Base 列映射 | `SAP`、`FINALQTY`、`INV#` | `customer_profiles/ro/base_schema.yaml` |
 | Base 取值/回退 | `description`、`carton_count`、`net_weight` | `resolver.py` |
 | 单据口径 | `quantity`、`amount`、发票过滤 | `document_model.py` |
 | 表头位置 | `invoice_no -> H6` | 对应 mapping YAML `header` |

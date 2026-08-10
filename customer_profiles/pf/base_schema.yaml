@@ -1,0 +1,126 @@
+# PF 的 2026 PO RECORD 工作簿结构。
+# 三个逻辑 sheet key 保持核心包契约，name 指向 PF workbook 中的真实 sheet 名。
+sheets:
+  DATA BASE:
+    name: DATA BASE TEMPLATE
+    header_row: 2
+    first_data_row: 3
+  PO record:
+    name: PO RECORD 26
+    header_row: 1
+    first_data_row: 2
+  客户PO:
+    name: new PO template
+    header_row: 1
+    first_data_row: 2
+
+field_aliases:
+  DATA BASE:
+    sap: SAP
+    description: Material Description
+    gs_model: GS MODEL
+    category: Category
+    sub_category: SUB-CATEGORY
+    moq: MOQ
+    fob_lt: FOB LT
+    brand: "品牌"
+    rfid: RFID
+    packing_type: "包装"
+    main_part_no: "主件编号"
+    inner_case_value: inner case value
+    carton_qty: round value
+    net_weight: N/W
+    gross_weight: G/W
+    length: L
+    width: W
+    height: H
+    cbm: CBM
+
+  PO record:
+    po_no: PO NO.
+    item_line: ITEM LINE#
+    sap: SAP Number
+    description: DESCRIPTION
+    quantity: FINALQTY
+    category: CATEGORY
+    ship_to: SHIP TO
+    inv_no: "INV#"
+    ship_qty: SHIP QTY
+    balance_qty: BALANCE QTY
+    net_weight: N/W
+    gross_weight: G/W
+    length: L
+    width: W
+    height: H
+    carton_count: CTNS
+    total_cbm: TOTAL CBM
+    carton_qty_export: "外箱"
+    order_date: ORDER DATE (EMAIL)
+    required_ex_factory_date: PO REQUIRED EX-FACTORYDATE(-60days)
+    delivery_date: PO DELIVERY DATE
+    final_ex_factory_date: NEW DATE EX -FACTORY DATE
+    actual_ex_factory_date: ACTUAL EX FACTORY
+    etd_on_board: ETD ON BOARD
+    ex_factory_month: EX-FACTORY month
+    order_month: ORDER month
+    fob_lt: FOB LT
+
+  客户PO:
+    purchasing_document: PO#
+    item: PO-Item
+    document_date: PO Creation Date
+    vendor: Vendor
+    vendor_name: Vendor Name
+    plant: Plant
+    region: Region
+    material: Material
+    description: Material Description
+    delivery_date: Delivery Date
+    ship_date: PO requested ex-fty date
+    order_quantity: Order Quantity
+    net_price: PO Unit Price-USD
+    fob_lt: Mfr Lead Time (MM)
+
+price_columns:
+  SK: GS-SK/YM USD FOB
+  YM: GS-SK/YM USD FOB
+  GS PTE: EMAX-GS FOB 2025
+  EMAX PTE: PF-EMAX DDP 2025
+
+# PF 当前订单采用 2026-06-12 NEW PO 价格版本。
+data_base_price_columns:
+  SK/combo: GS-SK/YM COMBO FOB 20260612-NEW PO
+  YM/combo: GS-SK/YM COMBO FOB 20260612-NEW PO
+  SK/rod: GS-SK/YM COMBO FOB 20260612-NEW PO
+  YM/rod: GS-SK/YM COMBO FOB 20260612-NEW PO
+  SK/reel: GS-SK/YM COMBO FOB 20260612-NEW PO
+  YM/reel: GS-SK/YM COMBO FOB 20260612-NEW PO
+  GS PTE/combo: EMAX-GS COMBO FOB 20260612-NEW PO 留下3%
+  GS PTE/rod: EMAX-GS COMBO FOB 20260612-NEW PO 留下3%
+  GS PTE/reel: EMAX-GS COMBO FOB 20260612-NEW PO 留下3%
+  # PF EMAX PI 截图指定 DATA BASE BK（Combo DDP）价格字段；三种品类共用该 PI 价格字段。
+  EMAX PTE/combo: PF-EMAX COMBO DDP 2026 EFFECTIVE AS OF JUN/12/26-NEW PO
+  EMAX PTE/rod: PF-EMAX COMBO DDP 2026 EFFECTIVE AS OF JUN/12/26-NEW PO
+  EMAX PTE/reel: PF-EMAX COMBO DDP 2026 EFFECTIVE AS OF JUN/12/26-NEW PO
+
+# PF Invoice/PL 的当前有效单价列；列名可随调价版本在配置中替换。
+invoice_data_base_price_columns:
+  SK/combo: GS-SK/YM COMBO FOB 20260612-NEW PO
+  SK/rod: GS-SK/YM YM ROD FOB 20260612-NEW PO
+  SK/reel: GS-SK/YM SK REEL FOB 20260612-NEW PO
+  YM/combo: GS-SK/YM COMBO FOB 20260612-NEW PO
+  YM/rod: GS-SK/YM YM ROD FOB 20260612-NEW PO
+  YM/reel: GS-SK/YM SK REEL FOB 20260612-NEW PO
+  GS PTE/combo: EMAX-GS COMBO FOB 20260612-NEW PO 留下3%
+  GS PTE/rod: EMAX-GS ROD FOB 20260612-NEW PO 留下3%
+  GS PTE/reel: EMAX-GS REEL FOB 20260612-NEW PO 留下3%
+  EMAX PTE/combo: PF-EMAX COMBO DDP 2026 EFFECTIVE AS OF JUN/12/26-NEW PO
+  EMAX PTE/rod: PF-EMAX ROD DDP 2026 EFFECTIVE AS OF JUN/12/26-NEW PO
+  EMAX PTE/reel: PF-EMAX REEL DDP 2026 EFFECTIVE AS OF JUN/12/26-NEW PO
+
+# GS PTE Invoice Combo 成本拆分。组件价格仍按表头名称配置，避免在 Python 中固定列坐标。
+data_base_component_price_columns:
+  GS PTE/rod: EMAX-GS ROD FOB 20260612-NEW PO 留下3%
+  GS PTE/reel: EMAX-GS REEL FOB 20260612-NEW PO 留下3%
+
+invoice_amount_columns: {}

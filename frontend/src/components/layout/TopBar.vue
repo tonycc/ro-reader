@@ -1,17 +1,35 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, watch } from "vue";
 import { useWorkbench } from "../../stores/workbench";
 import { api } from "../../stores/api";
+import { useWorkspace } from "../../stores/workspace";
+import { createMockWorkspaceService } from "../../services/workspace.mock";
+import { createHttpWorkspaceService } from "../../services/workspace.http";
+import { baseFileName } from "../../services/workspace";
+import WorkspaceSwitcher from "../workspace/WorkspaceSwitcher.vue";
+import WorkspaceSettings from "../workspace/WorkspaceSettings.vue";
 
 const wb = useWorkbench();
+const workspaceStore = useWorkspace();
+const workspacePrototypeEnabled = typeof window !== "undefined"
+  && import.meta.env.DEV
+  && new URLSearchParams(window.location.search).get("workspace-prototype") === "1";
 const STORAGE_KEY = "ro-workbench-base-path";
 
+const workspaceEnabled = ref(true);
 const configuredPath = ref("");
 const editValue = ref("");
 const showSettings = ref(false);
 const status = ref<"idle" | "loading" | "loaded" | "error">("idle");
 const pathCheckResult = ref<"idle" | "checking" | "ok" | "fail">("idle");
 const pathCheckMsg = ref("");
+const showWorkspaceSettings = ref(false);
+
+watch(() => workspaceStore.lastActivation, (activation) => {
+  if (!activation || workspacePrototypeEnabled) return;
+  wb.adoptWorkspaceSession(activation);
+  workspaceStore.clearLastActivation();
+});
 
 onMounted(() => {
   const saved = localStorage.getItem(STORAGE_KEY);
@@ -19,7 +37,48 @@ onMounted(() => {
     configuredPath.value = saved;
     editValue.value = saved;
   }
+  void initializeWorkspace(saved);
 });
+
+async function initializeWorkspace(legacyPath: string | null) {
+  workspaceStore.configure(
+    workspacePrototypeEnabled ? createMockWorkspaceService() : createHttpWorkspaceService(),
+  );
+  try {
+    const bootstrap = await workspaceStore.bootstrap();
+    if (
+      !workspacePrototypeEnabled
+      && !bootstrap.current_workspace_id
+      && legacyPath?.trim()
+    ) {
+      await migrateLegacyWorkspace(legacyPath.trim());
+    }
+    if (bootstrap.activation_error && bootstrap.current_workspace_id) {
+      workspaceStore.error = bootstrap.activation_error.message;
+      showWorkspaceSettings.value = true;
+    }
+  } catch {
+    // API 不可用时保留旧入口，确保升级不会把现有 RO 流程变成空白页。
+    if (!workspacePrototypeEnabled) workspaceEnabled.value = false;
+  }
+}
+
+async function migrateLegacyWorkspace(path: string) {
+  try {
+    const workspace = await workspaceStore.createWorkspace({
+      display_name: `RO · ${baseFileName(path)}`,
+      profile_id: "ro",
+      base_file: path,
+    });
+    await workspaceStore.activateWorkspace(workspace.id);
+    // 只有创建并激活都成功，才删除旧事实源；失败时保留以便重试。
+    localStorage.removeItem(STORAGE_KEY);
+    configuredPath.value = "";
+    editValue.value = "";
+  } catch {
+    showWorkspaceSettings.value = true;
+  }
+}
 
 function openSettings() {
   editValue.value = configuredPath.value;
@@ -74,23 +133,34 @@ async function loadData() {
   <header class="topbar">
     <div class="brand">
       <div class="brand-mark">RO</div>
-      <div class="file-title">
-        <strong v-if="wb.baseFile">{{ wb.baseFile.split("/").pop() }}</strong>
-        <strong v-else-if="configuredPath">{{ configuredPath.split("/").pop() }}</strong>
-        <strong v-else>未配置文件</strong>
-        <span v-if="wb.baseFile">本机文件 · {{ wb.poList.length }} 个 PO · 可重新加载</span>
-        <span v-else-if="configuredPath">已配置路径 · 点击加载</span>
-        <span v-else>请在系统设置中配置文件路径</span>
-      </div>
-      <button v-if="configuredPath" class="load-btn" @click="loadData" :disabled="status === 'loading'">
-        {{ status === 'loading' ? '加载中…' : '加载数据' }}
-      </button>
+      <WorkspaceSwitcher v-if="workspaceEnabled" @manage="showWorkspaceSettings = true" />
+      <template v-else>
+        <div class="file-title">
+          <strong v-if="wb.baseFile">{{ wb.baseFile.split("/").pop() }}</strong>
+          <strong v-else-if="configuredPath">{{ configuredPath.split("/").pop() }}</strong>
+          <strong v-else>未配置文件</strong>
+          <span v-if="wb.baseFile">本机文件 · {{ wb.poList.length }} 个 PO · 可重新加载</span>
+          <span v-else-if="configuredPath">已配置路径 · 点击加载</span>
+          <span v-else>请在系统设置中配置文件路径</span>
+        </div>
+        <button v-if="configuredPath" class="load-btn" @click="loadData" :disabled="status === 'loading'">
+          {{ status === 'loading' ? '加载中…' : '加载数据' }}
+        </button>
+      </template>
     </div>
 
     <div class="top-actions">
-      <button class="primary-btn" @click="openSettings">系统设置</button>
+      <template v-if="workspaceEnabled">
+        <span v-if="workspacePrototypeEnabled" class="prototype-label">交互原型</span>
+        <button class="primary-btn" data-testid="workspace-settings-button" @click="showWorkspaceSettings = true">
+          {{ workspacePrototypeEnabled ? '工作区设置' : '管理工作区' }}
+        </button>
+      </template>
+      <button v-else class="primary-btn" @click="openSettings">系统设置</button>
     </div>
   </header>
+
+  <WorkspaceSettings :open="showWorkspaceSettings" @close="showWorkspaceSettings = false" />
 
   <!-- 设置面板 -->
   <Teleport to="body">
@@ -126,9 +196,9 @@ async function loadData() {
           <div class="setting-group">
             <label>软件版本</label>
             <div class="version-info">
-              <div class="version-row"><span>RO Generator</span><code>v0.1.0</code></div>
-              <div class="version-row"><span>RO Workbench API</span><code>v0.1.0</code></div>
-              <div class="version-row"><span>前端界面</span><code>v0.1.0</code></div>
+              <div class="version-row"><span>RO Generator</span><code>v1.1.0</code></div>
+              <div class="version-row"><span>RO Workbench API</span><code>v1.1.0</code></div>
+              <div class="version-row"><span>前端界面</span><code>v1.1.0</code></div>
             </div>
           </div>
         </div>
@@ -145,12 +215,15 @@ async function loadData() {
 <style scoped>
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
+  min-width: 0; min-height: 56px; box-sizing: border-box;
+  position: relative; z-index: 50;
   gap: 24px; padding: 0 18px;
   background: rgba(255, 255, 255, 0.92);
   border-bottom: 1px solid var(--line);
   backdrop-filter: blur(18px);
 }
-.brand { display: flex; align-items: center; gap: 12px; min-width: 400px; }
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1 1 auto; }
+.brand > .workspace-switcher { flex: 1 1 auto; min-width: 0; }
 .brand-mark {
   width: 28px; height: 28px; border-radius: 8px;
   display: grid; place-items: center;
@@ -172,6 +245,7 @@ async function loadData() {
 .load-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .top-actions { display: flex; align-items: center; gap: 8px; }
+.prototype-label { padding: 4px 7px; border-radius: 5px; color: var(--blue); background: var(--blue-weak); font-size: 10px; font-weight: 800; letter-spacing: .04em; }
 .icon-btn, .secondary-btn, .primary-btn {
   border: 1px solid var(--line); border-radius: 8px;
   background: white; color: var(--text);
@@ -257,5 +331,19 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   padding: 14px 22px;
   border-top: 1px solid var(--line);
   background: var(--panel-soft);
+}
+
+@media (max-width: 900px) {
+  .topbar { gap: 9px; padding: 0 10px; }
+  .brand { gap: 8px; }
+  .top-actions { flex: 0 0 auto; }
+  .top-actions .prototype-label { display: none; }
+  .top-actions .primary-btn { height: 32px; padding: 0 9px; font-size: 11px; }
+}
+
+@media (max-width: 560px) {
+  .brand-mark { flex: 0 0 28px; }
+  .topbar { gap: 6px; padding: 0 8px; }
+  .top-actions .primary-btn { padding: 0 8px; font-size: 10px; }
 }
 </style>

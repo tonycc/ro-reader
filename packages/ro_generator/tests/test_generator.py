@@ -966,6 +966,36 @@ class TestPreviewFunction:
         resolved_values = getattr(p, "resolved_values", {})
         assert terms["incoterm"] == resolved_values["incoterm"]
         assert terms["port_of_loading"] == resolved_values["port_of_loading"]
+        labels = {column["key"]: column["label"] for column in p.column_labels}
+        assert labels["A"] == "Country of The Origin"
+
+    def test_invoice_preview_uses_blank_template_header_and_fixed_unit_values(self, tmp_path):
+        path = make_base_file(
+            tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[basic_po_row()]
+        )
+        request = DocumentRequest(
+            base_file=str(path),
+            po_no="4500030844",
+            documents=("INVOICE",),
+            seller="GS PTE",
+            invoice_no="INV-001",
+            output_dir=str(tmp_path / "out"),
+        )
+
+        result = preview(request)
+
+        assert result.status == "success"
+        p = result.preview
+        assert p is not None
+        labels = {column["key"]: column["label"] for column in p.column_labels}
+        assert labels["unit_label"] == ""
+        assert labels["unit_price"] == "REEL\nFOB, USD"
+        assert all(line["unit_label"] == "PCS" for line in p.lines)
+        unit_source = next(
+            entry for entry in p.source_entries if entry["preview_field"] == "line[0].unit_label"
+        )
+        assert unit_source["source_type"] == "template_content"
+        assert unit_source["field"] == "G"
 
     def test_preview_document_date_source_entry_is_system_generated(self, tmp_path):
         path = make_base_file(
@@ -1242,7 +1272,7 @@ class TestPreviewFunction:
         entries = getattr(p, "source_entries", [])
         item_no_entry = next(e for e in entries if e["preview_field"] == "line[0].item_line_no")
         assert item_no_entry["sheet"] == "客户PO"
-        assert item_no_entry["field"] == "item"
+        assert item_no_entry["field"] == "Item"
         assert item_no_entry["row"] is None
         assert item_no_entry["value"] == "CP-ITEM-001"
 
@@ -1277,7 +1307,7 @@ class TestPreviewFunction:
         entries = getattr(p, "source_entries", [])
         item_number_entry = next(e for e in entries if e["preview_field"] == "line[0].item_number")
         assert item_number_entry["sheet"] == "客户PO"
-        assert item_number_entry["field"] == "material"
+        assert item_number_entry["field"] == "Material"
         assert item_number_entry["row"] is None
         assert item_number_entry["value"] == "21-44640"
 

@@ -63,3 +63,4 @@ jobs:
       # PDF 导出经 LibreOffice 无头转换（保证版式=Excel 模板），e2e 的真实 PDF 下载用例需要它。
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libreoffice-calc
       - run: pnpm run test:e2e
+      - run: pnpm run test:e2e:http

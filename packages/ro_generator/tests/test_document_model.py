@@ -156,6 +156,10 @@ class TestPL:
         )
         assert result.model is not None
         assert result.model.total_quantity == Decimal("50")
+        assert result.model.lines[0].carton_count == Decimal("5")
+        assert result.model.lines[0].net_weight == Decimal("42.50")
+        assert result.model.lines[0].gross_weight == Decimal("50.50")
+        assert result.model.lines[0].cbm == Decimal("0.36")
 
     def test_pl_missing_packing_warns(self):
         line = make_order_line(carton_count=None)

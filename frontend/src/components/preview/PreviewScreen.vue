@@ -17,23 +17,36 @@ const activeFieldEl = ref<HTMLElement | null>(null);
 const issuePanelOpen = ref(false);
 
 const sellers = ["SK", "YM", "GS PTE", "EMAX PTE"] as const;
-const docTypes = computed(() => wb.previewScope === "invoice"
-  ? (wb.selectedSeller === "SK" || wb.selectedSeller === "YM"
+const docTypes = computed(() => {
+  if (wb.previewScope !== "invoice") {
+    return [
+      { key: "PI" as const, label: "PI" },
+      { key: "PO" as const, label: "PO" },
+    ];
+  }
+
+  // PF 的 Invoice 与 PL 使用不同模板，预览时保持两个独立页面；RO
+  // 仍保留历史上的组合预览入口，避免改变既有工作流。
+  if (wb.profileId === "pf") {
+    return [
+      { key: "INVOICE" as const, label: "Invoice" },
+      { key: "PL" as const, label: "PL" },
+    ];
+  }
+
+  return wb.selectedSeller === "SK" || wb.selectedSeller === "YM"
     ? [
         { key: "INVOICE_PL" as const, label: "INV & PL" },
         { key: "CI_PL" as const, label: "CI & PL" },
       ]
     : [
         { key: "INVOICE_PL" as const, label: "INV & PL" },
-      ])
-  : [
-      { key: "PI" as const, label: "PI" },
-      { key: "PO" as const, label: "PO" },
-    ]);
+      ];
+});
 const docTypeLabelMap: Record<string, string> = {
   PI: "PI",
   PO: "PO",
-  INVOICE: "INV / PL",
+  INVOICE: "Invoice",
   PL: "PL",
   INVOICE_PL: "INV & PL",
   CI: "CI",

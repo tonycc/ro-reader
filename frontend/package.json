@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,7 +10,8 @@
     "lint": "echo 'lint not configured'",
     "type-check": "vue-tsc --noEmit",
     "test": "echo 'no unit tests configured'",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:http": "playwright test -c playwright.workspace.config.ts"
   },
   "dependencies": {
     "pinia": "^3.0.4",

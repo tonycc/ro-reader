@@ -175,7 +175,7 @@
 根因层级：
 
 - 可能是：
-  - `templates/base_schema.yaml`
+  - `customer_profiles/ro/base_schema.yaml`
   - `resolver.py`
 
 修改位置：

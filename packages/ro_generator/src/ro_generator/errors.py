@@ -51,6 +51,30 @@ class InvalidRequestError(RoGeneratorError):
     code = "INVALID_REQUEST"
 
 
+class ProfileError(RoGeneratorError):
+    """Customer Profile 注册或加载失败。"""
+
+    code = "PROFILE_ERROR"
+
+
+class ProfileNotFoundError(ProfileError):
+    """请求了未注册的 Profile。"""
+
+    code = "PROFILE_NOT_FOUND"
+
+
+class DuplicateProfileError(ProfileError):
+    """注册了重复的 Profile ID。"""
+
+    code = "PROFILE_DUPLICATE"
+
+
+class InvalidProfileError(ProfileError):
+    """Profile 配置不完整或字段不合法。"""
+
+    code = "PROFILE_INVALID"
+
+
 class InternalError(RoGeneratorError):
     """核心包内部不变量违反，表明代码 bug。不应该在生产中触发。"""
 

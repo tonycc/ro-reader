@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import LayoutTopZone from "./LayoutTopZone.vue";
-import type { PreviewFooterItem, PreviewPayload } from "../../stores/api";
+import type { PreviewFooterItem, PreviewHeaderCell, PreviewPayload } from "../../stores/api";
 
 const props = defineProps<{ pd: PreviewPayload }>();
 const emit = defineEmits<{
@@ -36,6 +36,29 @@ function isNumericCol(key: string) {
   return ["unit_price", "quantity", "amount", "net_weight", "gross_weight", "cbm", "carton_count"].includes(key);
 }
 
+// 合并表头的第一行不包含每个叶子列，table-layout: fixed 不能再从首行自动推断列宽。
+// 给 PF PL 的叶子列固定比例，保证 rowspan/colspan 表头和明细列使用同一套网格。
+const MERGED_HEADER_COLUMN_WIDTHS: Record<string, string> = {
+  po_no: "9%",
+  sap: "8%",
+  description: "15%",
+  quantity: "10%",
+  carton_count: "10%",
+  net_weight: "9%",
+  gross_weight: "9%",
+  length: "7%",
+  width: "7%",
+  height: "7%",
+  cbm: "9%",
+};
+
+function columnWidth(key: string): string {
+  if (columnHeaderRows.value.length > 1) {
+    return MERGED_HEADER_COLUMN_WIDTHS[key] || "auto";
+  }
+  return isNumericCol(key) ? "10%" : "auto";
+}
+
 function getFieldValue(field: string): string {
   const extra = props.pd.resolved_values;
   if (extra && extra[field] !== undefined) return String(extra[field]);
@@ -57,17 +80,38 @@ const CONTINUATION_FIELDS = new Set([
 ]);
 
 function isContinuationField(field: string): boolean {
-  return CONTINUATION_FIELDS.has(field);
+  return CONTINUATION_FIELDS.has(field) || getHeaderLabel(field) === "";
 }
 
 function formatFieldLabel(field: string): string {
   if (field === "shipping_mark") return "SHIPPING MARK";
   return field.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
+
+function getHeaderLabel(field: string): string {
+  const templateLabel = props.pd.header_labels?.[field];
+  if (templateLabel !== undefined) return templateLabel;
+  if (field === "invoice_no") return "Invoice No.";
+  if (field === "pi_no") return "PI #";
+  if (field === "po_no") return "PO";
+  if (field === "ship_to") return "Ship To";
+  if (field === "seller") return "Seller";
+  if (field === "buyer") return "Buyer";
+  return formatFieldLabel(field);
+}
+
+const costBreakdownLabels = computed(() => props.pd.cost_breakdown_column_labels || []);
+const costBreakdownRows = computed(() => props.pd.cost_breakdown || []);
+
+const columnHeaderRows = computed<PreviewHeaderCell[][]>(() => {
+  const configured = props.pd.column_header_rows;
+  if (Array.isArray(configured) && configured.length > 0) return configured;
+  return [props.pd.column_labels.map((column) => ({ key: column.key, label: column.label }))];
+});
 </script>
 
 <template>
-  <div class="document-card">
+  <div class="document-card" :class="{ 'template-heading': pd.seller_info.length > 0 }">
     <div class="doc-topline">
       <div class="top-left" v-if="layout.top.left.length">
         <LayoutTopZone :fields="layout.top.left" :pd="pd" @field-click="emitFieldClick" />
@@ -95,30 +139,32 @@ function formatFieldLabel(field: string): string {
               </tr>
             </template>
             <tr v-else-if="field === 'invoice_no'">
-              <td>Invoice #</td>
+              <td>{{ getHeaderLabel(field) }}</td>
               <td>
                 <span v-if="pd.invoice_no" class="clickable" @click="emitFieldClick('invoice_no', $event)">{{ pd.invoice_no }}</span>
                 <span v-else class="empty-value"></span>
               </td>
             </tr>
-            <tr v-else-if="field === 'pi_no' && pd.pi_no && pd.document_type === 'PI'">
-              <td>PI #</td>
+            <tr v-else-if="field === 'pi_no' && pd.document_type === 'PI'">
+              <td>{{ getHeaderLabel(field) }}</td>
               <td>
-                <span class="clickable" @click="emitFieldClick('pi_no', $event)">{{ pd.pi_no }}</span>
+                <span v-if="getFieldValue(field)" class="clickable" @click="emitFieldClick('pi_no', $event)">{{ getFieldValue(field) }}</span>
+                <span v-else class="empty-value"></span>
               </td>
             </tr>
             <template v-else-if="field === 'terms'">
               <tr v-for="(val, key) in pd.terms" :key="'t_'+key">
-                <td>{{ formatTermKey(key) }}</td>
+                <td>{{ getHeaderLabel(String(key)) || formatTermKey(key) }}</td>
                 <td>{{ val }}</td>
               </tr>
             </template>
-            <tr v-else-if="getFieldValue(field)">
+            <tr v-else>
               <td :class="{ 'continuation-label': isContinuationField(field) }">
-                {{ isContinuationField(field) ? "" : formatFieldLabel(field) }}
+                {{ isContinuationField(field) ? "" : getHeaderLabel(field) }}
               </td>
               <td :class="{ 'continuation-value': isContinuationField(field) }">
-                <span class="clickable" @click="emitFieldClick(field, $event)">{{ getFieldValue(field) }}</span>
+                <span v-if="getFieldValue(field)" class="clickable" @click="emitFieldClick(field, $event)">{{ getFieldValue(field) }}</span>
+                <span v-else class="empty-value"></span>
               </td>
             </tr>
           </template>
@@ -128,63 +174,52 @@ function formatFieldLabel(field: string): string {
         <table class="kv-table">
           <template v-for="field in layout.info.right" :key="field">
             <tr v-if="field === 'invoice_no'">
-              <td>Invoice No.</td>
+              <td>{{ getHeaderLabel(field) }}</td>
               <td>
                 <span v-if="pd.invoice_no" class="clickable" @click="emitFieldClick('invoice_no', $event)">{{ pd.invoice_no }}</span>
                 <span v-else class="empty-value"></span>
               </td>
             </tr>
-            <tr v-else-if="field === 'pi_no' && pd.pi_no && pd.document_type === 'PI'">
-              <td>PI #</td>
+            <tr v-else-if="field === 'pi_no' && pd.document_type === 'PI'">
+              <td>{{ getHeaderLabel(field) }}</td>
               <td>
-                <span class="clickable" @click="emitFieldClick('pi_no', $event)">{{ pd.pi_no }}</span>
+                <span v-if="getFieldValue(field)" class="clickable" @click="emitFieldClick('pi_no', $event)">{{ getFieldValue(field) }}</span>
+                <span v-else class="empty-value"></span>
               </td>
             </tr>
             <template v-else-if="field === 'terms'">
               <tr v-for="(val, key) in pd.terms" :key="'t_'+key">
-                <td>{{ formatTermKey(key) }}</td>
+                <td>{{ getHeaderLabel(String(key)) || formatTermKey(key) }}</td>
                 <td>{{ val }}</td>
               </tr>
             </template>
-            <tr v-else-if="field === 'seller'">
-              <td>Seller</td>
-              <td>{{ pd.seller }}</td>
-            </tr>
-            <tr v-else-if="field === 'buyer'">
-              <td>Buyer</td>
-              <td>{{ pd.buyer }}</td>
-            </tr>
-            <tr v-else-if="getFieldValue(field)">
+            <tr v-else>
               <td :class="{ 'continuation-label': isContinuationField(field) }">
-                {{ isContinuationField(field) ? "" : formatFieldLabel(field) }}
+                {{ isContinuationField(field) ? "" : getHeaderLabel(field) }}
               </td>
               <td :class="{ 'continuation-value': isContinuationField(field) }">
-                <span class="clickable" @click="emitFieldClick(field, $event)">{{ getFieldValue(field) }}</span>
+                <span v-if="getFieldValue(field)" class="clickable" @click="emitFieldClick(field, $event)">{{ getFieldValue(field) }}</span>
+                <span v-else class="empty-value"></span>
               </td>
-            </tr>
-            <tr v-else-if="field === 'po_no'">
-              <td>PO</td>
-              <td>{{ pd.po_no }}</td>
-            </tr>
-            <tr v-else-if="field === 'ship_to' && pd.ship_to">
-              <td>Ship To</td>
-              <td>{{ pd.ship_to }}</td>
             </tr>
           </template>
         </table>
       </div>
     </div>
 
-    <table class="lines-table">
+    <table class="lines-table" :class="{ 'merged-header-table': columnHeaderRows.length > 1 }">
       <colgroup>
         <col v-for="(col, ci) in pd.column_labels" :key="'cg'+ci"
-          :style="{ width: isNumericCol(col.key) ? '10%' : 'auto' }" />
+          :style="{ width: columnWidth(col.key) }" />
       </colgroup>
       <thead>
-        <tr>
-          <th v-for="col in pd.column_labels" :key="'h_'+col.key"
-            :class="{ num: isNumericCol(col.key) }"
-          >{{ col.label }}</th>
+        <tr v-for="(headerRow, ri) in columnHeaderRows" :key="'header-row-' + ri">
+          <th
+            v-for="(cell, ci) in headerRow"
+            :key="'h_' + ri + '_' + ci + '_' + (cell.key || cell.label)"
+            :colspan="cell.colspan || 1"
+            :rowspan="cell.rowspan || 1"
+          >{{ cell.label }}</th>
         </tr>
       </thead>
       <tbody>
@@ -219,6 +254,28 @@ function formatFieldLabel(field: string): string {
       </tfoot>
     </table>
 
+    <section v-if="costBreakdownRows.length" class="cost-breakdown">
+      <h4>Cost breakdown and actual manufacturer breakdown</h4>
+      <table class="lines-table breakdown-table">
+        <thead>
+          <tr>
+            <th v-for="col in costBreakdownLabels" :key="'cb-h_' + col.key">{{ col.label }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(line, li) in costBreakdownRows" :key="'cb-l' + li">
+            <td v-for="col in costBreakdownLabels" :key="'cb-' + col.key">
+              <span
+                v-if="line[col.key] !== '' && line[col.key] !== null && line[col.key] !== undefined"
+                class="clickable"
+                @click="emitFieldClick(`cost_breakdown[${li}].${col.key}`, $event)"
+              >{{ line[col.key] }}</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
     <div class="doc-footer-notes" v-if="pd.notes.length || pd.totals">
       <div class="note-lines">
         <p v-for="(note, ni) in pd.notes" :key="'n'+ni">{{ note }}</p>
@@ -241,18 +298,30 @@ function formatFieldLabel(field: string): string {
   display: flex; align-items: flex-start;
   gap: 24px; padding-bottom: 12px; border-bottom: 2px solid #223047;
 }
+.template-heading .doc-topline { border-bottom: 0; padding-bottom: 24px; }
 .top-left { flex: 1; min-width: 0; }
-.top-center { flex: 0 0 auto; text-align: center; }
+.top-center { flex: 1 1 auto; min-width: 0; text-align: center; }
 .top-right { flex: 1; min-width: 0; text-align: right; }
-.doc-info { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 20px; padding: 14px 0 12px; font-size: 12px; line-height: 1.55; }
+.doc-info {
+  display: grid; grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  gap: 40px; padding: 14px 0 12px; font-size: 12px; line-height: 1.55;
+}
 .info-left { min-width: 0; }
 .info-right { min-width: 0; }
-.kv-table { width: 100%; border-collapse: collapse; }
+.kv-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .kv-table td { padding: 2px 0 4px 10px; vertical-align: top; }
-.kv-table td:first-child { color: var(--muted); font-weight: 800; white-space: nowrap; width: 94px; padding-left: 0; }
+.kv-table td:first-child { color: var(--muted); font-weight: 800; white-space: nowrap; padding-left: 0; }
+.info-left .kv-table td:first-child { width: 126px; }
+.info-right .kv-table td:first-child {
+  width: 226px; padding-right: 12px; white-space: normal;
+}
+.kv-table td:last-child { overflow-wrap: anywhere; }
 .kv-table td.continuation-label { color: transparent; user-select: none; }
 .kv-table td.continuation-value { padding-top: 0; }
-.empty-value { display: inline-block; min-width: 80px; min-height: 1em; }
+.empty-value {
+  display: inline-block; min-width: 80px; min-height: 1em;
+  border-bottom: 1px solid var(--line-strong, #9aa5b5);
+}
 .clickable {
   cursor: pointer; border-bottom: 1px dashed var(--blue-weak);
   transition: background 0.15s;
@@ -267,7 +336,15 @@ function formatFieldLabel(field: string): string {
 .lines-table th {
   border-top: 1px solid #223047; border-bottom: 1px solid #223047;
   background: #f7f9fc; color: var(--muted);
-  padding: 7px 8px; text-align: left; font-weight: 900;
+  padding: 7px 8px; text-align: left; font-weight: 900; white-space: pre-line;
+}
+.merged-header-table thead th { text-align: center; vertical-align: middle; }
+.merged-header-table th,
+.merged-header-table td {
+  border-right: 1px solid #d7dfeb;
+}
+.merged-header-table tr > :first-child {
+  border-left: 1px solid #d7dfeb;
 }
 .lines-table td { border-bottom: 1px solid var(--line); padding: 7px 8px; vertical-align: top; }
 .lines-table .num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -284,6 +361,9 @@ function formatFieldLabel(field: string): string {
 .total-box div { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 6px; }
 .total-box span { color: var(--muted); font-weight: 800; }
 .total-box strong { color: var(--text); }
+.cost-breakdown { margin-top: 24px; }
+.cost-breakdown h4 { margin: 0 0 8px; font-size: 14px; color: var(--text); }
+.breakdown-table { font-size: 11px; }
 @media (max-width: 760px) {
   .document-card { padding: 20px 18px; }
   .doc-topline { flex-direction: column; gap: 12px; }

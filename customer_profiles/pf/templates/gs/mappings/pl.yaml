@@ -1,0 +1,79 @@
+document: PL
+template_version: pf_2026.1
+template: templates/gs/pl.xlsx
+sheet: PL
+header:
+  invoice_no: D5
+  document_date: J5
+  packing_list_of: D6
+  ship_to: D7
+  ship_to_line2: D8
+  ship_to_line3: D9
+  shipped_by: D10
+  from_port: D11
+  destination: H11
+  shipping_marks_label: D12
+  shipping_mark_1: D13
+  shipping_mark_2: D14
+  shipping_mark_3: D15
+  shipping_mark_4: D16
+header_fixed:
+  packing_list_of: Fishing Tackle
+  ship_to: E MAX SPORT PTE. LTD.
+  ship_to_line2: "8 KAKI BUKIT AVENUE 4, #08-32, PREMIER @ KAKI BUKIT"
+  ship_to_line3: SINGAPORE 415875
+  shipped_by: SEA
+  from_port: QINGDAO
+  destination: USA
+  shipping_mark_1: PURE FISHING
+  shipping_mark_2: NA
+  shipping_mark_3: "C/N#:     OF"
+  shipping_mark_4: MADE IN CHINA
+table_header_row: [18, 19, 20]
+lines:
+  start_row: 21
+  style_source_row: 21
+  columns:
+    po_no: C
+    sap: D
+    description: E
+    quantity: F
+    carton_count: G
+    net_weight: H
+    gross_weight: I
+    length: J
+    width: K
+    height: L
+    cbm: M
+totals:
+  quantity: F22
+  carton_count: G22
+  net_weight: H22
+  gross_weight: I22
+  cbm: M22
+preview_content:
+  title: PACKING LIST
+  template_fields:
+    title: H1
+    seller_info: [A1, A2]
+  column_labels:
+    po_no: PO#
+    sap: "DESCRIPTION OF GOODS\nITEM#"
+    description: DESCRIPTION
+    quantity: "QUANTITY\n(PCS)"
+    carton_count: CTNS
+    net_weight: "N/W\n(KGS)"
+    gross_weight: "G/W\n(KGS)"
+    length: "MEASUREMENT\nL\n(CM/CTN)"
+    width: W
+    height: H
+    cbm: "CBM\n(M3)"
+  merged_headers: true
+  layout:
+    top:
+      left: [seller_info]
+      center: []
+      right: [title]
+    info:
+      left: [invoice_no, packing_list_of, ship_to, ship_to_line2, ship_to_line3, shipped_by, from_port, shipping_marks_label, shipping_mark_1, shipping_mark_2, shipping_mark_3, shipping_mark_4]
+      right: [document_date, destination]

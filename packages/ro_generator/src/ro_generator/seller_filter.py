@@ -13,10 +13,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Final
 
-from ro_generator.base_schema import base_schema
 from ro_generator.models import OrderLine
-
-_bs = base_schema()
+from ro_generator.profiles.runtime import current_rules, current_schema
 
 SK_YM_FACTORY_SELLERS: Final[frozenset[str]] = frozenset({"SK", "YM"})
 ENTITIES_WITHOUT_PO: Final[frozenset[str]] = frozenset({"SK", "YM"})
@@ -71,8 +69,8 @@ def filter_lines_for_seller(
 
 
 def raw_row_factory_seller(row: dict[str, object]) -> str | None:
-    category_field = _bs.field("PO record", "category")
-    return factory_seller_for_category(int_or_none(row.get(category_field)))
+    category_field = current_schema().field("PO record", "category")
+    return factory_seller_for_category(current_rules().category_for_value(row.get(category_field)))
 
 
 def prefilter_raw_rows(

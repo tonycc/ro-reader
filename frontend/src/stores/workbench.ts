@@ -17,9 +17,13 @@ import type {
   PreviewScope,
 } from "./api";
 import { api, setSessionId, getSessionId, ApiError } from "./api";
+import type { WorkspaceActivationResult } from "../services/workspace";
 
 export const useWorkbench = defineStore("workbench", () => {
   const baseFile = ref("");
+  // 当前 session 绑定的 Customer Profile。旧的 openSession 兼容入口固定使用 RO；
+  // 工作区激活入口会把实际 Profile 一并带入，供 Profile 特有的页面交互使用。
+  const profileId = ref("ro");
   const poList = ref<PoListItem[]>([]);
   const loading = ref(false);
   const error = ref("");
@@ -45,6 +49,7 @@ export const useWorkbench = defineStore("workbench", () => {
   const previewDocuments = ref<PreviewDocumentResult[]>([]);
   const previewDocType = ref("PI");
   const previewLoading = ref(false);
+  let previewRequestSerial = 0;
   const sourceIndex = ref<SourceIndexEntry[]>([]);
   const previewSourceEntries = ref<PreviewSourceEntry[]>([]);
 
@@ -70,26 +75,84 @@ export const useWorkbench = defineStore("workbench", () => {
   const invoiceStatus = computed(() => invoiceEntry.value?.status ?? "");
   const invoiceOptions = computed(() => invoiceOptionsForSeller(selectedSeller.value));
 
+  function clearSessionState() {
+    previewRequestSerial += 1;
+    profileId.value = "ro";
+    selectedPo.value = "";
+    selectedInvoiceGroup.value = "";
+    invoiceInspection.value = null;
+    invoiceInspectionLoading.value = false;
+    invoiceInspectionError.value = "";
+    dataRows.value = [];
+    dataHeaders.value = [];
+    selectedSeller.value = "";
+    selectedPoSeller.value = "";
+    selectedInvoiceSeller.value = "";
+    selectedInvoiceNo.value = null;
+    preview.value = null;
+    previewData.value = null;
+    previewDocuments.value = [];
+    previewLoading.value = false;
+    sourceIndex.value = [];
+    previewSourceEntries.value = [];
+    blockingErrors.value = [];
+    warnings.value = [];
+    poIssues.value = null;
+    issuesLoading.value = false;
+    issuesError.value = "";
+    previewError.value = "";
+    exportError.value = "";
+    lastExportFile.value = "";
+  }
+
+  function applySessionData(
+    file: string,
+    sessionId: string,
+    nextPoList: PoListItem[],
+    nextInvoiceList: InvoiceListItem[],
+    nextProfileId = "ro",
+  ) {
+    baseFile.value = file;
+    profileId.value = nextProfileId;
+    setSessionId(sessionId);
+    poList.value = nextPoList;
+    invoiceList.value = nextInvoiceList;
+    const defaultInvoice = nextInvoiceList.find((item) => item.status !== "blocked") ?? nextInvoiceList[0];
+    selectedInvoiceGroup.value = defaultInvoice?.invoice_group_key ?? "";
+    selectedInvoiceSeller.value = defaultInvoice?.sellers[0] ?? "";
+  }
+
   async function openSession(file: string) {
     loading.value = true; error.value = "";
-    selectedPo.value = ""; selectedInvoiceGroup.value = ""; preview.value = null;
-    invoiceInspection.value = null; invoiceInspectionLoading.value = false; invoiceInspectionError.value = "";
-    previewData.value = null; previewDocuments.value = [];
-    blockingErrors.value = []; warnings.value = []; sourceIndex.value = [];
-    poIssues.value = null; issuesError.value = "";
+    clearSessionState();
+    poList.value = [];
+    invoiceList.value = [];
     try {
       baseFile.value = file;
       const data = await api.openSession(file);
       if (!data.ok) throw new Error(data.errors?.[0]?.message ?? "session failed");
-      if (data.session_id) setSessionId(data.session_id);
-      poList.value = data.po_list;
+      if (!data.session_id) throw new Error("session 响应缺少 session_id");
+      setSessionId(data.session_id);
       const invoiceData = await api.getInvoices();
-      invoiceList.value = invoiceData.invoices;
-      const defaultInvoice = invoiceList.value.find((item) => item.status !== "blocked") ?? invoiceList.value[0];
-      selectedInvoiceGroup.value = defaultInvoice?.invoice_group_key ?? "";
-      selectedInvoiceSeller.value = defaultInvoice?.sellers[0] ?? "";
+      applySessionData(file, data.session_id, data.po_list, invoiceData.invoices);
     } catch (e) { error.value = String(e); }
     finally { loading.value = false; }
+  }
+
+  function adoptWorkspaceSession(activation: WorkspaceActivationResult) {
+    loading.value = true;
+    error.value = "";
+    clearSessionState();
+    poList.value = [];
+    invoiceList.value = [];
+    applySessionData(
+      activation.workspace.base_file,
+      activation.session_id,
+      activation.po_list,
+      activation.invoices,
+      activation.workspace.profile_id,
+    );
+    loading.value = false;
   }
 
   async function selectPo(po_no: string) {
@@ -148,6 +211,7 @@ export const useWorkbench = defineStore("workbench", () => {
       ? (isInvoicePlDocument(requestedDocument) ? requestedDocument : "INVOICE_PL")
       : (["PI", "PO"].includes(requestedDocument) ? requestedDocument : "PI");
     const requestSeller = selectedSeller.value;
+    const requestSerial = ++previewRequestSerial;
     previewLoading.value = true;
     previewError.value = "";
     previewData.value = null;
@@ -177,20 +241,27 @@ export const useWorkbench = defineStore("workbench", () => {
           return toFailedPreviewDocument(document, requestSeller, e);
         }
       }));
+      if (requestSerial !== previewRequestSerial) return;
       previewDocuments.value = results;
       previewData.value = results.find((doc) => doc.preview)?.preview ?? null;
       previewSourceEntries.value = results.flatMap((doc) => doc.preview?.source_entries ?? []);
       blockingErrors.value = results.flatMap((doc) => doc.errors);
       warnings.value = results.flatMap((doc) => doc.warnings);
     } catch (e) {
+      if (requestSerial !== previewRequestSerial) return;
       previewError.value = e instanceof ApiError ? e.message : `预览失败：${e}`;
-    } finally { previewLoading.value = false; }
+    } finally {
+      if (requestSerial === previewRequestSerial) previewLoading.value = false;
+    }
   }
 
   async function editCell(field: string, row: number, value: unknown) {
-    await api.editField(selectedPo.value, {
+    const result = await api.editField(selectedPo.value, {
       base_file: baseFile.value, sheet: "PO record", row, field, value,
     });
+    if (!result.ok) {
+      throw new Error(result.message || "字段编辑失败");
+    }
     await selectPo(selectedPo.value);
     await refreshPreview();
   }
@@ -209,6 +280,8 @@ export const useWorkbench = defineStore("workbench", () => {
           ? ["CI", "RO_PL"]
           : previewDocType.value === "CI" ? ["CI"]
           : previewDocType.value === "RO_PL" ? ["RO_PL"]
+          : previewDocType.value === "INVOICE" || previewDocType.value === "PL"
+            ? [previewDocType.value]
           : ["INVOICE", "PL"];
         const invoiceDocuments = (documents?.length ? documents : defaultInvoiceDocs)
           .filter((document): document is "INVOICE" | "PL" | "CI" | "RO_PL" =>
@@ -349,7 +422,11 @@ export const useWorkbench = defineStore("workbench", () => {
     if (scope === "invoice") {
       const entry = invoiceEntry.value;
       selectedSeller.value = selectedInvoiceSeller.value || entry?.sellers[0] || "";
-      previewDocType.value = isInvoicePlDocument(previewDocType.value) ? previewDocType.value : "INVOICE_PL";
+      const isSinglePfDocument = profileId.value === "pf"
+        && (previewDocType.value === "INVOICE" || previewDocType.value === "PL");
+      previewDocType.value = isSinglePfDocument
+        ? previewDocType.value
+        : profileId.value === "pf" ? "INVOICE" : "INVOICE_PL";
     } else {
       selectedSeller.value = selectedPoSeller.value || poEntry.value?.sellers[0] || "";
       previewDocType.value = ["PI", "PO"].includes(previewDocType.value) ? previewDocType.value : "PI";
@@ -461,7 +538,7 @@ export const useWorkbench = defineStore("workbench", () => {
   }
 
   return {
-    baseFile, poList, invoiceList, loading, error,
+    baseFile, profileId, poList, invoiceList, loading, error,
     selectedPo, selectedInvoiceGroup, previewScope, dataRows, dataHeaders,
     invoiceInspection, invoiceInspectionLoading, invoiceInspectionError,
     selectedSeller, selectedInvoiceNo,
@@ -472,7 +549,7 @@ export const useWorkbench = defineStore("workbench", () => {
     poIssues, issuesLoading, issuesError,
     previewError, exportError, libreOfficeMissing,
     poEntry, poStatus, invoiceEntry, invoiceStatus,
-    openSession, selectPo, refreshPreview, editCell, doExport, doExportPdf, doExportGroups, doExportInvoiceGroups,
+    openSession, adoptWorkspaceSession, selectPo, refreshPreview, editCell, doExport, doExportPdf, doExportGroups, doExportInvoiceGroups,
     selectSeller, selectInvoice, selectPreviewScope, selectInvoiceGroup,
     refreshPoIssues, refreshInvoiceInspection, dismissLibreOfficePrompt,
   };

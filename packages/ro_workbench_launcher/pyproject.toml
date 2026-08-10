@@ -1,6 +1,6 @@
 [project]
 name = "ro-workbench-launcher"
-version = "0.0.0"
+version = "1.1.0"
 description = "工作台启动器：拉起后端 + 自动开浏览器 + 托盘集成"
 requires-python = ">=3.11"
 dependencies = [

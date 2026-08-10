@@ -1,0 +1,21 @@
+profile_id: ro
+display_name: Rather Outdoors
+version: ro_v1
+
+# Profile manifest 只声明元数据和资产位置；业务规则仍由 ro_generator.profiles.ro 提供。
+assets:
+  schema: base_schema.yaml
+  template_root: templates
+  mapping_root: templates
+  seller_directories:
+    GS PTE: gs
+    EMAX PTE: emax
+    SK: sk
+    YM: ym
+  mapping_filenames:
+    PI: pi.yaml
+    PO: po.yaml
+    INVOICE: invoice.yaml
+    PL: pl.yaml
+    CI: ci.yaml
+    RO_PL: ro_pl.yaml

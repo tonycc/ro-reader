@@ -7,6 +7,13 @@
 - [`../README.md`](../README.md)：安装、工作台、CLI、API 和开发入口。
 - [`product/ro-document-generator-product-plan.md`](product/ro-document-generator-product-plan.md)：当前产品范围、业务流程、输出和 roadmap。
 
+## 已确认、分阶段实施
+
+- [`product/multi-customer-workspace-design.md`](product/multi-customer-workspace-design.md)：多客户 Profile、工作区、切换事务和兼容设计。
+- [`development/multi-customer-workspace-implementation-plan.md`](development/multi-customer-workspace-implementation-plan.md)：Phase 4.5 前端骨架和 Phase 5 核心/后端的开发顺序、文件边界与验收门槛。
+
+Phase 4.5–6 的多工作区基础已完成；Phase 7 已接入 PF Profile，包括独立 schema、10 份模板/mapping、客户 PO 先行、月度出货数量、MOQ/整箱提醒及 PF Invoice/PL 打包。下一阶段 Phase 8 仍只保留目标级描述。
+
 ## 开发
 
 - [`development/implementation-guide.md`](development/implementation-guide.md)：代码结构、数据流、修改流程、测试和发布。

@@ -21,7 +21,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, Literal, cast
 
-from ro_generator.base_schema import base_schema
 from ro_generator.document_model import (
     DocumentModel,
     build_invoice_model,
@@ -31,7 +30,7 @@ from ro_generator.document_model import (
     invoice_no_for_line,
     invoice_no_matches,
 )
-from ro_generator.errors import RoGeneratorError, WorkbookOpenError
+from ro_generator.errors import InvalidRequestError, RoGeneratorError, WorkbookOpenError
 from ro_generator.invoice_inspection import (
     CODE_INVOICE_GROUP_NOT_FOUND,
     resolve_invoice_group_from_snapshot,
@@ -53,11 +52,16 @@ from ro_generator.packager import (
     resolve_output_path,
 )
 from ro_generator.pdf_convert import convert_to_pdf
+from ro_generator.profiles import (
+    GenerationContext,
+    current_profile,
+    current_rules,
+    default_profile_registry,
+    profile_scope,
+)
 from ro_generator.renderer import render_document, render_document_bundle
 from ro_generator.resolver import resolve_po_lines, resolve_po_rows
-from ro_generator.resources import resource_root
 from ro_generator.schema import (
-    SELLER_TO_BUYER,
     SELLERS,
 )
 from ro_generator.seller_filter import (
@@ -76,8 +80,6 @@ from ro_generator.workbook_reader import WorkbookReader
 if TYPE_CHECKING:
     from ro_generator.document_preview import DocumentPreview
     from ro_generator.workbook_snapshot import WorkbookSnapshot
-
-_bs = base_schema()
 
 
 def _finalize_as_pdf(xlsx_path: Path) -> Path:
@@ -133,33 +135,36 @@ INPUT_BUYER: Final = "buyer"
 INPUT_INVOICE_NO: Final = "invoice_no"
 
 
-# —————————————————————————————————————
-# 内置 mapping 注册表
-# —————————————————————————————————————
+def _active_sellers() -> tuple[str, ...]:
+    profile = current_profile()
+    return profile.capabilities.sellers if profile is not None else SELLERS
 
-_REPO_ROOT = resource_root()
+
+def _context_for_request(
+    request: DocumentRequest,
+    context: GenerationContext | None,
+) -> GenerationContext:
+    if context is None:
+        return GenerationContext(
+            profile=default_profile_registry().default,
+            base_file=Path(request.base_file),
+        )
+    request_path = Path(request.base_file).expanduser().resolve()
+    if request_path != context.base_path.expanduser().resolve():
+        raise InvalidRequestError("GenerationContext.base_file 与 DocumentRequest.base_file 不一致")
+    return context
+
+
+# —————————————————————————————————————
+# 内置 mapping 注册表（由默认 Profile 声明资产位置）
+# —————————————————————————————————————
 
 
 def builtin_mapping_path(seller: str, document: str) -> Path | None:
-    seller_dir = {
-        "GS PTE": "gs",
-        "EMAX PTE": "emax",
-        "SK": "sk",
-        "YM": "ym",
-    }.get(seller)
-    if seller_dir is None:
+    profile = current_profile() or default_profile_registry().default
+    candidate = profile.mapping_path(seller, document)
+    if candidate is None:
         return None
-    doc_file = {
-        "PI": "pi.yaml",
-        "PO": "po.yaml",
-        "INVOICE": "invoice.yaml",
-        "PL": "pl.yaml",
-        "CI": "ci.yaml",
-        "RO_PL": "ro_pl.yaml",
-    }.get(document)
-    if doc_file is None:
-        return None
-    candidate = _REPO_ROOT / "templates" / seller_dir / "mappings" / doc_file
     return candidate if candidate.exists() else None
 
 
@@ -168,9 +173,15 @@ def builtin_mapping_path(seller: str, document: str) -> Path | None:
 # —————————————————————————————————————
 
 
-def generate(request: DocumentRequest) -> GenerationResult:
+def generate(
+    request: DocumentRequest,
+    *,
+    context: GenerationContext | None = None,
+) -> GenerationResult:
     try:
-        return _generate(request)
+        active_context = _context_for_request(request, context)
+        with profile_scope(active_context.profile):
+            return _generate(request, context=active_context)
     except WorkbookOpenError as exc:
         return _error_result(
             ValidationMessage(kind="blocking_error", code=exc.code, message=exc.message)
@@ -181,13 +192,19 @@ def generate(request: DocumentRequest) -> GenerationResult:
         )
 
 
-def preview(request: DocumentRequest) -> PreviewResult:
+def preview(
+    request: DocumentRequest,
+    *,
+    context: GenerationContext | None = None,
+) -> PreviewResult:
     """生成预览数据，不写 Excel。复用与 generate() 相同的 resolver 和 DocumentModel 构建路径。
 
     只处理单文档。不调用 render_document()。
     """
     try:
-        return _preview(request)
+        active_context = _context_for_request(request, context)
+        with profile_scope(active_context.profile):
+            return _preview(request, context=active_context)
     except WorkbookOpenError as exc:
         return PreviewResult(
             status="error",
@@ -200,7 +217,7 @@ def preview(request: DocumentRequest) -> PreviewResult:
         )
 
 
-def _preview(request: DocumentRequest) -> PreviewResult:
+def _preview(request: DocumentRequest, *, context: GenerationContext) -> PreviewResult:
     """通过构建 snapshot 后委托 preview_from_snapshot 实现预览。
 
     与直接读 Excel 的旧路径行为等价，但复用 snapshot 缓存并消除重复逻辑。
@@ -208,13 +225,13 @@ def _preview(request: DocumentRequest) -> PreviewResult:
     from ro_generator.workbook_snapshot import build_workbook_snapshot
 
     # Struct validation via WorkbookReader before building snapshot
-    with WorkbookReader(request.base_file) as reader:
-        struct_messages = validate_workbook_structure(reader)
+    with WorkbookReader(request.base_file, schema=context.schema) as reader:
+        struct_messages = validate_workbook_structure(reader, schema=context.schema)
         if struct_messages:
             return PreviewResult(status="error", errors=struct_messages)
 
     try:
-        snapshot = build_workbook_snapshot(request.base_file)
+        snapshot = build_workbook_snapshot(request.base_file, context=context)
     except Exception as exc:
         msg = str(exc)
         code = getattr(exc, "code", "WORKBOOK_OPEN_ERROR")
@@ -229,12 +246,24 @@ def _preview(request: DocumentRequest) -> PreviewResult:
 def preview_from_snapshot(
     snapshot: WorkbookSnapshot,
     request: DocumentRequest,
+    *,
+    context: GenerationContext | None = None,
 ) -> PreviewResult:
     """基于缓存的 WorkbookSnapshot 生成预览，不读 Excel。
 
     与 preview() 的区别：绕过 WorkbookReader，直接从 snapshot 获取 PO 行和产品索引。
     seller / buyer 推断、invoice_no 校验、DocumentModel 构建与 preview() 相同。
     """
+    if context is not None:
+        with profile_scope(context.profile):
+            return _preview_from_snapshot(snapshot, request)
+    return _preview_from_snapshot(snapshot, request)
+
+
+def _preview_from_snapshot(
+    snapshot: WorkbookSnapshot,
+    request: DocumentRequest,
+) -> PreviewResult:
     from ro_generator.document_preview import build_preview
 
     documents: tuple[DocumentType, ...] = cast(
@@ -311,7 +340,7 @@ def preview_from_snapshot(
         if blocking:
             return PreviewResult(status="error", errors=blocking, warnings=warnings_resolver)
         options: dict[str, tuple[dict[str, str], ...]] = {}
-        options[INPUT_SELLER] = tuple({"value": s, "label": s} for s in SELLERS)
+        options[INPUT_SELLER] = tuple({"value": s, "label": s} for s in _active_sellers())
         return PreviewResult(
             status="needs_input",
             missing_inputs=(INPUT_SELLER,),
@@ -383,8 +412,32 @@ def preview_invoice_group_from_snapshot(
     *,
     seller: str,
     document: str,
+    context: GenerationContext | None = None,
 ) -> PreviewResult:
     """Preview one Invoice/PL document for a cross-PO invoice group."""
+    if context is not None:
+        with profile_scope(context.profile):
+            return _preview_invoice_group_from_snapshot(
+                snapshot,
+                invoice_group_key,
+                seller=seller,
+                document=document,
+            )
+    return _preview_invoice_group_from_snapshot(
+        snapshot,
+        invoice_group_key,
+        seller=seller,
+        document=document,
+    )
+
+
+def _preview_invoice_group_from_snapshot(
+    snapshot: WorkbookSnapshot,
+    invoice_group_key: str,
+    *,
+    seller: str,
+    document: str,
+) -> PreviewResult:
     from ro_generator.document_preview import build_preview
 
     doc_type = document.upper()
@@ -401,7 +454,7 @@ def preview_invoice_group_from_snapshot(
         )
     summary = resolution.summary
     invoice_no = summary.seller_invoice_numbers.get(seller)
-    buyer = SELLER_TO_BUYER.get(seller)
+    buyer = current_rules().buyer_for(seller)
     if invoice_no is None or buyer is None:
         return _invoice_group_preview_error(
             CODE_INVOICE_GROUP_SELLER_UNAVAILABLE,
@@ -443,8 +496,38 @@ def export_invoice_group_from_snapshot(
     documents: tuple[str, ...],
     output_dir: str,
     output_format: Literal["xlsx", "pdf"] = "xlsx",
+    context: GenerationContext | None = None,
 ) -> GenerationResult:
     """Render Invoice/PL documents for one cross-PO invoice group."""
+    if context is not None:
+        with profile_scope(context.profile):
+            return _export_invoice_group_from_snapshot(
+                snapshot,
+                invoice_group_key,
+                seller=seller,
+                documents=documents,
+                output_dir=output_dir,
+                output_format=output_format,
+            )
+    return _export_invoice_group_from_snapshot(
+        snapshot,
+        invoice_group_key,
+        seller=seller,
+        documents=documents,
+        output_dir=output_dir,
+        output_format=output_format,
+    )
+
+
+def _export_invoice_group_from_snapshot(
+    snapshot: WorkbookSnapshot,
+    invoice_group_key: str,
+    *,
+    seller: str,
+    documents: tuple[str, ...],
+    output_dir: str,
+    output_format: Literal["xlsx", "pdf"] = "xlsx",
+) -> GenerationResult:
     normalized_documents = tuple(document.upper() for document in documents)
     if not normalized_documents or any(
         document not in {"INVOICE", "PL", "CI", "RO_PL"} for document in normalized_documents
@@ -468,7 +551,7 @@ def export_invoice_group_from_snapshot(
         )
     summary = resolution.summary
     invoice_no = summary.seller_invoice_numbers.get(seller)
-    buyer = SELLER_TO_BUYER.get(seller)
+    buyer = current_rules().buyer_for(seller)
     if invoice_no is None or buyer is None:
         return _error_result(
             ValidationMessage(
@@ -516,7 +599,9 @@ def export_invoice_group_from_snapshot(
     filenames: list[str] = []
 
     try:
-        if set(normalized_documents) in ({"INVOICE", "PL"}, {"CI", "RO_PL"}):
+        if set(normalized_documents) in ({"INVOICE", "PL"}, {"CI", "RO_PL"}) and (
+            _builds_share_template(builds)
+        ):
             combined_label: Literal["INVOICE_PL", "CI_PL"] = (
                 "CI_PL" if set(normalized_documents) == {"CI", "RO_PL"} else "INVOICE_PL"
             )
@@ -603,7 +688,7 @@ def _invoice_group_preview_error(code: str, message: str) -> PreviewResult:
     )
 
 
-def _generate(request: DocumentRequest) -> GenerationResult:
+def _generate(request: DocumentRequest, *, context: GenerationContext) -> GenerationResult:
     documents: tuple[DocumentType, ...] = cast(
         tuple[DocumentType, ...], tuple(d.upper() for d in request.documents)
     )
@@ -616,15 +701,32 @@ def _generate(request: DocumentRequest) -> GenerationResult:
             )
         )
 
-    with WorkbookReader(request.base_file) as reader:
-        struct_messages = validate_workbook_structure(reader)
+    with WorkbookReader(request.base_file, schema=context.schema) as reader:
+        struct_messages = validate_workbook_structure(reader, schema=context.schema)
         if struct_messages:
             return GenerationResult(status="error", errors=struct_messages)
-        resolve_result = resolve_po_lines(
-            reader,
-            request.po_no,
-            row_filter=raw_row_filter_for_request(seller=request.seller, documents=documents),
-        )
+        if current_rules().include_customer_po_only_orders:
+            from ro_generator.workbook_snapshot import build_workbook_snapshot
+
+            snapshot = build_workbook_snapshot(request.base_file, context=context)
+            rows = prefilter_raw_rows(
+                snapshot.po_rows_for_po(request.po_no),
+                seller=request.seller,
+                documents=documents,
+            )
+            resolve_result = resolve_po_rows(
+                rows,
+                snapshot.product_index,
+                po_no=request.po_no,
+                customer_po_rows=snapshot.customer_po_rows_for_po(request.po_no),
+            )
+        else:
+            resolve_result = resolve_po_lines(
+                reader,
+                request.po_no,
+                row_filter=raw_row_filter_for_request(seller=request.seller, documents=documents),
+                profile=context.profile,
+            )
 
     blocking = tuple(m for m in resolve_result.messages if m.kind == "blocking_error")
     warnings_resolver = tuple(m for m in resolve_result.messages if m.kind == "warning")
@@ -852,17 +954,13 @@ def build_document_model(
         )
 
     if doc_type == "PI":
-        pi_no = po_no
-        if seller == "SK":
-            sk_pi_no = _first_non_empty(line.e10_po for line in lines)
-            if sk_pi_no is None:
-                return _missing_pi_no_result(seller=seller, field="E10 PO", lines=lines)
-            pi_no = sk_pi_no
-        elif seller == "YM":
-            ym_pi_no = _first_non_empty(line.ym_po for line in lines)
-            if ym_pi_no is None:
-                return _missing_pi_no_result(seller=seller, field="YM PO", lines=lines)
-            pi_no = ym_pi_no
+        pi_no, missing_pi_field = current_rules().pi_no_for_lines(lines, seller, po_no)
+        if pi_no is None:
+            return _missing_pi_no_result(
+                seller=seller,
+                field=missing_pi_field or "PI NO.",
+                lines=lines,
+            )
         build_result = build_pi_model(lines, seller=seller, buyer=buyer, po_no=po_no, pi_no=pi_no)
     elif doc_type == "PO":
         build_result = build_po_model(lines, seller=seller, buyer=buyer, po_no=po_no)
@@ -977,9 +1075,23 @@ def _generate_one(
 
 
 def _should_combine_invoice_pl(seller: str, documents: tuple[str, ...]) -> bool:
-    return ("INVOICE" in documents and "PL" in documents) or (
-        "CI" in documents and "RO_PL" in documents
+    if "INVOICE" in documents and "PL" in documents:
+        pair = ("INVOICE", "PL")
+    elif "CI" in documents and "RO_PL" in documents:
+        pair = ("CI", "RO_PL")
+    else:
+        return False
+
+    mappings = tuple(_load_mapping(seller, document) for document in pair)
+    return (
+        all(mapping is not None for mapping in mappings)
+        and len({mapping.template_path for mapping in mappings if mapping is not None}) == 1
     )
+
+
+def _builds_share_template(builds: Iterable[BuildDocumentResult]) -> bool:
+    template_paths = {build.mapping.template_path for build in builds if build.mapping is not None}
+    return len(template_paths) == 1
 
 
 def _build_generation_plan(
@@ -992,7 +1104,8 @@ def _build_generation_plan(
 
     group_lines = filter_lines_for_seller(lines, seller)
     if group_lines:
-        return ((seller, SELLER_TO_BUYER[seller], group_lines),)
+        resolved_buyer = current_rules().buyer_for(seller)
+        return ((seller, resolved_buyer or "", group_lines),)
     return ((seller, buyer, lines),)
 
 
@@ -1101,7 +1214,8 @@ def _resolve_segment(
     lines: tuple[OrderLine, ...],
 ) -> tuple[str | None, str | None, tuple[ValidationMessage, ...]]:
     if request.seller:
-        if request.seller not in SELLERS:
+        sellers = _active_sellers()
+        if request.seller not in sellers:
             return (
                 None,
                 None,
@@ -1109,11 +1223,11 @@ def _resolve_segment(
                     ValidationMessage(
                         kind="blocking_error",
                         code=CODE_UNSUPPORTED_SEGMENT,
-                        message=f"未知卖方主体 {request.seller!r}，合法值：{SELLERS}",
+                        message=f"未知卖方主体 {request.seller!r}，合法值：{sellers}",
                     ),
                 ),
             )
-        buyer = SELLER_TO_BUYER.get(request.seller, "")
+        buyer = current_rules().buyer_for(request.seller) or ""
         return request.seller, buyer, ()
     return None, None, ()
 
@@ -1148,7 +1262,7 @@ def _needs_input(
 ) -> GenerationResult:
     options: dict[str, tuple[dict[str, str], ...]] = {}
     if INPUT_SELLER in inputs:
-        options[INPUT_SELLER] = tuple({"value": s, "label": s} for s in SELLERS)
+        options[INPUT_SELLER] = tuple({"value": s, "label": s} for s in _active_sellers())
     return GenerationResult(
         status="needs_input",
         missing_inputs=tuple(inputs),

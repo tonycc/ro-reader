@@ -10,7 +10,8 @@ packages/
   ro_workbench_api/      FastAPI 薄包装层
   ro_workbench_launcher/ PyInstaller 启动器
 frontend/                Vue 3 工作台
-templates/               Excel 模板、mapping、base schema
+customer_profiles/ro/    RO Profile 的 Excel 模板、mapping、base schema
+customer_profiles/pf/    PF Profile 的 Excel 模板、mapping、base schema
 tests/fixtures/          合成 base 生成脚本
 docs/                    当前产品、UI、工程和字段规则
 .github/workflows/       Python、前端/E2E、启动器 CI
@@ -33,10 +34,12 @@ uv run python tests/fixtures/generate_synthetic_base.py
 | 模块 | 职责 |
 | --- | --- |
 | `models.py` | Product、OrderLine、DocumentRequest、GenerationResult |
+| `profiles/` | CustomerProfile、GenerationContext、RO/PF 客户差异策略和注册表 |
 | `base_schema.py` / `schema.py` | 配置、Sheet、表头、主体、价格列 |
 | `workbook_reader.py` | 读取公式值和缓存值，规范化表头 |
 | `validator.py` | 三张 Sheet 和最小必需表头 |
 | `resolver.py` | PO/SAP/客户PO join、数量、价格、公式回退 |
+| `order_constraints.py` | Profile 可选的客户订单 MOQ/整箱提醒 |
 | `seller_filter.py` | SK/YM Category 主体规则 |
 | `invoice_groups.py` | 实际出货票据组和稳定 key |
 | `invoice_inspection.py` | 票据组解析、成员行和冲突 |
@@ -74,14 +77,16 @@ DocumentRequest
 
 `generate()` 读磁盘，适合 CLI 和 PO 导出。`preview_from_snapshot()` 复用 session 快照，避免每次预览重新读取整个 workbook。
 
+PF Profile 允许“客户 PO 先行”：`new PO template` 中存在、但尚未进入 `PO RECORD 26` 的 PO 会在快照中生成只用于 PI/PO 的最小行。该行不伪造发票或物流字段；Invoice/PL 仍必须等待真实月度出货记录。
+
 ## 5. Invoice 票据组流水线
 
 打开 session 时，`build_workbook_snapshot()`：
 
 1. 读取三张 Sheet。
 2. 构建产品索引、PO 行索引和客户 PO 索引。
-3. 对 PO record 行做宽松解析以获得出货和发票标识。
-4. 只保留 `SHIP QTY > 0` 且有发票标识的行。
+3. 对 PO record 行做宽松解析以获得当前 Profile 的出货数量和发票标识。
+4. RO 使用 `SHIP QTY`；PF 根据 `INV#` 的 YYMM 使用 `2601`–`2612` 月度列，只保留数量大于 0 的行。
 5. 构建票据组 summary、成员行 index 和 header context。
 
 Invoice 路由只从 snapshot 取结果：
@@ -94,7 +99,7 @@ Invoice 路由只从 snapshot 取结果：
 
 ## 6. FastAPI 层
 
-`app.py` 当前有 18 个 `/api` 端点。职责仅限：
+`app.py` 当前有 27 个 `/api` 端点。职责仅限：
 
 - Pydantic 请求模型。
 - session header 和生命周期。
@@ -105,7 +110,7 @@ Invoice 路由只从 snapshot 取结果：
 
 下载端点必须验证请求 path 位于 session temp directory 内，防止路径穿越。
 
-Session 默认一小时过期；清理任务每五分钟运行。单个 base 路径复用现有 session。
+Session 默认一小时过期；清理任务每五分钟运行。工作区激活后，业务 session 绑定 `workspace_id`、`profile_id` 和 base 文件；旧 `session/open` 仅作为 RO 兼容入口。
 
 ## 7. 前端层
 
@@ -117,19 +122,20 @@ App.vue
   ├─ PreviewScreen
   ├─ ExportScreen
   ├─ StatusBar
-  └─ LibreOfficePrompt
+  ├─ LibreOfficePrompt
+  └─ WorkspaceSwitcher / WorkspaceSettings / WorkspaceForm
 ```
 
-`stores/api.ts` 维护 HTTP 类型和 `X-Session-Id`。`stores/workbench.ts` 维护选择、数据、预览、导出和错误状态。
+`stores/api.ts` 维护业务 HTTP 类型和 `X-Session-Id`；`services/workspace.http.ts` 维护 Profile/工作区 HTTP 契约。`stores/workspace.ts` 维护工作区、bootstrap 和激活状态，`stores/workbench.ts` 维护选择、数据、预览、导出和错误状态。
 
-组合预览由前端并行请求两种真实单据；核心导出仍负责把配对单据写入一个 workbook/PDF。
+组合预览由前端并行请求两种真实单据。核心导出会检查两份 mapping 的模板身份：同一模板（RO）写入双 Sheet workbook；不同模板（PF）分别生成并打 ZIP。
 
 ## 8. 模板和 mapping
 
 目录约定：
 
 ```text
-templates/<seller>/
+customer_profiles/ro/templates/<seller>/
   *.xlsx
   mappings/
     pi.yaml
@@ -140,13 +146,15 @@ templates/<seller>/
     ro_pl.yaml       # 仅 sk/ym
 ```
 
-当前共 12 个 workbook、18 份 mapping。
+PF 使用相同目录层级，但只有 GS/EMAX 的 PI/PO/Invoice/PL 及 SK/YM PI。当前 RO 为 12 个 workbook/18 份 mapping，PF 为 10 个 workbook/10 份 mapping。
 
 ### 8.1 修改模板
 
 1. 明确主体、单据类型和 Sheet。
 2. 在 `.xlsx` 中修改版式。
 3. 同步 YAML 坐标、`template_version`、`table_header_row`、`style_source_row`。
+   `preview_content.column_labels` 的键及顺序决定结构化预览列；文字由 loader 从模板表头读取。只有需要排除类别说明行等特殊情况时，才配置 `column_label_rows`，且它必须是 `table_header_row` 的子集。
+   单据抬头需要与导出一致时，用 `preview_content.template_fields` 引用模板中的 `title`、`seller_info` 单元格，并用 `layout` 声明顶部和左右信息区。header 字段标签由 loader 从值单元格所在行解析，不在 YAML 或前端重复抄写。
 4. 清理无效空配置。
 5. 运行 mapping loader 和 renderer 测试。
 6. 打开渲染结果做视觉检查，尤其是打印区、合并单元格和插入行后的底部区域。
@@ -192,12 +200,12 @@ DocumentModel → renderer → .xlsx → LibreOffice → .pdf
 实际参数：
 
 ```text
---base --po --docs --seller --invoice-no
+--base --profile --po --docs --seller --invoice-no
 --output-format {xlsx,zip}
 --output-dir --on-conflict --input --json
 ```
 
-`buyer` 由 seller 推导。当前没有 `invoice_month` 参数，也没有 CLI PDF choice。
+`--profile` 缺省为 `ro`，CLI 不读取 GUI 工作区配置；`buyer` 由 seller 推导。当前没有 `invoice_month` 参数，也没有 CLI PDF choice。
 
 退出码和 JSON stdout 是稳定协议。新增参数时必须补 `test_cli.py` 并同步 README/AGENTS。
 
@@ -211,7 +219,7 @@ uv run pytest packages/ro_generator/tests/test_generator.py -v
 uv run pytest packages/ro_workbench_api/tests/test_app.py -v
 ```
 
-截至 2026-08-07，全量为 465 个测试。
+截至 2026-08-09，全量为 531 个测试。Phase 5.0 的 RO 回归基线见 `packages/ro_generator/tests/test_ro_baseline.py`；RO/PF Profile 契约见 `packages/ro_generator/tests/test_profiles.py`；PF 客户 PO 先行、分离模板导出和 SK/YM PI 抬头一致性见 `test_pf_snapshot.py`；MOQ/整箱规则见 `test_order_constraints.py`；Profile-aware cache 见 `test_workbook_cache.py`；WorkspaceStore、SessionManager 和工作区 API 见 API 对应测试；CLI Profile 和退出码见 `test_cli.py`。
 
 ### 12.2 前端
 
@@ -220,9 +228,10 @@ cd frontend
 pnpm run type-check
 pnpm run build
 pnpm run test:e2e
+pnpm run test:e2e:http
 ```
 
-Playwright 使用合成 fixture，并启动真实 Vite/FastAPI 服务。CI 安装 LibreOffice 以覆盖 PDF。
+默认 Playwright 使用合成 fixture，并启动真实 Vite/FastAPI 服务；当前 29 个场景包含单据预览表头与 Excel 模板一致性、PF MOQ/整箱提醒呈现和客户 PO 只读投影。`test:e2e:http` 使用独立临时配置目录覆盖工作区 bootstrap/刷新恢复。CI 安装 LibreOffice 以覆盖 PDF。
 
 ### 12.3 质量检查
 
@@ -255,6 +264,12 @@ uv run pyinstaller packages/ro_workbench_launcher/ro-workbench.spec --noconfirm
 
 CI 发布版本来自 `build-launcher.yml` 的 `APP_VERSION`。发布前同时核对该值、界面版本文本、Python/FastAPI metadata 和安装包文件名。
 
+版本一致性可直接检查：
+
+```bash
+uv run python scripts/verify_release_metadata.py
+```
+
 ## 15. 文档维护
 
 - `README.md` 面向使用者和新开发者。
@@ -265,3 +280,12 @@ CI 发布版本来自 `build-launcher.yml` 的 `APP_VERSION`。发布前同时�
 - 一次性 spec/plan 完成后，把长期结论合并到上述文档并删除临时文件。
 
 修改 API、CLI、Sheet、单据矩阵、mapping、输出命名、PDF 或 session 行为时，文档必须与代码同一提交更新。
+
+## 16. 当前待实施方案
+
+多客户工作区的 Phase 4.5 前端骨架、Phase 5.0–5.8 基础模型/后端、Phase 6.0–6.3 真实 HTTP/发行基础以及 Phase 7 PF Customer Profile 已写入当前代码。下一阶段为 Phase 8 多客户加固；在进入该阶段前不预写文件级任务：
+
+- [多客户工作区设计](../product/multi-customer-workspace-design.md)
+- [多客户工作区实施方案](multi-customer-workspace-implementation-plan.md)
+
+Phase 7 已完成 PF schema、规则、10 份模板/mapping、客户 PO 先行、月度出货、原始发票号、MOQ/整箱提醒、分离 Invoice/PL 打包和真实文件验收。PF 原始业务目录只用于核对，运行时资产位于 `customer_profiles/pf/`；用户工作区应绑定具体 base `.xlsx` 文件。

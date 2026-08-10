@@ -1,10 +1,10 @@
 """Base 文件结构描述加载器。
 
-从 templates/base_schema.yaml 读取 sheet 名、表头行、字段别名、
+从当前默认 Profile 的 base_schema.yaml 读取 sheet 名、表头行、字段别名、
 价格列和发票金额列。当 base 文件格式变化时只需修改 YAML。
 
 设计边界：
-- 此模块提供只读的 BaseSchema 单例，代码中通过 `base_schema()` 获取。
+- Profile schema 按资源路径缓存；`base_schema()` 只是默认 RO 的兼容入口。
 - FieldAliases 的 get(key) 返回主 header 名，不存在时原样返回 key。
 - 单个内部字段允许配置多个 header 别名，reader 会把它们归一到主 header。
 - 列名匹配使用 normalize_header 之后的值——和 workbook_reader 一致。
@@ -14,14 +14,12 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 
 import yaml
 
-from ro_generator.resources import resource_root
-
-_REPO_ROOT = resource_root()
-_SCHEMA_PATH = _REPO_ROOT / "templates" / "base_schema.yaml"
+from ro_generator.resources import profile_root
 
 
 @dataclass(frozen=True)
@@ -57,6 +55,14 @@ class FieldAliases:
                 return headers[0]
         return header
 
+    def internal_key_for(self, header: str) -> str | None:
+        """返回某个声明表头对应的内部字段 key。"""
+
+        for internal_key in self._mapping:
+            if header == internal_key or header in self.headers(internal_key):
+                return internal_key
+        return None
+
     def items(self) -> Iterator[tuple[str, str]]:
         return ((internal_key, self.get(internal_key)) for internal_key in self._mapping)
 
@@ -71,19 +77,40 @@ class BaseSchema:
     customer_po_fields: FieldAliases = field(default_factory=lambda: FieldAliases({}))
     price_columns: dict[str, str] = field(default_factory=dict)
     data_base_price_columns: dict[str, str] = field(default_factory=dict)
+    invoice_data_base_price_columns: dict[str, str] = field(default_factory=dict)
+    data_base_component_price_columns: dict[str, str] = field(default_factory=dict)
     invoice_amount_columns: dict[str, str] = field(default_factory=dict)
 
     def sheet(self, name: str) -> SheetConfig:
         return self.sheets[name]
 
+    def logical_sheet_name(self, name: str) -> str | None:
+        """把逻辑 sheet key 或 workbook 中的真实 sheet 名统一为逻辑 key。"""
+
+        if name in self.sheets:
+            return name
+        for logical_name, config in self.sheets.items():
+            if config.name == name:
+                return logical_name
+        return None
+
+    def sheet_config_for_name(self, name: str) -> SheetConfig | None:
+        logical_name = self.logical_sheet_name(name)
+        return self.sheets.get(logical_name) if logical_name is not None else None
+
     def _field_aliases_for_sheet(self, sheet: str) -> FieldAliases | None:
-        if sheet in ("DATA BASE", "DATA_BASE"):
+        logical_sheet = self.logical_sheet_name(sheet) or sheet
+        if logical_sheet in ("DATA BASE", "DATA_BASE"):
             return self.data_base_fields
-        if sheet == "PO record":
+        if logical_sheet == "PO record":
             return self.po_record_fields
-        if sheet == "客户PO":
+        if logical_sheet == "客户PO":
             return self.customer_po_fields
         return None
+
+    def internal_field_key(self, sheet: str, header: str) -> str | None:
+        aliases = self._field_aliases_for_sheet(sheet)
+        return aliases.internal_key_for(header) if aliases is not None else None
 
     def field(self, sheet: str, internal_key: str) -> str:
         """根据 sheet 和内部 key 返回 base 表中的列名。"""
@@ -106,7 +133,7 @@ class BaseSchema:
 
 def load_base_schema(path: str | Path | None = None) -> BaseSchema:
     """从 YAML 加载 base 文件结构描述。"""
-    yaml_path = Path(path) if path else _SCHEMA_PATH
+    yaml_path = Path(path) if path else profile_root("ro") / "base_schema.yaml"
     if not yaml_path.exists():
         return _default_schema()
 
@@ -122,8 +149,11 @@ def load_base_schema(path: str | Path | None = None) -> BaseSchema:
     if isinstance(sheets_raw, dict):
         for name, cfg in sheets_raw.items():
             if isinstance(cfg, dict):
+                actual_name = cfg.get("name", name)
+                if not isinstance(actual_name, str) or not actual_name.strip():
+                    actual_name = name
                 sheets[name] = SheetConfig(
-                    name=name,
+                    name=actual_name.strip(),
                     header_row=int(cfg.get("header_row", 4)),
                     first_data_row=int(cfg.get("first_data_row", 5)),
                 )
@@ -150,6 +180,21 @@ def load_base_schema(path: str | Path | None = None) -> BaseSchema:
             if isinstance(key, str) and isinstance(col, str):
                 db_price_columns[key] = col.strip()
 
+    # Combo 成本拆分的组件价格列（例如 GS PTE/rod、GS PTE/reel）。
+    component_price_columns: dict[str, str] = {}
+    cbpc = raw.get("data_base_component_price_columns", {})
+    if isinstance(cbpc, dict):
+        for key, col in cbpc.items():
+            if isinstance(key, str) and isinstance(col, str):
+                component_price_columns[key] = col.strip()
+
+    invoice_price_columns: dict[str, str] = {}
+    ipc = raw.get("invoice_data_base_price_columns", {})
+    if isinstance(ipc, dict):
+        for key, col in ipc.items():
+            if isinstance(key, str) and isinstance(col, str):
+                invoice_price_columns[key] = col.strip()
+
     # Invoice amount columns in PO record
     inv_amount_columns: dict[str, str] = {}
     iac = raw.get("invoice_amount_columns", {})
@@ -165,6 +210,8 @@ def load_base_schema(path: str | Path | None = None) -> BaseSchema:
         customer_po_fields=customer_po_fields,
         price_columns=price_columns,
         data_base_price_columns=db_price_columns,
+        invoice_data_base_price_columns=invoice_price_columns,
+        data_base_component_price_columns=component_price_columns,
         invoice_amount_columns=inv_amount_columns,
     )
 
@@ -297,15 +344,31 @@ def _default_schema() -> BaseSchema:
 
 
 # —————————————————————————————————————
-# 单例
+# 兼容入口和按路径缓存
 # —————————————————————————————————————
 
-_schema: BaseSchema | None = None
+
+@lru_cache(maxsize=32)
+def _cached_schema(path: str) -> BaseSchema:
+    return load_base_schema(path)
 
 
-def base_schema() -> BaseSchema:
-    """获取 BaseSchema 单例。首次调用时从 YAML 加载。"""
-    global _schema
-    if _schema is None:
-        _schema = load_base_schema()
-    return _schema
+def base_schema(profile_or_path: object | None = None) -> BaseSchema:
+    """获取 Profile schema。
+
+    无参数时兼容旧入口并返回默认 RO；传入 Profile、BaseSchema 或路径时，
+    返回对应 schema。路径加载按 resolved path 缓存，避免不同 Profile 串用。
+    """
+
+    if isinstance(profile_or_path, BaseSchema):
+        return profile_or_path
+    if profile_or_path is not None and not isinstance(profile_or_path, (str, Path)):
+        profile_schema = getattr(profile_or_path, "schema", None)
+        if isinstance(profile_schema, BaseSchema):
+            return profile_schema
+    schema_path = (
+        Path(profile_or_path)
+        if isinstance(profile_or_path, (str, Path))
+        else profile_root("ro") / "base_schema.yaml"
+    )
+    return _cached_schema(str(schema_path.expanduser().resolve()))

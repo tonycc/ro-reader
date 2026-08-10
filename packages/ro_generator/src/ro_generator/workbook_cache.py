@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
+from ro_generator.profiles import CustomerProfile, GenerationContext, current_profile
+from ro_generator.profiles.registry import default_profile_registry
 from ro_generator.workbook_snapshot import (
     FileSignature,
     WorkbookSnapshot,
@@ -44,20 +46,38 @@ class _CachedEntry:
 
 
 class WorkbookCacheManager:
-    """按 base 文件路径管理 WorkbookSnapshot 缓存。"""
+    """按 ``(profile_id, base 文件路径)`` 管理 WorkbookSnapshot 缓存。"""
 
     def __init__(self, ttl_seconds: int = DEFAULT_TTL_SECONDS) -> None:
         self._ttl = ttl_seconds
         self._lock = threading.RLock()
-        self._cache: dict[str, _CachedEntry] = {}
-        self._build_locks: dict[str, threading.RLock] = {}
+        self._cache: dict[tuple[str, str], _CachedEntry] = {}
+        self._build_locks: dict[tuple[str, str], threading.RLock] = {}
 
     # ——— 公开 API ———
 
-    def get_snapshot(self, base_file: str) -> WorkbookSnapshot:
+    def get_snapshot(
+        self,
+        base_file: str,
+        *,
+        context: GenerationContext | None = None,
+        profile: CustomerProfile | None = None,
+    ) -> WorkbookSnapshot:
         """获取 base 文件的缓存快照。签名不匹配时自动重建。"""
-        key = _normalize_path(base_file)
-        signature = FileSignature.from_file(key)
+        normalized_path = _normalize_path(base_file)
+        active_profile = profile or (context.profile if context is not None else None)
+        active_profile = active_profile or current_profile() or default_profile_registry().default
+        if (
+            context is not None
+            and context.base_path.expanduser().resolve() != Path(normalized_path).resolve()
+        ):
+            raise ValueError("GenerationContext.base_file 与缓存请求的 base_file 不一致")
+        active_context = context or GenerationContext(
+            profile=active_profile,
+            base_file=Path(normalized_path),
+        )
+        key = (active_profile.profile_id, normalized_path)
+        signature = FileSignature.from_file(normalized_path)
 
         # 快速路径：缓存命中
         with self._lock:
@@ -76,7 +96,7 @@ class WorkbookCacheManager:
                     cached.touch()
                     return cached.snapshot
 
-            snapshot = build_workbook_snapshot(key)
+            snapshot = build_workbook_snapshot(normalized_path, context=active_context)
 
             with self._lock:
                 self._cache[key] = _CachedEntry(
@@ -85,20 +105,31 @@ class WorkbookCacheManager:
                 )
                 return snapshot
 
-    def invalidate(self, base_file: str) -> None:
+    def invalidate(
+        self,
+        base_file: str,
+        *,
+        profile: CustomerProfile | None = None,
+    ) -> None:
         """显式失效指定 base 文件的缓存。"""
-        key = _normalize_path(base_file)
+        normalized_path = _normalize_path(base_file)
         with self._lock:
-            self._cache.pop(key, None)
-            self._build_locks.pop(key, None)
+            if profile is None:
+                keys = [key for key in self._cache if key[1] == normalized_path]
+            else:
+                keys = [(profile.profile_id, normalized_path)]
+            for key in keys:
+                self._cache.pop(key, None)
+                self._build_locks.pop(key, None)
 
     def get_info(self) -> dict[str, object]:
         """返回缓存状态信息，用于调试。不修改任何状态。"""
         with self._lock:
             entries = []
-            for key, entry in self._cache.items():
+            for (profile_id, key), entry in self._cache.items():
                 entries.append(
                     {
+                        "profile_id": profile_id,
                         "base_file": key,
                         "file_size": entry.signature.size,
                         "po_count": len(entry.snapshot.po_index),

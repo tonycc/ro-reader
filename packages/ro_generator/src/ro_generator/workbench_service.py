@@ -17,6 +17,7 @@ from ro_generator.errors import WorkbookOpenError
 from ro_generator.generator import export_invoice_group_from_snapshot, generate
 from ro_generator.models import DocumentRequest, DocumentType, GenerationResult, ValidationMessage
 from ro_generator.packager import build_invoice_group_zip_filename, build_zip_filename, package_zip
+from ro_generator.profiles import GenerationContext
 from ro_generator.resolver import resolve_po_rows
 from ro_generator.workbook_cache import get_cache_manager
 from ro_generator.workbook_snapshot import BuildSnapshotError, PoInspection, WorkbookSnapshot
@@ -78,11 +79,15 @@ def _normalize_formats(formats: tuple[ExportFormat, ...]) -> tuple[ExportFormat,
     return ordered or ("xlsx",)
 
 
-def inspect_workbook(base_file: str) -> WorkbookInspectionResult:
+def inspect_workbook(
+    base_file: str,
+    *,
+    context: GenerationContext | None = None,
+) -> WorkbookInspectionResult:
     """返回 PO 列表和状态摘要。优先复用缓存。"""
     try:
         cache = get_cache_manager()
-        snapshot = cache.get_snapshot(base_file)
+        snapshot = cache.get_snapshot(base_file, context=context)
         return WorkbookInspectionResult(ok=True, po_list=snapshot.po_summary)
     except (WorkbookOpenError, BuildSnapshotError, OSError) as exc:
         msg = str(exc)
@@ -97,13 +102,18 @@ def inspect_workbook(base_file: str) -> WorkbookInspectionResult:
         )
 
 
-def get_po_data(base_file: str, po_no: str) -> dict[str, object]:
+def get_po_data(
+    base_file: str,
+    po_no: str,
+    *,
+    context: GenerationContext | None = None,
+) -> dict[str, object]:
     """返回指定 PO 的行数据和表头。优先复用缓存。
 
     返回 {"po_no": str, "headers": list, "rows": list}。
     """
     cache = get_cache_manager()
-    snapshot = cache.get_snapshot(base_file)
+    snapshot = cache.get_snapshot(base_file, context=context)
     rows = snapshot.po_rows_for_po(po_no)
     return {
         "po_no": po_no,
@@ -112,14 +122,19 @@ def get_po_data(base_file: str, po_no: str) -> dict[str, object]:
     }
 
 
-def get_customer_po_data(base_file: str, po_no: str) -> dict[str, object]:
+def get_customer_po_data(
+    base_file: str,
+    po_no: str,
+    *,
+    context: GenerationContext | None = None,
+) -> dict[str, object]:
     """返回指定 PO 号对应的客户PO数据。优先复用缓存。
 
     客户PO sheet 按 Purchasing Document 索引，PO record 的 PO NO. 列
     就是客户PO 的 Purchasing Document。
     """
     cache = get_cache_manager()
-    snapshot = cache.get_snapshot(base_file)
+    snapshot = cache.get_snapshot(base_file, context=context)
     rows = snapshot.customer_po_rows_for_po(po_no)
     return {
         "po_no": po_no,
@@ -140,13 +155,18 @@ def _message_to_dict(message: ValidationMessage) -> dict[str, object]:
     }
 
 
-def get_po_issues(base_file: str, po_no: str) -> dict[str, object]:
+def get_po_issues(
+    base_file: str,
+    po_no: str,
+    *,
+    context: GenerationContext | None = None,
+) -> dict[str, object]:
     """返回指定 PO 的阻断和警告明细。
 
     与 PO 列表状态使用同一条 resolver 路径，避免工作台前端/API 层重复业务判断。
     """
     cache = get_cache_manager()
-    snapshot = cache.get_snapshot(base_file)
+    snapshot = cache.get_snapshot(base_file, context=context)
     rows = snapshot.po_rows_for_po(po_no)
     customer_rows = snapshot.customer_po_rows_for_po(po_no)
     result = resolve_po_rows(
@@ -154,6 +174,7 @@ def get_po_issues(base_file: str, po_no: str) -> dict[str, object]:
         snapshot.product_index,
         po_no=po_no,
         customer_po_rows=customer_rows,
+        profile=context.profile if context is not None else None,
     )
     blocking = [m for m in result.messages if m.kind == "blocking_error"]
     warnings = [m for m in result.messages if m.kind == "warning"]
@@ -173,6 +194,7 @@ def export_document_groups(
     output_dir: str,
     groups: tuple[ExportDocumentGroup, ...],
     formats: tuple[ExportFormat, ...] = ("xlsx",),
+    context: GenerationContext | None = None,
 ) -> GenerationResult:
     """按主体批量导出，并把所有可生成文件合并成一个 ZIP。
 
@@ -211,7 +233,7 @@ def export_document_groups(
                 output_format=output_format,
                 output_dir=str(group_dir),
             )
-            result = generate(request)
+            result = generate(request, context=context)
             warnings.extend(result.warnings)
 
             if result.status != "success":
@@ -274,6 +296,7 @@ def export_invoice_document_groups(
     groups: tuple[ExportDocumentGroup, ...],
     output_dir: str,
     formats: tuple[ExportFormat, ...] = ("xlsx",),
+    context: GenerationContext | None = None,
 ) -> GenerationResult:
     """批量导出票据组下多个 seller 的单据，多文件时打包为 ZIP。
 
@@ -309,6 +332,7 @@ def export_invoice_document_groups(
                 documents=group.documents,
                 output_dir=str(group_dir),
                 output_format=output_format,
+                context=context,
             )
             all_warnings.extend(result.warnings)
             if result.status != "success":

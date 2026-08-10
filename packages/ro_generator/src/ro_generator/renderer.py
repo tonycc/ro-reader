@@ -33,8 +33,8 @@ from openpyxl.worksheet.worksheet import Worksheet
 from ro_generator.document_model import DocumentLine, DocumentModel
 from ro_generator.errors import InternalError, TemplateError
 from ro_generator.header_rules import (
-    HEADER_DATE_KEYS,
     build_header_resolved_values,
+    is_system_generated_header_field,
     resolve_header_field_spec,
 )
 from ro_generator.line_rules import (
@@ -44,6 +44,7 @@ from ro_generator.line_rules import (
     resolve_line_field_spec,
     uses_po_record_row,
 )
+from ro_generator.profiles.runtime import current_schema
 from ro_generator.schema import SHEET_PO_RECORD
 from ro_generator.source_index import SourceIndex, SourceIndexBuilder, SourceLocation
 from ro_generator.template_mapping import LineColumns, TemplateMapping, iter_line_columns
@@ -160,6 +161,7 @@ def _render_into_workbook(
     _write_styles(ws, mapping)
     _write_header(ws, model, mapping, builder)
     row_offset = _write_lines_and_totals(ws, model, mapping, builder)
+    _write_cost_breakdown(ws, model, mapping, row_offset, builder)
     _write_notes(ws, model, mapping, row_offset, builder)
 
 
@@ -237,14 +239,14 @@ def _write_header(
 
     for mkey, cell_addr in mapping.header.items():
         value = resolved_values.get(mkey)
+        spec = resolve_header_field_spec(
+            mkey,
+            seller=model.seller,
+            document_type=model.document_type,
+        )
         if value is not None:
             _safe_set_cell(ws, cell_addr, value)
             written_addrs.add(cell_addr)
-            spec = resolve_header_field_spec(
-                mkey,
-                seller=model.seller,
-                document_type=model.document_type,
-            )
             if (
                 mkey not in mapping.header_fixed
                 and spec is not None
@@ -256,13 +258,25 @@ def _write_header(
                     cell_addr,
                     SourceLocation(sheet=sheet, row=None, field=field),
                 )
+            elif (
+                mkey not in mapping.header_fixed
+                and spec is not None
+                and spec.source_type not in {"template_content", "base_field"}
+            ):
+                builder.add_computed(cell_addr, mkey)
             continue
-        if mkey in HEADER_DATE_KEYS:
+        if is_system_generated_header_field(
+            mkey,
+            seller=model.seller,
+            document_type=model.document_type,
+        ):
             # 写入日期字符串。openpyxl 写 date 对象会把值序列化为 Excel 数字，
             # 而 SheetJS 预览读到的 raw value 仍是数字而非格式化日期。
             # 直接用字符串确保浏览器端显示为人类可读日期。
             _safe_set_cell(ws, cell_addr, date.today().strftime("%Y-%m-%d"))
-        elif mkey in _PRESERVE_HEADER_KEYS:
+        elif mkey in _PRESERVE_HEADER_KEYS and (
+            mkey in mapping.header_fixed or spec is None or spec.source_type == "template_content"
+        ):
             pass  # 保留模板原值
         else:
             # 清除模板样本值（如样本日期、注释占位符）
@@ -443,6 +457,8 @@ def _write_data_row(
             continue
 
         source_field = spec.source_field or key
+        if key == "quantity" and doc_line.quantity_source_field:
+            source_field = doc_line.quantity_source_field
         source_sheet = spec.source_sheet or SHEET_PO_RECORD
 
         # — skip_if_none：空值跳过（PL 专属装箱字段）
@@ -490,6 +506,20 @@ def _write_totals(
             ws[cell_addr] = date.today().strftime("%Y-%m-%d")
             builder.add_computed(cell_addr, f"totals.{field_name}")
             continue
+        if total_cell.value_mode == "model_date":
+            if model.document_date is None:
+                continue
+            ws[cell_addr] = model.document_date.strftime("%Y-%m-%d")
+            schema = current_schema()
+            builder.add(
+                cell_addr,
+                SourceLocation(
+                    sheet=schema.sheet("客户PO").name,
+                    row=None,
+                    field=schema.field("客户PO", "document_date"),
+                ),
+            )
+            continue
         total_spec = total_spec_for_mapping_key(field_name)
         if total_spec is None:
             continue
@@ -500,6 +530,110 @@ def _write_totals(
                 ws[cell_addr].number_format = USD_NUMBER_FORMAT
             # 合计是工作台计算得出，不指向某一行
             builder.add_computed(cell_addr, total_spec.preview_key)
+
+
+def _write_cost_breakdown(
+    ws: Worksheet,
+    model: DocumentModel,
+    mapping: TemplateMapping,
+    row_offset: int,
+    builder: SourceIndexBuilder,
+) -> None:
+    """写入可选的 Combo RODS/REELS 成本拆分表。"""
+
+    section = mapping.cost_breakdown
+    if section is None:
+        return
+
+    start_row = section.start_row + row_offset
+    style_source_row = section.style_source_row + row_offset
+    reserved_rows = section.reserved_rows
+    columns = section.columns
+
+    def clear_row(row: int) -> None:
+        for column in columns.values():
+            ws[f"{column}{row}"] = None
+
+    for offset in range(reserved_rows):
+        clear_row(start_row + offset)
+
+    insertion_count = max(0, len(model.cost_breakdown) - reserved_rows)
+    insert_at = start_row + reserved_rows
+    for _ in range(insertion_count):
+        _insert_styled_row(ws, insert_at, style_src=style_source_row)
+
+    schema = current_schema()
+    identity_fields = {
+        "po_no": (schema.sheet("PO record").name, schema.field("PO record", "po_no")),
+        "item_line_no": (
+            schema.sheet("PO record").name,
+            schema.field("PO record", "item_line"),
+        ),
+        "item_number": (schema.sheet("PO record").name, schema.field("PO record", "sap")),
+        "description": (
+            schema.sheet("PO record").name,
+            schema.field("PO record", "description"),
+        ),
+    }
+    for index, line in enumerate(model.cost_breakdown):
+        row = start_row + index
+        values = {
+            "po_no": line.po_no,
+            "item_line_no": line.item_line_no,
+            "item_number": line.item_number,
+            "description": line.description,
+            "unit_price": line.unit_price,
+        }
+        for key, column in columns.items():
+            value = values.get(key)
+            if value is None:
+                continue
+            cell = ws[f"{column}{row}"]
+            if key == "unit_price":
+                _write_line_cell(
+                    cell,
+                    value,
+                    LineFieldSpec(
+                        rule=f'DATA BASE 的 "{line.source_field}" 列',
+                        source_sheet=schema.sheet("DATA BASE").name,
+                        source_field=line.source_field,
+                        display_decimal_places=2,
+                        display_prefix="$",
+                    ),
+                )
+            else:
+                cell.value = cast(Any, value)
+
+            if key in identity_fields:
+                source_sheet, source_field = identity_fields[key]
+                builder.add(
+                    f"{column}{row}",
+                    SourceLocation(
+                        sheet=source_sheet,
+                        row=line.source_row,
+                        field=source_field,
+                    ),
+                )
+            elif key == "description":
+                builder.add(
+                    f"{column}{row}",
+                    SourceLocation(
+                        sheet=schema.sheet("PO record").name,
+                        row=line.source_row,
+                        field=schema.field("PO record", "description"),
+                    ),
+                )
+            elif key == "unit_price":
+                builder.add(
+                    f"{column}{row}",
+                    SourceLocation(
+                        sheet=schema.sheet("DATA BASE").name,
+                        row=None,
+                        field=line.source_field or "component_price",
+                    ),
+                )
+
+        # 组件标识是由 Profile 规则生成的说明，不再额外写入模板列。
 
 
 def _write_notes(
@@ -568,8 +702,10 @@ def _insert_styled_row(ws: Worksheet, insert_at: int, style_src: int) -> None:
     # 2. openpyxl 处理单元格内容、公式、合并区域的下移
     ws.insert_rows(insert_at)
 
-    # 3. 把样板行样式复制到新行
-    _copy_row_style(ws, src_row=style_src, dst_row=insert_at, max_col=ws.max_column)
+    # 3. 把样板行样式复制到新行。style_source_row 位于插入点之后时，
+    # openpyxl 已将它下移一行；必须使用下移后的行，否则会复制到新空行的默认样式。
+    style_src_after_insert = style_src + 1 if style_src >= insert_at else style_src
+    _copy_row_style(ws, src_row=style_src_after_insert, dst_row=insert_at, max_col=ws.max_column)
 
 
 def _normalize_reserved_row_styles(

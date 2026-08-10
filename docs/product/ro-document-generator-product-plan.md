@@ -1,14 +1,14 @@
 # RO 单据工作台产品说明
 
-> 状态：当前实现基准，最近核对于 2026-08-07。
+> 状态：当前实现基准，最近核对于 2026-08-08。
 
 ## 1. 产品概述
 
-RO 单据工作台是面向 RO 订单业务的本地单据装配工具。它把 Excel 数据检查、单据预览和导出放在同一个工作空间中，减少人工查表和复制。
+RO 单据工作台是支持 Customer Profile 的本地单据装配工具，当前内置 `ro` 和 `pf`。它把 Excel 数据检查、单据预览和导出放在同一个工作空间中，减少人工查表和复制。
 
 对外的核心业务单据是 PI、PO、Invoice 和 Packing List；核心包还使用 `CI`、`RO_PL` 表示 SK/YM 的 RO 版商业发票和装箱单。
 
-工作台不是编号生成器。`INV#`、`SK/YM INVOICE NO.`、SK/YM PI 编号和业务日期必须来自 base 文件或人工维护，工具不得自动编造。
+工作台不是编号生成器。`INV#`、`SK/YM INVOICE NO.`、SK/YM PI 编号和业务日期必须来自当前 Profile 的 base 文件或人工维护，工具不得自动编造。
 
 ## 2. 解决的问题
 
@@ -49,11 +49,17 @@ SK → YM → GS PTE → EMAX PTE → PF
 
 SK/YM 不提供 PO 模板。
 
+上表是 RO Profile 的完整能力矩阵。PF Profile 复用同一贸易链，GS PTE/EMAX PTE 支持 PI、PO、INVOICE、PL，SK/YM 仅支持 PI。这里的 `PF` 既可能表示 RO 链段中的最终买方，也可能表示机器 ID 为 `pf` 的 Customer Profile，两者不得混用。
+
 ## 4. 体验原则
 
 ### 4.1 先预览，再导出
 
 预览展示的是核心包装配后的领域值和模板展示配置。导出只是把已经检查过的结果写入模板，不应再引入新的业务计算。
+
+单据标题、出具方抬头和 header 标签以当前 Excel 模板为事实源：mapping 用 `preview_content.template_fields` 引用固定文本单元格，用 `layout` 声明展示区域，loader 从 header 值单元格所在行读取模板标签。空白但已映射的日期或业务字段在预览中保留空白横线。前端不复制客户、主体或单据专属抬头。
+
+明细列的选择和顺序由 mapping 的 `preview_content.column_labels` 键决定，显示文案则在 mapping 加载时直接读取实际 Excel 的 `table_header_row`。多行表头保留换行，模板中的空白子列也保持空白，前端不得另写一套列名。
 
 ### 4.2 在源数据处解决错误
 
@@ -85,6 +91,10 @@ base 文件、缓存、临时导出和 PDF 转换都在用户机器上完成。�
 - YAML 模板 mapping、模板引用校验和超行插入。
 - CLI、FastAPI、本地浏览器工作台和 PyInstaller 启动器。
 - macOS/Windows CI 构建。
+- 可配置多个工作区并从顶部切换；session、缓存和资产按 `profile_id` 隔离。
+- PF Profile 的独立 schema、模板和规则。
+- PF 客户订单 MOQ/整箱 high warning。
+- PF 客户 PO 先行流程：订单未进入 `PO RECORD 26` 时仍可检查并生成 PI/PO。
 
 ### 5.2 当前不支持
 
@@ -160,8 +170,8 @@ base 文件、缓存、临时导出和 PDF 转换都在用户机器上完成。�
 ### 8.3 单据预览
 
 - PO 视角只承载 PI/PO。
-- Invoice 视角承载 INVOICE/PL 和 SK/YM 的 CI/RO_PL。
-- INVOICE+PL、CI+RO_PL 可以连续预览。
+- Invoice 视角承载 RO 的 INVOICE/PL 和 SK/YM 的 CI/RO_PL；PF 的 Invoice 与 PL 分别进入独立预览页。
+- RO 的 INVOICE+PL、CI+RO_PL 可以连续预览。
 - 点击预览字段展示来源详情。
 
 ### 8.4 导出确认
@@ -170,15 +180,14 @@ base 文件、缓存、临时导出和 PDF 转换都在用户机器上完成。�
 
 ## 9. 数据源
 
-base workbook 有三张必需 Sheet：
+每个 Profile 的 base workbook 都有三张逻辑 Sheet，实际名称和行号由各自 schema 声明：
 
-| Sheet | 表头行 | 首行数据 | 作用 |
-| --- | ---: | ---: | --- |
-| `DATA BASE` | 4 | 5 | 产品、分类、主体价格和包装主数据 |
-| `PO record` | 4 | 5 | PO、出货、发票、箱数和物流数据 |
-| `客户PO` | 1 | 2 | 客户订单数量、行号、日期、收货和制造商信息 |
+| Profile | 产品主数据 | PO/出货记录 | 客户订单 |
+| --- | --- | --- | --- |
+| RO | `DATA BASE`（4/5） | `PO record`（4/5） | `客户PO`（1/2） |
+| PF | `DATA BASE TEMPLATE`（2/3） | `PO RECORD 26`（1/2） | `new PO template`（1/2） |
 
-字段名称和别名以 `templates/base_schema.yaml` 为准。
+括号内为“表头行/首行数据”。字段名称和别名以 `customer_profiles/<profile_id>/base_schema.yaml` 为准。
 
 主要关联：
 
@@ -192,7 +201,7 @@ PO record.SAP Number ↔ DATA BASE.SAP
 
 ### 10.1 主体和价格
 
-- Category 1/2 → YM；Category 3 → SK。
+- RO Category 1/2 → YM、3 → SK；PF 的 Combo/Single Rod/Single Reel 归一为 1/2/3 后使用同一主体过滤。
 - 价格按单据上下文、seller 和 Category 从 `DATA BASE` 价格矩阵读取。
 - 价格列配置位于 `base_schema.yaml`；字段来源展示由 `line_rules.py` 生成。
 - 缺价格时核心包以高严重度 warning 标记，并使用 0 继续构建供用户复核。
@@ -200,14 +209,14 @@ PO record.SAP Number ↔ DATA BASE.SAP
 ### 10.2 数量
 
 - PI/PO：`客户PO.Order Quantity`。
-- INVOICE/PL/CI/RO_PL：`PO record.SHIP QTY`。
-- 票据组只纳入 `SHIP QTY > 0` 的行。
+- RO INVOICE/PL/CI/RO_PL：`PO record.SHIP QTY`。
+- PF INVOICE/PL：根据 `INV#` 中的 YYMM 读取 `PO RECORD 26` 的 `2601`–`2612` 月度数量列。
+- 票据组只纳入当前 Profile 出货数量大于 0 的行。
 
 ### 10.3 发票号
 
-- SK/YM：`SK/YM INVOICE NO.`。
-- GS PTE：`INV#`。
-- EMAX PTE：展示/导出为 `INV#-P`，输入过滤兼容未加后缀的原值。
+- RO SK/YM：`SK/YM INVOICE NO.`；GS PTE：`INV#`；EMAX PTE：展示/导出为 `INV#-P`。
+- PF GS/EMAX：保持 `INV#` 原值，不追加 RO 后缀。
 
 ### 10.4 票据组
 
@@ -218,7 +227,8 @@ PO record.SAP Number ↔ DATA BASE.SAP
 - `amount = quantity × unit_price`
 - `CTNS = quantity / 外箱`
 - `TOTAL CBM = L × W × H / 1,000,000 × CTNS`
-- PL 行净重/毛重 = 单箱重量 × CTNS
+- RO PL 行净重/毛重 = 单箱重量 × CTNS。
+- PF PL 以月度出货数量计算 CTNS，按 PO record 原订单总量折算净重/毛重，并按尺寸计算 CBM。
 - 合计由 `DocumentModel` 计算，金额使用 `Decimal`
 
 当 Excel 公式的缓存值为 `None` 时，resolver 按规则回退计算并产生 `FORMULA_FALLBACK` 警告。
@@ -231,7 +241,7 @@ PO record.SAP Number ↔ DATA BASE.SAP
 | `warning` | 可继续但需要复核，严重度为 high/low | 是 |
 | `missing_inputs` | 存在多个合法候选，需要选择 | 否，选择后重试 |
 
-结构校验覆盖三张 Sheet 和最小必需表头。行级校验覆盖 PO、SAP、客户订单数量、主体行、发票号和模板 mapping。
+结构校验覆盖当前 Profile 的三张 Sheet 和最小必需表头。行级校验覆盖 PO、SAP、客户订单数量、主体行、发票号和模板 mapping。PF 额外返回 `MOQ_NOT_MET`、`FULL_CARTON_NOT_MET` high warning；同一 PO 的相同 SAP 先聚合再检查。
 
 机器可识别的错误 code 属于接口契约，不能为了文案调整随意改名。
 
@@ -266,7 +276,7 @@ RO-INV-001.zip
 
 ### 12.3 CLI 交付
 
-CLI 写入 `--output-dir`，支持 `overwrite`、`rename`、`abort` 冲突策略，以及 `xlsx`/`zip` 输出。
+CLI 写入 `--output-dir`，支持 `overwrite`、`rename`、`abort` 冲突策略，以及 `xlsx`/`zip` 输出。`--profile` 可显式选择 Customer Profile，缺省为 `ro`；CLI 不读取 GUI 工作区状态。
 
 ### 12.4 PDF
 
@@ -274,16 +284,14 @@ PDF 复用 Excel renderer：先写模板，再调用 LibreOffice `soffice --head
 
 ## 13. 模板策略
 
-当前有 12 个 workbook 和 18 份 mapping：
+当前两个 Profile 共 22 个 workbook 和 28 份 mapping：
 
-| 主体 | workbook | mapping |
+| Profile | workbook | mapping |
 | --- | ---: | ---: |
-| GS PTE | 3 | 4 |
-| EMAX PTE | 3 | 4 |
-| SK | 3 | 5 |
-| YM | 3 | 5 |
+| RO | 12 | 18 |
+| PF | 10 | 10 |
 
-Invoice 与 PL、CI 与 RO_PL 分别共享双 Sheet workbook，但各自使用独立 mapping。
+RO 的 Invoice 与 PL、CI 与 RO_PL 分别共享双 Sheet workbook，但各自使用独立 mapping。PF 的 Invoice 与 PL 使用不同 workbook，预览分别进入独立页面，组合导出时分别渲染并打 ZIP。
 
 mapping 必须声明模板、Sheet、`template_version`、header、明细起始行、样式来源行、列和合计位置。模板修改必须同时更新 mapping 与回归测试。
 
@@ -294,7 +302,7 @@ mapping 必须声明模板、Sheet、`template_version`、header、明细起始�
 - E2E CI 安装 LibreOffice，覆盖真实 PDF 下载路径。
 - macOS/Windows 启动器由独立 CI workflow 构建。
 
-截至 2026-08-07，Python 套件通过 465 个测试，Playwright 文件包含 23 个场景。
+截至 2026-08-09，Python 套件通过 531 个测试，默认 Playwright 回归包含 29 个场景，另有 1 个隔离真实 HTTP 验收场景。
 
 ## 15. 已知限制与风险
 
@@ -304,10 +312,16 @@ mapping 必须声明模板、Sheet、`template_version`、header、明细起始�
 - 模板和 mapping 必须人工同步。
 - 真实业务文件不入库，自动测试主要依赖合成 fixture。
 - 包版本分别存在于构建 workflow、Python manifest、FastAPI metadata 和前端界面，发布时需要统一核对。
+- PF Invoice 的 cost breakdown 预留区尚无批准的数据来源，当前保持空白，不自动推导。
+- PF 新 PO 在进入 `PO RECORD 26` 前只支持 PI/PO；有月度出货记录后才进入 Invoice/PL 票据组。
 
 ## 16. 后续路线
 
-以下均未实现，只有真实需求确认后再立项：
+已实现：
+
+- [多客户工作区](multi-customer-workspace-design.md)：本地单用户模式，通过 Customer Profile 隔离客户规则和资产，通过顶部工作区切换器选择当前客户/base 文件；`ro` 与 `pf` 已可用。实施记录见[多客户工作区实施方案](../development/multi-customer-workspace-implementation-plan.md)。
+
+以下候选能力尚未确认，只有真实需求确认后再立项：
 
 - 撤销/重做和导出版本历史。
 - 模板预览/诊断工具。

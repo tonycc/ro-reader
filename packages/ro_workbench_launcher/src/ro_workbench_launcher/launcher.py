@@ -38,6 +38,15 @@ def _find_frontend_dist() -> str:
     return ""
 
 
+def _find_tray_icon() -> Path | None:
+    """查找开发态或 PyInstaller 打包态的托盘图标。"""
+    candidates = (
+        _resource_root() / "resources" / "tray-icon.png",
+        Path(__file__).resolve().parents[2] / "resources" / "tray-icon.png",
+    )
+    return next((candidate for candidate in candidates if candidate.is_file()), None)
+
+
 def _find_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
@@ -117,9 +126,22 @@ def _run_tray(port: int) -> None:
         _shutdown_requested.set()
         return
 
-    img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    draw.rounded_rectangle((2, 2, 14, 14), radius=3, fill=(37, 99, 235))
+    icon_path = _find_tray_icon()
+    if icon_path is not None:
+        try:
+            with Image.open(icon_path) as source:
+                img = source.convert("RGBA")
+        except OSError as exc:
+            print(f"托盘图标加载失败（{icon_path}）：{exc}，使用内置图标", file=sys.stderr)
+            img = None
+    else:
+        print("找不到托盘图标资源，使用内置图标", file=sys.stderr)
+        img = None
+
+    if img is None:
+        img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        draw.rounded_rectangle((2, 2, 14, 14), radius=3, fill=(37, 99, 235))
 
     def on_quit(icon: pystray.Icon) -> None:
         icon.stop()

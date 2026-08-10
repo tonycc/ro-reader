@@ -1,13 +1,21 @@
 import { test, expect } from "@playwright/test";
+import { copyFile, mkdir } from "node:fs/promises";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const BASE_FILE = "tests/fixtures/synthetic_base.xlsx";
+const SOURCE_BASE_FILE = fileURLToPath(
+  new URL("../../tests/fixtures/synthetic_base.xlsx", import.meta.url),
+);
 
 /** Set base file path via window hook (bypasses prompt() for headless E2E). */
 async function openBaseFile(page: import("@playwright/test").Page) {
+  const baseFile = test.info().outputPath("synthetic_base.xlsx");
+  await mkdir(dirname(baseFile), { recursive: true });
+  await copyFile(SOURCE_BASE_FILE, baseFile);
   await page.goto("/");
   await page.evaluate(
     (path) => (window as any).__workbench__?.openSession(path),
-    BASE_FILE,
+    baseFile,
   );
   await page.waitForTimeout(2000);
 }
@@ -132,8 +140,19 @@ test.describe("RO Workbench E2E", () => {
     const title = page.locator(".top-right h1");
     await expect(title).toBeVisible({ timeout: 5000 });
 
-    // Should show seller/buyer/PO info
-    await expect(page.getByRole("row", { name: /PI # 4500099999/ })).toBeVisible();
+    // The structured header uses the exact label from the Excel template.
+    await expect(page.getByRole("row", { name: /PI Number: 4500099999/ })).toBeVisible();
+  });
+
+  test("PI preview header matches its Excel template", async ({ page }) => {
+    await openBaseFile(page);
+    await page.locator(".po-card").filter({ hasText: "4500099999" }).click();
+    await page.locator(".tab").filter({ hasText: "单据预览" }).click();
+    await selectGsSeller(page);
+    await selectPiDocument(page);
+    await expect(page.locator(".lines-table th").first()).toHaveText(
+      "Country of The Origin",
+    );
   });
 
   test("PO preview defaults to PI and never offers Invoice PL quick export", async ({ page }) => {
@@ -414,6 +433,68 @@ test.describe("RO Workbench E2E", () => {
     await expect(warningPanel).toBeVisible();
     await page.mouse.click(1000, 760);
     await expect(warningPanel).toBeHidden();
+  });
+
+  test("PF MOQ and full-carton reminders are visible in data check", async ({ page }) => {
+    await page.route("**/api/po/*/issues?*", async (route) => {
+      const response = await route.fetch();
+      const data = await response.json();
+      data.warnings_count = 2;
+      data.warnings = [
+        {
+          kind: "warning",
+          code: "MOQ_NOT_MET",
+          message: "SAP 10001 的客户订单数量 90 低于 MOQ 100，请确认是否调整订单数量",
+          sheet: "new PO template",
+          row: 2,
+          field: "Order Quantity",
+          severity: "high",
+        },
+        {
+          kind: "warning",
+          code: "FULL_CARTON_NOT_MET",
+          message: "SAP 10001 的客户订单数量 90 不是整箱数量 24 的整数倍（余数 18），请确认装箱安排",
+          sheet: "new PO template",
+          row: 2,
+          field: "Order Quantity",
+          severity: "high",
+        },
+      ];
+      await route.fulfill({ response, json: data });
+    });
+
+    await openBaseFile(page);
+    await page.locator(".po-card").filter({ hasText: "4500099999" }).click();
+    const warningBadge = page.locator(".issue-badge.fix");
+    await expect(warningBadge).toContainText("2 项警告");
+    await warningBadge.click();
+
+    const warningPanel = page.locator(".data-warning-panel");
+    await expect(warningPanel).toContainText("低于 MOQ 100");
+    await expect(warningPanel).toContainText("不是整箱数量 24 的整数倍");
+    await expect(warningPanel).toContainText("new PO template / row 2 / Order Quantity");
+    await expect(warningPanel).toContainText("MOQ_NOT_MET");
+    await expect(warningPanel).toContainText("FULL_CARTON_NOT_MET");
+  });
+
+  test("customer-PO-only rows are shown as read-only projections", async ({ page }) => {
+    await page.route("**/api/po/4500099999?*", async (route) => {
+      await route.fulfill({
+        json: {
+          po_no: "4500099999",
+          headers: ["PO NO.", "SAP Number", "DESCRIPTION"],
+          rows: [{ "PO NO.": "4500099999", "SAP Number": "10001", DESCRIPTION: "PF test item" }],
+        },
+      });
+    });
+
+    await openBaseFile(page);
+    await page.locator(".po-card").filter({ hasText: "4500099999" }).click();
+
+    await expect(page.locator(".projection-note")).toContainText("客户订单只读投影");
+    await expect(page.locator(".data-table tbody .row-num")).toHaveText("—");
+    await page.locator(".data-table tbody td").nth(1).dblclick();
+    await expect(page.getByTestId("cell-edit-input")).toHaveCount(0);
   });
 
   test("invoice and PL previews render together in combined tab", async ({ page }) => {

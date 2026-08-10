@@ -49,7 +49,7 @@ function selectWorkflowTab(tab: "check" | "preview" | "export") {
 .app {
   height: 100vh;
   display: grid;
-  grid-template-rows: 56px minmax(0, 1fr) 30px;
+  grid-template-rows: auto minmax(0, 1fr) 30px;
   font-family: var(--sans);
   font-size: 13px;
   color: var(--text);
@@ -98,5 +98,13 @@ function selectWorkflowTab(tab: "check" | "preview" | "export") {
 .content {
   min-height: 0;
   overflow: auto;
+}
+
+@media (max-width: 900px) {
+  .workspace { grid-template-columns: 240px minmax(0, 1fr); }
+}
+@media (max-width: 560px) {
+  .workspace { grid-template-columns: minmax(0, 1fr); }
+  .workspace :deep(.queue) { display: none; }
 }
 </style>

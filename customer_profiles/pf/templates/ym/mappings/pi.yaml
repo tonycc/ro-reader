@@ -1,0 +1,88 @@
+document: PI
+template_version: pf_2026.1
+template: templates/ym/pi.xlsx
+sheet: SHEET1
+header:
+  pi_no: B6
+  etd_baseline: G6
+  incoterm: B7
+  payment_terms: B8
+  document_date: G7
+  ex_factory_date: G8
+  bill_to: B10
+  bill_to_line2: B11
+  bill_to_line3: B12
+  ship_to: G10
+  ship_to_line2: G11
+  ship_to_line3: G12
+  port_of_loading: B14
+  final_destination: B15
+  number_of_cartons: B16
+  manufacturer_code: G14
+  manufacturer: G15
+  manufacturer_address: G16
+  manufacturer_address_2: G17
+header_fixed:
+  incoterm: FOB Qingdao
+  payment_terms: Net 75 days
+  bill_to: GLOBALSINO PTE.LTD.
+  bill_to_line2: "10 KAKI BUKIT ROAD 2, #01-37, FIRST EAST CENTRE"
+  bill_to_line3: SINGAPORE 417868
+  ship_to: GLOBALSINO PTE.LTD.
+  ship_to_line2: "10 KAKI BUKIT ROAD 2, #01-37, FIRST EAST CENTRE"
+  ship_to_line3: SINGAPORE 417868
+  port_of_loading: Qingdao, China
+  final_destination: USA
+  manufacturer_code: "134102"
+  manufacturer: WEIHAI E-MAX SPORT APPARATUS CO.LTD
+  manufacturer_address: NO. 93 GRAPE BEACH ROAD
+  manufacturer_address_2: SUNJIATUAN TOWN, WEIHAI, SHANGDONG, CHINA
+table_header_row: 19
+lines:
+  start_row: 20
+  style_source_row: 20
+  row_fixed:
+    A: CHINA
+  columns:
+    po_no: B
+    item_line_no: C
+    sap: D
+    description: E
+    unit_price: F
+    quantity: G
+    amount: H
+    confirmed_ex_factory_date: I
+totals:
+  subtotal: H21
+  amount: H22
+  signature:
+    cell: G24
+    value_mode: fixed
+    value: Lily
+  signature_date:
+    cell: G25
+    value_mode: current_date
+preview_content:
+  title: PROFORMA INVOICE
+  template_fields:
+    title: A4
+    seller_info: [E1, E2]
+  terms_fields: [incoterm, payment_terms, port_of_loading, final_destination]
+  column_labels:
+    A: Country of The Origin
+    po_no: PO Number
+    item_line_no: PO item Line Number
+    sap: Item Number
+    description: Description
+    unit_price: USD Unit Price
+    quantity: Quantity
+    amount: USD Amount
+    confirmed_ex_factory_date: EX-FACTORY DATE
+  layout:
+    top:
+      left: []
+      center: [seller_info, title]
+      right: []
+    info:
+      left: [pi_no, incoterm, payment_terms, bill_to, bill_to_line2, bill_to_line3, port_of_loading, final_destination, number_of_cartons]
+      right: [etd_baseline, document_date, ex_factory_date, ship_to, ship_to_line2, ship_to_line3, manufacturer_code, manufacturer, manufacturer_address, manufacturer_address_2]

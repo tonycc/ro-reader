@@ -18,6 +18,13 @@ class TotalFieldSpec:
 
 
 TOTAL_FIELD_SPECS: Final[dict[str, TotalFieldSpec]] = {
+    "subtotal": TotalFieldSpec(
+        mapping_key="subtotal",
+        model_attr="total_amount",
+        preview_key="total_amount",
+        label="Sub-Total",
+        rule="SUM of line amounts",
+    ),
     "quantity": TotalFieldSpec(
         mapping_key="quantity",
         model_attr="total_quantity",

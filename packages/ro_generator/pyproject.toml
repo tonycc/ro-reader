@@ -1,6 +1,6 @@
 [project]
 name = "ro-generator"
-version = "0.0.0"
+version = "1.1.0"
 description = "RO 单据装配核心包：业务规则唯一源"
 requires-python = ">=3.11"
 dependencies = [

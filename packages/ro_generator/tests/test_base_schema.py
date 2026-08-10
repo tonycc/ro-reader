@@ -9,7 +9,7 @@ from ro_generator.base_schema import (
 
 
 def test_base_schema_loads_from_yaml():
-    """默认加载 templates/base_schema.yaml 成功。"""
+    """默认加载 RO Profile 的 base_schema.yaml 成功。"""
     s = base_schema()
     assert s is not None
     assert "DATA BASE" in s.sheets
