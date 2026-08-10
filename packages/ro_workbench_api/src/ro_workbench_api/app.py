@@ -65,6 +65,7 @@ from ro_generator.workbook_snapshot import (
     build_workbook_snapshot,
 )
 
+from ro_workbench_api import __version__
 from ro_workbench_api.session_manager import (
     SessionActivation,
     SessionInactiveError,
@@ -100,7 +101,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 # 生产模式（非开发模式）下 serve 前端静态资源
 FRONTEND_DIST = os.environ.get("RO_WORKBENCH_FRONTEND_DIST", "")
 
-app = FastAPI(title="RO Workbench API", version="1.1.0", lifespan=lifespan)
+app = FastAPI(title="RO Workbench API", version=__version__, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:*", "http://localhost:*"] if FRONTEND_DIST else ["*"],

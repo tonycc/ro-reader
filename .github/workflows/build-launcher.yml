@@ -9,10 +9,12 @@ on:
       - 'packages/ro_workbench_api/**'
       - 'packages/ro_generator/**'
       - 'frontend/**'
+      - 'VERSION'
+      - 'scripts/release_version.py'
+      - 'scripts/verify_release_metadata.py'
       - '.github/workflows/build-launcher.yml'
 
 env:
-  APP_VERSION: "1.1.0"
   # Opt into Node.js 24 now — GitHub will force it on 2026-06-16
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -29,6 +31,7 @@ jobs:
         with:
           version: latest
       - run: uv python install 3.11
+      - run: python scripts/release_version.py sync
       - run: uv sync --all-packages
       - run: uv run python scripts/verify_release_metadata.py
 
@@ -48,7 +51,7 @@ jobs:
       - name: Package DMG (macOS)
         if: matrix.os == 'macos-latest'
         run: |
-          V="${{ env.APP_VERSION }}"
+          V="$(python scripts/release_version.py)"
           D=$(date +"%Y-%m-%d")
           APP="dist/赛肯单据生成工具.app"
           STAGE="dist/_dmg_stage"
@@ -109,7 +112,7 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          $v = "${{ env.APP_VERSION }}"
+          $v = (python scripts/release_version.py).Trim()
           $d = Get-Date -Format "yyyy-MM-dd"
 
           # VERSION.txt

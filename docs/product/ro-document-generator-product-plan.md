@@ -311,7 +311,7 @@ mapping 必须声明模板、Sheet、`template_version`、header、明细起始�
 - LibreOffice 不随应用打包，PDF 可用性依赖本机环境。
 - 模板和 mapping 必须人工同步。
 - 真实业务文件不入库，自动测试主要依赖合成 fixture。
-- 包版本分别存在于构建 workflow、Python manifest、FastAPI metadata 和前端界面，发布时需要统一核对。
+- 产品发布版本以根目录 `VERSION` 为唯一手写源；Python 包 metadata、FastAPI、前端构建、PyInstaller 和安装包说明由同步脚本或构建流程派生。Profile、workspace schema 和模板版本仍保持独立。
 - PF Invoice 的 cost breakdown 预留区尚无批准的数据来源，当前保持空白，不自动推导。
 - PF 新 PO 在进入 `PO RECORD 26` 前只支持 PI/PO；有月度出货记录后才进入 Invoice/PL 票据组。
 

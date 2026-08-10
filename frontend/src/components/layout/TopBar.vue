@@ -15,6 +15,7 @@ const workspacePrototypeEnabled = typeof window !== "undefined"
   && import.meta.env.DEV
   && new URLSearchParams(window.location.search).get("workspace-prototype") === "1";
 const STORAGE_KEY = "ro-workbench-base-path";
+const APP_VERSION = import.meta.env.VITE_APP_VERSION;
 
 const workspaceEnabled = ref(true);
 const configuredPath = ref("");
@@ -196,9 +197,9 @@ async function loadData() {
           <div class="setting-group">
             <label>软件版本</label>
             <div class="version-info">
-              <div class="version-row"><span>RO Generator</span><code>v1.1.0</code></div>
-              <div class="version-row"><span>RO Workbench API</span><code>v1.1.0</code></div>
-              <div class="version-row"><span>前端界面</span><code>v1.1.0</code></div>
+              <div class="version-row"><span>RO Generator</span><code>v{{ APP_VERSION }}</code></div>
+              <div class="version-row"><span>RO Workbench API</span><code>v{{ APP_VERSION }}</code></div>
+              <div class="version-row"><span>前端界面</span><code>v{{ APP_VERSION }}</code></div>
             </div>
           </div>
         </div>

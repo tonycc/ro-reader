@@ -28,9 +28,18 @@ def package_version(path: str) -> str:
     return str(payload["project"]["version"])
 
 
+def release_version() -> str:
+    version = text("VERSION").strip()
+    if re.fullmatch(r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?", version) is None:
+        raise ValueError(f"VERSION 不是有效的语义版本号：{version!r}")
+    return version
+
+
 def main() -> int:
     workflow = text(".github/workflows/build-launcher.yml")
-    expected = first(r'APP_VERSION:\s*"([^"]+)"', workflow, label="APP_VERSION")
+    expected = release_version()
+    if "python scripts/release_version.py sync" not in workflow:
+        raise ValueError("CI 构建必须先同步 VERSION 派生元数据")
 
     checks: dict[str, str] = {
         "root pyproject": package_version("pyproject.toml"),
@@ -53,31 +62,39 @@ def main() -> int:
             text("packages/ro_workbench_launcher/src/ro_workbench_launcher/__init__.py"),
             label="launcher __version__",
         ),
-        "FastAPI metadata": first(
-            r'FastAPI\(title="RO Workbench API", version="([^"]+)"',
-            text("packages/ro_workbench_api/src/ro_workbench_api/app.py"),
-            label="FastAPI metadata",
-        ),
         "installer": first(
             r'#define MyAppVersion "([^"]+)"',
             text("packages/ro_workbench_launcher/installer.iss"),
             label="installer version",
         ),
-        "macOS bundle": first(
-            r'CFBundleShortVersionString": "([^"]+)"',
-            text("packages/ro_workbench_launcher/ro-workbench.spec"),
-            label="macOS bundle version",
-        ),
     }
 
-    ui_versions = re.findall(
-        r"<code>v([^<]+)</code>", text("frontend/src/components/layout/TopBar.vue")
-    )
-    if not ui_versions:
-        raise ValueError("无法读取前端设置页版本")
-    checks.update(
-        {f"frontend settings row {index}": value for index, value in enumerate(ui_versions, 1)}
-    )
+    api_source = text("packages/ro_workbench_api/src/ro_workbench_api/app.py")
+    if "from ro_workbench_api import __version__" not in api_source:
+        raise ValueError("FastAPI metadata 必须复用 ro_workbench_api.__version__")
+    if 'FastAPI(title="RO Workbench API", version=__version__' not in api_source:
+        raise ValueError("FastAPI metadata 未使用 ro_workbench_api.__version__")
+    checks["FastAPI metadata"] = expected
+
+    spec_source = text("packages/ro_workbench_launcher/ro-workbench.spec")
+    if 'APP_VERSION = (ROOT / "VERSION")' not in spec_source:
+        raise ValueError("PyInstaller spec 必须读取根目录 VERSION")
+    if '"CFBundleShortVersionString": APP_VERSION' not in spec_source:
+        raise ValueError("macOS bundle 未使用 VERSION")
+    checks["macOS bundle"] = expected
+
+    top_bar = text("frontend/src/components/layout/TopBar.vue")
+    ui_version_marker = "<code>v{{ APP_VERSION }}</code>"
+    if top_bar.count(ui_version_marker) != 3:
+        raise ValueError("前端设置页必须使用构建注入的 APP_VERSION")
+    checks["frontend settings"] = expected
+
+    vite_config = text("frontend/vite.config.ts")
+    if 'new URL("../VERSION", import.meta.url)' not in vite_config:
+        raise ValueError("Vite 必须读取根目录 VERSION")
+    if '"import.meta.env.VITE_APP_VERSION"' not in vite_config:
+        raise ValueError("Vite 未注入 VITE_APP_VERSION")
+    checks["frontend build injection"] = expected
 
     lock = text("uv.lock")
     for package in (

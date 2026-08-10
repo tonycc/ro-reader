@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(SPECPATH).parent.parent
+APP_VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
 DATAS = []
 for source, target in [
     (ROOT / "frontend" / "dist", "frontend/dist"),
@@ -102,7 +103,7 @@ if sys.platform == "darwin":
         icon=None,
         bundle_identifier="com.saiken.doctools",
         info_plist={
-            "CFBundleShortVersionString": "1.1.0",
+            "CFBundleShortVersionString": APP_VERSION,
             "CFBundleName": APP_NAME,
             "LSBackgroundOnly": "0",
             "LSUIElement": "1",

@@ -256,13 +256,15 @@ uv run mypy packages
 本地构建：
 
 ```bash
-cd frontend && pnpm run build && cd ..
+python3 scripts/release_version.py sync
+uv sync --all-packages
+cd frontend && pnpm install --frozen-lockfile && pnpm run build && cd ..
 uv run pyinstaller packages/ro_workbench_launcher/ro-workbench.spec --noconfirm
 ```
 
 启动器行为：随机端口、后台 uvicorn、30 秒健康检查、浏览器、托盘、单实例锁文件和优雅退出。
 
-CI 发布版本来自 `build-launcher.yml` 的 `APP_VERSION`。发布前同时核对该值、界面版本文本、Python/FastAPI metadata 和安装包文件名。
+发布版本唯一手写源为根目录 `VERSION`。`scripts/release_version.py sync` 将其同步到 Python 包 metadata、运行时 metadata 和 Windows 安装器；Vite 与 PyInstaller 在构建时直接读取该文件，CI 用它生成安装包文件名和用户说明。
 
 版本一致性可直接检查：
 

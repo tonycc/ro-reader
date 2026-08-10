@@ -42,6 +42,7 @@ PF Profile 使用同一贸易链，但能力矩阵为：GS PTE、EMAX PTE 支持
 ## 开发模式启动
 
 ```bash
+python3 scripts/release_version.py sync
 uv sync --all-packages
 cd frontend && pnpm install && cd ..
 
@@ -238,16 +239,80 @@ pnpm run test:e2e:http
 
 截至 2026-08-09，Python 套件收集并通过 531 个测试；默认 Playwright 回归包含 29 个场景（含单据预览表头与 Excel 模板一致性、PF MOQ/整箱提醒及客户 PO 只读投影），另有 1 个隔离真实 HTTP 验收场景。CI 分别覆盖 Python、前端/E2E，以及 macOS/Windows 启动器构建。
 
-## 桌面构建
+## 桌面构建与用户测试
+
+桌面应用使用 `packages/ro_workbench_launcher/ro-workbench.spec` 通过 PyInstaller 构建。构建机必须与目标平台一致：macOS 包在 macOS 构建，Windows 包在 Windows 构建。前置依赖为 Python 3.11+、uv、Node.js 20+ 和 pnpm 9+。
+
+### 本地构建
+
+先在仓库根目录同步依赖并构建前端：
 
 ```bash
-cd frontend && pnpm run build && cd ..
+python3 scripts/release_version.py sync
+uv sync --all-packages
+
+cd frontend
+pnpm install --frozen-lockfile
+pnpm run build
+cd ..
+
 # 发布前核对所有包、API、前端和安装包版本
 uv run python scripts/verify_release_metadata.py
-uv run pyinstaller packages/ro_workbench_launcher/ro-workbench.spec --noconfirm
+
+uv run pyinstaller \
+  packages/ro_workbench_launcher/ro-workbench.spec \
+  --distpath dist \
+  --workpath build \
+  --noconfirm
 ```
 
-CI 中的发布包版本由 `.github/workflows/build-launcher.yml` 的 `APP_VERSION` 管理。
+构建产物为：
+
+- macOS：`dist/赛肯单据生成工具.app`。可用 `open "dist/赛肯单据生成工具.app"` 启动测试；分发时建议压缩为 ZIP 或制作 DMG。
+- Windows：`dist/赛肯单据生成工具/赛肯单据生成工具.exe`。将整个文件夹一起压缩，不能只分发 `.exe`。
+
+macOS 可使用以下命令压缩 App：
+
+```bash
+VERSION="$(python3 scripts/release_version.py)"
+ditto -c -k --sequesterRsrc --keepParent \
+  "dist/赛肯单据生成工具.app" \
+  "dist/赛肯单据工具-${VERSION}-mac.zip"
+```
+
+Windows PowerShell 可使用以下命令压缩目录：
+
+```powershell
+$version = (python scripts/release_version.py).Trim()
+Compress-Archive `
+  -Path "dist\赛肯单据生成工具" `
+  -DestinationPath "dist\赛肯单据工具-$version-windows.zip" `
+  -Force
+```
+
+### CI 构建
+
+`.github/workflows/build-launcher.yml` 支持 macOS 和 Windows 矩阵构建。可在 GitHub Actions 中手动运行 `build-launcher` workflow，下载以下用户测试包：
+
+```text
+赛肯单据工具-<VERSION>-mac.dmg
+赛肯单据工具-<VERSION>-windows.zip
+```
+
+CI 生成的包内会额外放入面向用户的 `README.txt`。它由 workflow 在构建时生成，不是根目录 `README.md` 的自动副本；修改用户安装说明时需要同步检查 `.github/workflows/build-launcher.yml`。
+
+### 用户测试注意事项
+
+- 首次打开 macOS App 可能需要右键应用并选择“打开”。
+- Windows 未签名包可能触发 SmartScreen，测试时选择“更多信息 → 仍要运行”。
+- PDF 导出需要用户预装 LibreOffice；Excel 导出不依赖 LibreOffice。
+- 启动器会自动打开浏览器；如果没有打开，可访问终端提示的 `http://127.0.0.1:<端口>`。
+- 用户通过工作台选择本地 `.xlsx` base 文件，业务文件不会被打进安装包。
+- 退出应用请使用系统托盘菜单中的“退出”。
+
+当前用户测试应以 spec 命令和 CI workflow 为准；`packages/ro_workbench_launcher/build-launcher.sh` 与 `installer.iss` 仍包含旧的 `RO Workbench` 文件名，暂不作为当前发布入口。
+
+发布版本唯一手写源为根目录 `VERSION`。修改版本后执行 `python3 scripts/release_version.py sync`，再执行 `uv lock` 更新锁文件；CI 会在构建前自动同步派生元数据并读取 `VERSION` 生成安装包文件名和用户说明。
 
 ## 文档
 
