@@ -140,8 +140,111 @@ class TestInvoice:
         assert result.model is None
         assert any(m.code == CODE_NO_SHIPMENT_FOR_INVOICE for m in result.messages)
 
+    def test_invoice_unit_price_uses_current_row_po_record_price_not_data_base(self):
+        db_price = {("GS PTE", "EMAX PTE"): Decimal("32.80")}
+        first = make_order_line(
+            invoice_no="INV-01",
+            ship_qty=Decimal("10"),
+            source_row=10,
+            prices=db_price,
+            po_record_prices={("GS PTE", "EMAX PTE"): Decimal("11.00")},
+        )
+        second = make_order_line(
+            invoice_no="INV-02",
+            ship_qty=Decimal("10"),
+            source_row=25,
+            prices=db_price,
+            po_record_prices={("GS PTE", "EMAX PTE"): Decimal("30.00")},
+        )
+        inv1 = build_invoice_model(
+            (first, second),
+            seller="GS PTE",
+            buyer="EMAX PTE",
+            po_no="4500030844",
+            invoice_no="INV-01",
+        )
+        inv2 = build_invoice_model(
+            (first, second),
+            seller="GS PTE",
+            buyer="EMAX PTE",
+            po_no="4500030844",
+            invoice_no="INV-02",
+        )
+        assert inv1.model is not None
+        assert inv2.model is not None
+        assert inv1.model.lines[0].unit_price == Decimal("11.00")
+        assert inv1.model.lines[0].amount == Decimal("110.00")
+        assert inv2.model.lines[0].unit_price == Decimal("30.00")
+        assert inv2.model.lines[0].amount == Decimal("300.00")
+
+    def test_invoice_sk_and_ym_share_po_record_k_column_price(self):
+        shared = Decimal("28.00")
+        line = make_order_line(
+            invoice_no="SKYM-001",
+            ship_qty=Decimal("4"),
+            sk_ym_invoice_no="SKYM-001",
+            prices={
+                ("SK", "YM"): Decimal("99.00"),
+                ("YM", "GS PTE"): Decimal("99.00"),
+            },
+            po_record_prices={
+                ("SK", "YM"): shared,
+                ("YM", "GS PTE"): shared,
+            },
+        )
+        sk = build_invoice_model(
+            (line,), seller="SK", buyer="YM", po_no="P", invoice_no="SKYM-001"
+        )
+        ym = build_invoice_model(
+            (line,), seller="YM", buyer="GS PTE", po_no="P", invoice_no="SKYM-001"
+        )
+        assert sk.model is not None
+        assert ym.model is not None
+        assert sk.model.lines[0].unit_price == shared
+        assert ym.model.lines[0].unit_price == shared
+
+    def test_invoice_emax_uses_po_record_o_column_price(self):
+        line = make_order_line(
+            invoice_no="INV-001",
+            ship_qty=Decimal("2"),
+            prices={("EMAX PTE", "PF"): Decimal("88.80")},
+            po_record_prices={("EMAX PTE", "PF"): Decimal("38.00")},
+        )
+        result = build_invoice_model(
+            (line,), seller="EMAX PTE", buyer="PF", po_no="P", invoice_no="INV-001"
+        )
+        assert result.model is not None
+        assert result.model.lines[0].unit_price == Decimal("38.00")
+
+    def test_invoice_missing_po_record_price_warns(self):
+        line = make_order_line(
+            invoice_no="INV-001",
+            ship_qty=Decimal("10"),
+            prices={("GS PTE", "EMAX PTE"): Decimal("32.80")},
+            po_record_prices={},
+        )
+        result = build_invoice_model(
+            (line,), seller="GS PTE", buyer="EMAX PTE", po_no="P", invoice_no="INV-001"
+        )
+        assert result.model is not None
+        assert result.model.lines[0].unit_price == Decimal("0")
+        assert any(m.code == CODE_LINE_NOT_PRICED for m in result.messages)
+
 
 class TestPL:
+    def test_pl_still_uses_data_base_price_not_po_record(self):
+        line = make_order_line(
+            invoice_no="INV-001",
+            ship_qty=Decimal("50"),
+            prices={("GS PTE", "EMAX PTE"): Decimal("32.80")},
+            po_record_prices={("GS PTE", "EMAX PTE"): Decimal("11.00")},
+        )
+        result = build_pl_model(
+            (line,), seller="GS PTE", buyer="EMAX PTE", po_no="P", invoice_no="INV-001"
+        )
+        assert result.model is not None
+        assert result.model.lines[0].unit_price == Decimal("32.80")
+
     def test_pl_filters_by_invoice_no(self):
         line1 = make_order_line(item_line_no="10", invoice_no="INV-001", ship_qty=Decimal("50"))
         line2 = make_order_line(

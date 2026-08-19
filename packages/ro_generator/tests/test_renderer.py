@@ -13,6 +13,8 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font
+from openpyxl.utils import column_index_from_string
+from openpyxl.utils.cell import coordinate_from_string
 from ro_generator.document_model import (
     DocumentModel,
     build_invoice_model,
@@ -35,9 +37,18 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 RO_TEMPLATES = REPO_ROOT / "customer_profiles" / "ro" / "templates"
 GS_INVOICE_MAPPING = RO_TEMPLATES / "gs" / "mappings" / "invoice.yaml"
 GS_INVOICE_TEMPLATE = RO_TEMPLATES / "gs" / "invoice&pl.xlsx"
+SK_INVOICE_MAPPING = RO_TEMPLATES / "sk" / "mappings" / "invoice.yaml"
+SK_PL_MAPPING = RO_TEMPLATES / "sk" / "mappings" / "pl.yaml"
 EMAX_PI_MAPPING = RO_TEMPLATES / "emax" / "mappings" / "pi.yaml"
 EMAX_PO_MAPPING = RO_TEMPLATES / "emax" / "mappings" / "po.yaml"
 EMAX_PL_MAPPING = RO_TEMPLATES / "emax" / "mappings" / "pl.yaml"
+
+
+def _print_area_end(ws) -> str:
+    raw = ws.print_area
+    assert raw, "rendered sheet must declare a print area"
+    end = str(raw).split("!")[-1].replace("$", "").split(":")[-1]
+    return end
 
 
 # ————————————————————————————————————————
@@ -79,6 +90,7 @@ def make_order_line(
         confirmed_ex_factory_date=confirmed_ex_factory_date,
         po_ex_factory_date=po_ex_factory_date,
         prices=unit_prices,
+        po_record_prices=unit_prices,
         subtotals=subtotals,
         source_row=source_row,
     )
@@ -309,6 +321,40 @@ class TestRenderBasic:
         assert ws["F20"].value == 380  # 100+200+80
         # amount: 100*32.8 + 200*32.8 + 80*32.8 = 12464.00
         assert ws["H20"].value == pytest.approx(12464.0)
+
+    def test_invoice_print_layout_fits_used_content_on_one_page(self, tmp_path: Path) -> None:
+        mapping = load_template_mapping(GS_INVOICE_MAPPING)
+        model = build_three_line_invoice()
+        result = render_document(model, mapping, tmp_path / "out.xlsx")
+        wb = load_workbook(result.output_path)
+        ws = wb["INV"]
+        assert ws.sheet_properties.pageSetUpPr.fitToPage is True
+        assert ws.page_setup.fitToWidth == 1
+        assert ws.page_setup.fitToHeight == 1
+        _letter, end_row = coordinate_from_string(_print_area_end(ws))
+        assert end_row >= 20
+
+    def test_sk_invoice_print_area_includes_totals_beyond_template_sample(
+        self, tmp_path: Path
+    ) -> None:
+        mapping = load_template_mapping(SK_INVOICE_MAPPING)
+        model = build_three_line_invoice()
+        result = render_document(model, mapping, tmp_path / "out.xlsx")
+        wb = load_workbook(result.output_path)
+        ws = wb["Standard Invoice format"]
+        end = _print_area_end(ws)
+        letter, end_row = coordinate_from_string(end)
+        assert end_row >= 18
+        assert column_index_from_string(letter) >= 8
+
+    def test_sk_pl_print_area_excludes_trailing_empty_columns(self, tmp_path: Path) -> None:
+        mapping = load_template_mapping(SK_PL_MAPPING)
+        model = build_emax_pl()
+        result = render_document(model, mapping, tmp_path / "out.xlsx")
+        wb = load_workbook(result.output_path)
+        ws = wb["PL"]
+        letter, _end_row = coordinate_from_string(_print_area_end(ws))
+        assert column_index_from_string(letter) <= 14
 
     def test_emax_pi_bill_to_uses_header_fixed_yaml(self, tmp_path: Path) -> None:
         mapping = load_template_mapping(EMAX_PI_MAPPING)
@@ -722,4 +768,4 @@ class TestSourceIndex:
         assert loc is not None
         assert loc.sheet == "客户PO"
         assert loc.row is None
-        assert loc.field == "Item"
+        assert loc.field == "Material"

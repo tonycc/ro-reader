@@ -53,7 +53,8 @@ export const useWorkbench = defineStore("workbench", () => {
   const sourceIndex = ref<SourceIndexEntry[]>([]);
   const previewSourceEntries = ref<PreviewSourceEntry[]>([]);
 
-  const exporting = ref(false);
+  const exportingKind = ref<"xlsx" | "pdf" | "batch" | null>(null);
+  const exporting = computed(() => exportingKind.value !== null);
   const lastExportFile = ref("");
   const reloading = ref(false);
   // 主工作区当前激活的功能 tab，供激活失败等场景跨组件切换到数据检查。
@@ -322,7 +323,7 @@ export const useWorkbench = defineStore("workbench", () => {
     if (!baseFile.value || !selectedSeller.value) return;
     if (previewScope.value === "po" && !selectedPo.value) return;
     if (previewScope.value === "invoice" && !selectedInvoiceGroup.value) return;
-    exporting.value = true;
+    exportingKind.value = outputFormat;
     exportError.value = "";
     try {
       if (previewScope.value === "invoice") {
@@ -357,7 +358,7 @@ export const useWorkbench = defineStore("workbench", () => {
       }, outputFormat);
     } catch (e) {
       exportError.value = e instanceof ApiError ? e.message : `导出失败：${e}`;
-    } finally { exporting.value = false; }
+    } finally { exportingKind.value = null; }
   }
 
   async function doExportPdf() {
@@ -366,7 +367,7 @@ export const useWorkbench = defineStore("workbench", () => {
 
   async function doExportGroups(groups: BatchExportGroup[], formats: ExportFileFormat[] = ["xlsx"]) {
     if (!baseFile.value || !selectedPo.value || !groups.length) return;
-    exporting.value = true;
+    exportingKind.value = "batch";
     exportError.value = "";
     lastExportFile.value = "";
     try {
@@ -390,12 +391,12 @@ export const useWorkbench = defineStore("workbench", () => {
       return result;
     } catch (e) {
       exportError.value = e instanceof ApiError ? e.message : `导出失败：${e}`;
-    } finally { exporting.value = false; }
+    } finally { exportingKind.value = null; }
   }
 
   async function doExportInvoiceGroups(groups: BatchExportGroup[], formats: ExportFileFormat[] = ["xlsx"]) {
     if (!selectedInvoiceGroup.value || !groups.length) return;
-    exporting.value = true;
+    exportingKind.value = "batch";
     exportError.value = "";
     lastExportFile.value = "";
     try {
@@ -417,7 +418,7 @@ export const useWorkbench = defineStore("workbench", () => {
       return result;
     } catch (e) {
       exportError.value = e instanceof ApiError ? e.message : `导出失败：${e}`;
-    } finally { exporting.value = false; }
+    } finally { exportingKind.value = null; }
   }
 
   async function exportOneGroup(group: ExportGroup, outputFormat: "xlsx" | "pdf" = "xlsx") {
@@ -594,7 +595,7 @@ export const useWorkbench = defineStore("workbench", () => {
     selectedSeller, selectedInvoiceNo,
     invoiceOptions,
     preview, previewData, previewDocuments, previewDocType, previewLoading, sourceIndex, previewSourceEntries,
-    exporting, lastExportFile,
+    exporting, exportingKind, lastExportFile,
     reloading,
     activeTab,
     blockingErrors, warnings,

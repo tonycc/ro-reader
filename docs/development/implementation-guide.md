@@ -191,7 +191,7 @@ PDF 不是独立排版器：
 DocumentModel → renderer → .xlsx → LibreOffice → .pdf
 ```
 
-`find_soffice()` 按环境变量、PATH 和平台常见路径查找。转换使用临时 `UserInstallation`，失败转换为核心错误类型。
+`find_soffice()` 按环境变量、PATH 和平台常见路径查找。转换使用临时 `UserInstallation`，失败转换为核心错误类型。渲染后会按实际内容重设 `print_area`，并用 `fitToWidth=1` / `fitToHeight=1` 缩放到一页，避免模板样例打印区或空列导致 PDF 分页、表头切断。
 
 如果同时需要 xlsx 和 pdf，工作台服务为每种格式使用独立子目录，避免 PDF 流程删除中间 xlsx 时影响 Excel 产物。
 

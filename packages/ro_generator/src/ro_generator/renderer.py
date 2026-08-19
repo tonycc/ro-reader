@@ -26,6 +26,7 @@ from typing import Any, Final, cast
 from openpyxl import load_workbook
 from openpyxl.cell.cell import Cell
 from openpyxl.styles import Font
+from openpyxl.utils import get_column_letter
 from openpyxl.utils.cell import coordinate_from_string
 from openpyxl.workbook.workbook import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
@@ -163,6 +164,7 @@ def _render_into_workbook(
     row_offset = _write_lines_and_totals(ws, model, mapping, builder)
     _write_cost_breakdown(ws, model, mapping, row_offset, builder)
     _write_notes(ws, model, mapping, row_offset, builder)
+    _apply_print_layout(ws)
 
 
 # —————————————————————————————————————
@@ -182,6 +184,7 @@ _PRESERVE_HEADER_KEYS: Final[set[str]] = {
     "bill_to",
     "bill_to_line2",
     "bill_to_line3",
+    "shipped_per",
     "signature",
 }
 
@@ -762,6 +765,36 @@ def _write_line_cell(cell: Cell, value: object, spec: LineFieldSpec) -> None:
     number_format = line_excel_number_format(value, spec)
     if number_format is not None:
         cell.number_format = number_format
+
+
+def _content_extent(ws: Worksheet) -> tuple[int, int]:
+    """返回有内容（含合并区）的最大行、列，忽略模板里未使用的空列维度。"""
+
+    max_row = 1
+    max_col = 1
+    for row in ws.iter_rows(min_row=1, max_row=ws.max_row, max_col=ws.max_column):
+        for cell in row:
+            if cell.value is None:
+                continue
+            max_row = max(max_row, int(cell.row))
+            max_col = max(max_col, int(cell.column))
+    for merged in ws.merged_cells.ranges:
+        if ws.cell(merged.min_row, merged.min_col).value is None:
+            continue
+        max_row = max(max_row, int(merged.max_row))
+        max_col = max(max_col, int(merged.max_col))
+    return max_row, max_col
+
+
+def _apply_print_layout(ws: Worksheet) -> None:
+    """按实际内容重设打印区并缩放到一页，避免 LibreOffice PDF 分页切断表头。"""
+
+    max_row, max_col = _content_extent(ws)
+    ws.print_area = f"A1:{get_column_letter(max_col)}{max_row}"
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 1
+    ws.page_setup.scale = None
 
 
 __all__ = ["render_document", "render_document_bundle"]

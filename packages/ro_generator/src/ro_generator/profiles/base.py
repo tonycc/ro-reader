@@ -113,6 +113,17 @@ class CustomerRules(Protocol):
         buyer: str,
     ) -> tuple[str, str]: ...
 
+    def uses_po_record_unit_price(self, document_type: str) -> bool:
+        """Invoice 是否从当前 PO record 出货行读取按主体聚合的单价。"""
+
+    def unit_price_for_line(
+        self,
+        line: OrderLine,
+        document_type: str,
+        segment: tuple[str, str],
+    ) -> Decimal | None:
+        """返回当前单据行应使用的单价；缺失时返回 None。"""
+
     def pi_no_for_lines(
         self,
         lines: tuple[OrderLine, ...],

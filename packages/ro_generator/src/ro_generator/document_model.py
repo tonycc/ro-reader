@@ -20,7 +20,6 @@ from ro_generator.header_rules import resolve_header_field_spec
 from ro_generator.line_rules import resolve_line_field_spec
 from ro_generator.models import CostBreakdownItem, DocumentType, OrderLine, ValidationMessage
 from ro_generator.profiles.runtime import current_rules, current_schema
-from ro_generator.schema import CATEGORY_NAMES
 
 # —————————————————————————————————————
 # 校验消息 code
@@ -224,11 +223,7 @@ def _assemble_lines(
 
     doc_lines: list[DocumentLine] = []
     for original_line, line_quantity in sliced:
-        unit_price = original_line.prices.get(segment)
-        if document_type in {"INVOICE", "PL"} and current_rules().invoice_data_base_price_columns:
-            category_name = CATEGORY_NAMES.get(original_line.category, "")
-            invoice_price_key = f"{segment[0]}/{category_name}"
-            unit_price = original_line.product.invoice_prices.get(invoice_price_key)
+        unit_price = current_rules().unit_price_for_line(original_line, document_type, segment)
         if unit_price is None:
             messages.append(
                 ValidationMessage(
@@ -239,7 +234,11 @@ def _assemble_lines(
                         f"行（SAP {original_line.sap}）在链段 {segment[0]}→{segment[1]} 下无单价"
                     ),
                     sheet=_po_record_sheet(),
-                    field="SAP Number",
+                    field=(
+                        current_rules().po_price_columns.get(seller)
+                        if current_rules().uses_po_record_unit_price(document_type)
+                        else "SAP Number"
+                    ),
                 )
             )
             unit_price = Decimal("0")

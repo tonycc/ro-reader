@@ -53,10 +53,17 @@ const MERGED_HEADER_COLUMN_WIDTHS: Record<string, string> = {
 };
 
 function columnWidth(key: string): string {
+  // G 列 PCS 在模板里没有表头，只是数量旁的单位。fixed 布局下
+  // auto 会和 PO/品名平分剩余宽度，把单价、数量表头和数字错开。
+  if (key === "unit_label") return "4%";
   if (columnHeaderRows.value.length > 1) {
     return MERGED_HEADER_COLUMN_WIDTHS[key] || "auto";
   }
   return isNumericCol(key) ? "10%" : "auto";
+}
+
+function isNumericHeader(cell: PreviewHeaderCell): boolean {
+  return columnHeaderRows.value.length === 1 && !!cell.key && isNumericCol(cell.key);
 }
 
 function getFieldValue(field: string): string {
@@ -219,13 +226,14 @@ const columnHeaderRows = computed<PreviewHeaderCell[][]>(() => {
             :key="'h_' + ri + '_' + ci + '_' + (cell.key || cell.label)"
             :colspan="cell.colspan || 1"
             :rowspan="cell.rowspan || 1"
+            :class="{ num: isNumericHeader(cell) }"
           >{{ cell.label }}</th>
         </tr>
       </thead>
       <tbody>
         <tr v-for="(line, li) in pd.lines" :key="'l'+li">
           <td v-for="col in pd.column_labels" :key="col.key"
-            :class="{ num: isNumericCol(col.key) }"
+            :class="{ num: isNumericCol(col.key), 'unit-col': col.key === 'unit_label' }"
           >
             <span
               v-if="line[col.key] !== '' && line[col.key] !== null && line[col.key] !== undefined"
@@ -238,7 +246,7 @@ const columnHeaderRows = computed<PreviewHeaderCell[][]>(() => {
       </tbody>
       <tfoot>
         <tr class="total-row">
-          <td v-for="col in pd.column_labels" :key="'t_'+col.key" :class="{ num: isNumericCol(col.key) }">
+          <td v-for="col in pd.column_labels" :key="'t_'+col.key" :class="{ num: isNumericCol(col.key), 'unit-col': col.key === 'unit_label' }">
             <template v-if="col.key === 'po_no' || col.key === 'description' || col.key === 'sap'">
               <span v-if="col.key === 'po_no'">TOTAL</span>
             </template>
@@ -348,6 +356,7 @@ const columnHeaderRows = computed<PreviewHeaderCell[][]>(() => {
 }
 .lines-table td { border-bottom: 1px solid var(--line); padding: 7px 8px; vertical-align: top; }
 .lines-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.lines-table .unit-col { padding-left: 2px; white-space: nowrap; }
 .total-row td { font-weight: 900; border-top: 1px solid #223047; background: #fbfcfe; }
 .doc-footer-notes {
   display: grid; grid-template-columns: 1fr 260px; gap: 20px;

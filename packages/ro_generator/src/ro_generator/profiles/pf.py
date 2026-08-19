@@ -19,7 +19,7 @@ from ro_generator.profiles.manifest import (
     manifest_string,
 )
 from ro_generator.resources import profile_root
-from ro_generator.schema import SELLER_TO_BUYER, SELLERS
+from ro_generator.schema import CATEGORY_NAMES, SELLER_TO_BUYER, SELLERS
 
 PF_PROFILE_ID = "pf"
 PF_PROFILE_DISPLAY_NAME = "PF"
@@ -169,6 +169,21 @@ class PfRules:
             ("PO", "GS PTE"): ("YM", "GS PTE"),
         }
         return overrides.get((document_type, seller), (seller, buyer))
+
+    def uses_po_record_unit_price(self, document_type: str) -> bool:
+        del document_type
+        return False
+
+    def unit_price_for_line(
+        self,
+        line: OrderLine,
+        document_type: str,
+        segment: tuple[str, str],
+    ) -> Decimal | None:
+        if document_type in {"INVOICE", "PL"} and self.invoice_data_base_price_columns:
+            category_name = CATEGORY_NAMES.get(line.category, "")
+            return line.product.invoice_prices.get(f"{segment[0]}/{category_name}")
+        return line.prices.get(segment)
 
     def pi_no_for_lines(
         self,

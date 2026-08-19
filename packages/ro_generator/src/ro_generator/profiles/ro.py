@@ -133,6 +133,19 @@ class RoRules:
         }
         return overrides.get((document_type, seller), (seller, buyer))
 
+    def uses_po_record_unit_price(self, document_type: str) -> bool:
+        return document_type == "INVOICE"
+
+    def unit_price_for_line(
+        self,
+        line: OrderLine,
+        document_type: str,
+        segment: tuple[str, str],
+    ) -> Decimal | None:
+        if self.uses_po_record_unit_price(document_type):
+            return line.po_record_prices.get(segment)
+        return line.prices.get(segment)
+
     def pi_no_for_lines(
         self,
         lines: tuple[OrderLine, ...],

@@ -202,7 +202,8 @@ PO record.SAP Number ↔ DATA BASE.SAP
 ### 10.1 主体和价格
 
 - RO Category 1/2 → YM、3 → SK；PF 的 Combo/Single Rod/Single Reel 归一为 1/2/3 后使用同一主体过滤。
-- 价格按单据上下文、seller 和 Category 从 `DATA BASE` 价格矩阵读取。
+- PI/PO/PL 以及 PF 票据：价格按单据上下文、seller 和 Category 从 `DATA BASE` 价格矩阵读取。
+- RO Invoice：从当前发票对应的 PO record 出货行读取 `price_columns`（SK/YM 共用 `GS-SK/YM USD FOB`，GS PTE 用 `EMAX-GS PTE FOB`，EMAX PTE 用 `EMAX PTE`），不按 Category 拆列。
 - 价格列配置位于 `base_schema.yaml`；字段来源展示由 `line_rules.py` 生成。
 - 缺价格时核心包以高严重度 warning 标记，并使用 0 继续构建供用户复核。
 
@@ -280,7 +281,7 @@ CLI 写入 `--output-dir`，支持 `overwrite`、`rename`、`abort` 冲突策略
 
 ### 12.4 PDF
 
-PDF 复用 Excel renderer：先写模板，再调用 LibreOffice `soffice --headless --convert-to pdf`。转换使用独立 LibreOffice user profile，避免与用户正在运行的实例争锁。
+PDF 复用 Excel renderer：先写模板，再调用 LibreOffice `soffice --headless --convert-to pdf`。转换使用独立 LibreOffice user profile，避免与用户正在运行的实例争锁。渲染时按实际有内容的单元格重设打印区，并把工作表缩放到一页宽、一页高，避免模板里残留的样例打印区或空列把 Invoice/PL 拆到多页、切断表头。
 
 ## 13. 模板策略
 

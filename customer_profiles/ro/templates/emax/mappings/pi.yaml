@@ -36,7 +36,7 @@ lines:
     A: China
   columns:
     po_no: B
-    item_line_no: C
+    item_number: C
     description: D
     unit_price: E
     quantity: F
@@ -83,7 +83,7 @@ preview_content:
   column_labels:
     A: Country of The Origin
     po_no: PO Number
-    item_line_no: Item Number
+    item_number: Item Number
     description: Description
     unit_price: USD Unit Price
     quantity: Quantity

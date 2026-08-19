@@ -343,6 +343,15 @@ def _resolve_unit_price_spec(
     category: int | None,
 ) -> LineFieldSpec:
     """unit_price 按 seller × category 叉积查列名，结果无法预先声明，单独处理。"""
+    if current_rules().uses_po_record_unit_price(document_type):
+        column = current_rules().po_price_columns.get(seller)
+        if column:
+            return replace(
+                spec,
+                rule=f'PO record 的 "{column}" 列，按当前发票对应出货行取值',
+                source_sheet=current_schema().sheet("PO record").name,
+                source_field=column,
+            )
     category_name = CATEGORY_NAMES.get(category or -1, "")
     buyer = current_rules().buyer_for(seller) or ""
     price_seller = current_rules().price_segment(document_type, seller, buyer)[0]

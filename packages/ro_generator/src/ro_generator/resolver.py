@@ -441,6 +441,7 @@ def _resolve_row(
     # 价格与小计：从 DATA BASE 按主体 + Category 价格列读取
     prices, subtotals, price_msgs = _collect_prices(product, quantity)
     messages.extend(price_msgs)
+    po_record_prices = _collect_po_record_prices(row)
     if not prices:
         messages.append(
             ValidationMessage(
@@ -558,6 +559,7 @@ def _resolve_row(
         total_cbm=total_cbm,
         prices=prices,
         subtotals=subtotals,
+        po_record_prices=po_record_prices,
         invoice_amounts=invoice_amounts,
         # 日期字段：订单日期仍来自 PO record，出厂日期改为客户 PO 的 ship DATE
         order_date=_date_or_none(row.get(_po("order_date"))),
@@ -792,6 +794,20 @@ def _collect_prices(
         prices[segment] = price
         subtotals[segment] = (price * quantity).quantize(Decimal("0.01"))
     return prices, subtotals, []
+
+
+def _collect_po_record_prices(row: dict[str, object]) -> dict[tuple[str, str], Decimal]:
+    """从当前 PO record 行读取按主体聚合的单价（SK/YM 共用同一列）。"""
+    prices: dict[tuple[str, str], Decimal] = {}
+    rules = current_rules()
+    for seller, col_name in rules.po_price_columns.items():
+        buyer = rules.buyer_for(seller)
+        if buyer is None:
+            continue
+        price = _decimal_from_row(row, col_name)
+        if price is not None:
+            prices[(seller, buyer)] = price
+    return prices
 
 
 def _collect_invoice_amounts(row: dict[str, object]) -> dict[str, Decimal]:

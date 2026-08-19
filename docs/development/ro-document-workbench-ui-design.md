@@ -124,7 +124,7 @@ PF 会在这里显示两类非阻断 high warning：
 
 每张单据独立保留 preview、errors 和 warnings；一张失败不应隐藏另一张结果。
 
-组合导出的物理文件由核心包决定：RO 的同模板 Invoice/PL 合并为双 Sheet workbook；PF 的两个独立模板分别生成并打 ZIP。导出页仍只表达“组合选择”，不判断模板是否相同；预览页按 Profile 的单据页面规则展示。
+组合导出的物理文件由核心包决定：RO 的同模板 Invoice/PL 合并为双 Sheet workbook；PF 的两个独立模板分别生成并打 ZIP。导出页仍只表达“组合选择”，不判断模板是否相同；预览页按 Profile 的单据页面规则展示。预览页 Excel / PDF 两个导出按钮在请求进行中都禁用，但只有被点击的那个显示「导出中…」。
 
 ### 6.3 PreviewPayload
 

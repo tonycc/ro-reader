@@ -6,10 +6,18 @@ header:
   invoice_no: H6
   invoice_date: H7
   term: H8
+  bill_to: A6
+  bill_to_line2: A7
+  bill_to_line3: A8
+  shipped_per: A10
   from: A11
   to: A12
 header_fixed:
   term: T/T 75 DAYS AFTER BL DATE
+  bill_to: "TO:E MAX SPORT PTE. LTD."
+  bill_to_line2: "8 KAKI BUKIT AVENUE 4, #08-32,PREMIER @ KAKI BUKIT,"
+  bill_to_line3: SINGAPORE 415875
+  shipped_per: Shipped per ss/mv
   from: QINGDAO, CHINA
   to: KANSAS CITY, MO, USA
 table_header_row:
@@ -50,7 +58,10 @@ style:
   - G7
   - A12
 preview_content:
-  title: COMMERCIAL INVOICE
+  title: INVOICE
+  template_fields:
+    title: F1
+    seller_info: [A1, A2]
   static_terms:
     term: T/T 75 DAYS AFTER BL DATE
     from: QINGDAO, CHINA
@@ -74,5 +85,5 @@ preview_content:
       center: []
       right: [title]
     info:
-      left: [from, to]
+      left: [bill_to, bill_to_line2, bill_to_line3, shipped_per, from, to]
       right: [invoice_no, invoice_date, term]

@@ -289,7 +289,7 @@ onUnmounted(() => {
             @click="exportCurrentDocument"
             v-if="hasData"
           >
-            {{ wb.exporting ? "导出中…" : `导出 ${currentDocLabel}` }}
+            {{ wb.exportingKind === "xlsx" ? "导出中…" : `导出 ${currentDocLabel}` }}
           </button>
           <button
             class="ghost-btn export-btn"
@@ -297,7 +297,7 @@ onUnmounted(() => {
             @click="exportCurrentDocumentPdf"
             v-if="hasData"
           >
-            导出 PDF
+            {{ wb.exportingKind === "pdf" ? "导出中…" : "导出 PDF" }}
           </button>
           <button
             class="ghost-btn"

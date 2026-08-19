@@ -30,8 +30,10 @@ EMAX_PO_MAPPING = RO_TEMPLATES / "emax" / "mappings" / "po.yaml"
 EMAX_INVOICE_MAPPING = RO_TEMPLATES / "emax" / "mappings" / "invoice.yaml"
 EMAX_PL_MAPPING = RO_TEMPLATES / "emax" / "mappings" / "pl.yaml"
 SK_PI_MAPPING = RO_TEMPLATES / "sk" / "mappings" / "pi.yaml"
+SK_INVOICE_MAPPING = RO_TEMPLATES / "sk" / "mappings" / "invoice.yaml"
 SK_PL_MAPPING = RO_TEMPLATES / "sk" / "mappings" / "pl.yaml"
 YM_PI_MAPPING = RO_TEMPLATES / "ym" / "mappings" / "pi.yaml"
+YM_INVOICE_MAPPING = RO_TEMPLATES / "ym" / "mappings" / "invoice.yaml"
 YM_PL_MAPPING = RO_TEMPLATES / "ym" / "mappings" / "pl.yaml"
 PF_GS_PL_MAPPING = PF_TEMPLATES / "gs" / "mappings" / "pl.yaml"
 PF_GS_PI_MAPPING = PF_TEMPLATES / "gs" / "mappings" / "pi.yaml"
@@ -79,6 +81,68 @@ class TestRealGsInvoiceMapping:
         assert mapping.totals["amount"] == TotalCell(cell="H20")
 
 
+class TestRoInvoicePreviewHeaders:
+    """RO Invoice 预览抬头必须跟 Excel 模板单元格一致，不能抄成 COMMERCIAL INVOICE。"""
+
+    def test_gs_invoice_header_comes_from_template(self) -> None:
+        mapping = load_template_mapping(GS_INVOICE_MAPPING)
+
+        assert mapping.preview_static_values["title"] == ("INVOICE",)
+        assert mapping.preview_static_values["seller_info"] == (
+            "GLOBALSINO PTE.LTD.",
+            "10 KAKI BUKIT ROAD 2, #01-37, FIRST EAST CENTRE, SINGAPORE 417868",
+        )
+        assert mapping.header["bill_to"] == "A6"
+        assert mapping.header_fixed["bill_to"] == "TO:E MAX SPORT PTE. LTD."
+        assert mapping.header_fixed["bill_to_line2"] == (
+            "8 KAKI BUKIT AVENUE 4, #08-32,PREMIER @ KAKI BUKIT,"
+        )
+        assert mapping.header_fixed["bill_to_line3"] == "SINGAPORE 415875"
+        assert mapping.header_fixed["shipped_per"] == "Shipped per ss/mv"
+        assert mapping.preview_content["layout"]["info"]["left"] == [
+            "bill_to",
+            "bill_to_line2",
+            "bill_to_line3",
+            "shipped_per",
+            "from",
+            "to",
+        ]
+
+    @pytest.mark.parametrize(
+        ("mapping_path", "expected_company"),
+        [
+            (
+                SK_INVOICE_MAPPING,
+                "GUANGDONG GLOBALSINO OUTDOOR SPORTS EQUIPMENT LIMITED",
+            ),
+            (YM_INVOICE_MAPPING, "WEIHAI E-MAX SPORT APPARATUS CO.,LTD"),
+        ],
+    )
+    def test_sk_ym_invoice_header_comes_from_template(
+        self,
+        mapping_path: Path,
+        expected_company: str,
+    ) -> None:
+        mapping = load_template_mapping(mapping_path)
+
+        assert mapping.preview_static_values["title"] == ("INVOICE",)
+        assert mapping.preview_static_values["seller_info"][0] == expected_company
+        assert mapping.header_fixed["bill_to"] == "TO:GLOBALSINO PTE.LTD."
+        assert mapping.header_fixed["bill_to_line2"] == (
+            "10 KAKI BUKIT ROAD 2, #01-37, FIRST EAST CENTRE,"
+        )
+        assert mapping.header_fixed["bill_to_line3"] == "SINGAPORE 417868"
+        assert mapping.header_fixed["shipped_per"] == "Shipped per ss/mv"
+        assert mapping.preview_content["layout"]["info"]["left"] == [
+            "bill_to",
+            "bill_to_line2",
+            "bill_to_line3",
+            "shipped_per",
+            "from",
+            "to",
+        ]
+
+
 class TestRealMappingsTableHeaderRows:
     @pytest.mark.parametrize(
         ("mapping_path", "expected_rows"),
@@ -110,7 +174,7 @@ class TestPreviewColumnHeaders:
     def test_emax_pi_uses_exact_item_header(self) -> None:
         mapping = load_template_mapping(EMAX_PI_MAPPING)
 
-        assert dict(mapping.preview_column_labels)["item_line_no"] == "Item Number"
+        assert dict(mapping.preview_column_labels)["item_number"] == "Item Number"
 
     def test_multiline_invoice_headers_come_from_declared_template_rows(self) -> None:
         mapping = load_template_mapping(EMAX_INVOICE_MAPPING)

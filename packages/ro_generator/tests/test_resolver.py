@@ -621,6 +621,25 @@ class TestShipQty:
         assert line.ship_qty is None
 
 
+class TestPoRecordPrices:
+    def test_reads_seller_columns_from_current_row(self, tmp_path: Path) -> None:
+        row = basic_po_row(
+            **{
+                "GS-SK/YM USD FOB": Decimal("21.5"),
+                "EMAX-GS PTE FOB": Decimal("33.3"),
+                "EMAX PTE": Decimal("44.4"),
+            }
+        )
+        path = make_base_file(tmp_path, data_base_rows=[COMBO_PRODUCT], po_record_rows=[row])
+        with WorkbookReader(path) as reader:
+            result = resolve_po_lines(reader, "4500030844")
+        line = result.lines[0]
+        assert line.po_record_prices[("SK", "YM")] == Decimal("21.5")
+        assert line.po_record_prices[("YM", "GS PTE")] == Decimal("21.5")
+        assert line.po_record_prices[("GS PTE", "EMAX PTE")] == Decimal("33.3")
+        assert line.po_record_prices[("EMAX PTE", "PF")] == Decimal("44.4")
+
+
 # ————————————————————————————————————————
 # 公式回退
 # ————————————————————————————————————————

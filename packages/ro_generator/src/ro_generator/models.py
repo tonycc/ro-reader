@@ -171,6 +171,8 @@ class OrderLine:
     # 单价快照（按 (seller, buyer) 建索引，已选定本行 category 对应的列）
     prices: dict[tuple[str, str], Decimal] = field(default_factory=dict)
     subtotals: dict[tuple[str, str], Decimal] = field(default_factory=dict)
+    # PO record 按主体聚合的单价（不按 Category）；RO Invoice 使用当前出货行上的值
+    po_record_prices: dict[tuple[str, str], Decimal] = field(default_factory=dict)
 
     # 各链段发票金额
     invoice_amounts: dict[str, Decimal] = field(default_factory=dict)
