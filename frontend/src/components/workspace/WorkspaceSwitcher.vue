@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { useWorkspace } from "../../stores/workspace";
+import { activationErrorCode, isSchemaMismatchCode, useWorkspace } from "../../stores/workspace";
+import { useWorkbench } from "../../stores/workbench";
+import { useSchemaRepair } from "../../stores/schemaRepair";
+import { getSessionId } from "../../stores/api";
 import WorkspaceStatusBadge from "./WorkspaceStatusBadge.vue";
 
 const emit = defineEmits<{
@@ -8,6 +11,8 @@ const emit = defineEmits<{
 }>();
 
 const workspace = useWorkspace();
+const wb = useWorkbench();
+const repair = useSchemaRepair();
 const open = ref(false);
 const root = ref<HTMLElement | null>(null);
 const currentLabel = computed(() => workspace.currentWorkspace?.display_name ?? "未配置工作区");
@@ -19,11 +24,19 @@ function toggle() {
 
 async function choose(id: string) {
   open.value = false;
-  if (id === workspace.currentWorkspaceId) return;
+  if (id === workspace.currentWorkspaceId && getSessionId()) return;
+  repair.reset();
+  workspace.clearLastActivation();
+  wb.resetSession();
+  wb.loading = true;
   try {
     await workspace.activateWorkspace(id);
-  } catch {
-    // The store preserves the previous current workspace and exposes the error below.
+  } catch (cause) {
+    wb.loading = false;
+    if (isSchemaMismatchCode(activationErrorCode(cause))) {
+      wb.setActiveTab("check");
+      await repair.refreshIssues();
+    }
   }
 }
 
@@ -77,18 +90,12 @@ onUnmounted(() => document.removeEventListener("click", onDocumentClick));
         </span>
         <WorkspaceStatusBadge :status="item.status" compact />
       </button>
-      <p v-if="workspace.error" class="switch-error" data-testid="workspace-switch-error">
-        {{ workspace.error }}
-      </p>
       <div class="menu-footer">
         <button type="button" class="manage-button" @click="emit('manage'); open = false">
           <span aria-hidden="true">＋</span> 管理工作区
         </button>
       </div>
     </div>
-    <p v-if="workspace.error && !open" class="switch-error switch-error-outside" data-testid="workspace-switch-error">
-      {{ workspace.error }}
-    </p>
   </div>
 </template>
 
@@ -130,10 +137,6 @@ onUnmounted(() => document.removeEventListener("click", onDocumentClick));
 .option-copy strong, .option-copy span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .option-copy strong { font-size: 12px; }
 .option-copy span { color: var(--muted); font-size: 11px; }
-.switch-error { margin: 6px 8px 4px; padding: 7px 8px; border-radius: 7px; color: var(--red); background: var(--red-weak); font-size: 11px; line-height: 1.45; }
-.switch-error-outside {
-  margin: 5px 0 0;
-}
 .menu-footer { margin-top: 5px; padding-top: 6px; border-top: 1px solid var(--line); }
 .manage-button { width: 100%; padding: 7px 8px; border: 0; border-radius: 7px; background: transparent; color: var(--blue); text-align: left; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
 .manage-button:hover { background: var(--blue-weak); }

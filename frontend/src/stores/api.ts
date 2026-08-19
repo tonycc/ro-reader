@@ -254,11 +254,72 @@ export interface CheckPathResult {
   error?: string
 }
 
+// ——— Schema 结构映射配置 ———
+
+export interface SchemaFieldIssue {
+  logical_sheet: string
+  sheet_label: string
+  actual_sheet: string
+  internal_key: string
+  expected_header: string
+  available_headers: string[]
+  column_letters?: Record<string, string>
+}
+
+export interface SchemaSheetIssue {
+  logical_sheet: string
+  sheet_label: string
+  actual_sheet: string
+}
+
+export interface SchemaIssuesResponse {
+  has_issues: boolean
+  sheet_issues: SchemaSheetIssue[]
+  field_issues: SchemaFieldIssue[]
+  price_issues?: SchemaFieldIssue[]
+}
+
+export interface SchemaMappingField {
+  internal_key: string
+  effective_header: string
+  builtin_header: string | null
+  is_overridden: boolean
+}
+
+export interface SchemaMappingGroup {
+  logical_sheet: string
+  sheet_label: string
+  actual_sheet: string
+  header_row: number | null
+  fields: SchemaMappingField[]
+  kind?: string
+  available_headers?: string[]
+  column_letters?: Record<string, string>
+}
+
+export interface SchemaMappingsResponse {
+  groups: SchemaMappingGroup[]
+}
+
+export interface SchemaOverrideSaveRequest {
+  field_aliases: Record<string, Record<string, string>>
+  sheets?: Record<string, { header_row?: number; first_data_row?: number }>
+  price_columns?: Record<string, Record<string, string>>
+}
+
+export interface SchemaOverrideSaveResponse {
+  saved: boolean
+  override_path: string
+  remaining_issues: SchemaIssuesResponse
+}
+
 export const api = {
   checkPath: (path: string): Promise<CheckPathResult> =>
     request("POST", "/check-path", { path }),
   openSession: (base_file: string): Promise<OpenSessionResponse> =>
     request("POST", "/session/open", { base_file }),
+  refreshSession: (): Promise<{ session_id: string; po_list: PoListItem[]; invoices: InvoiceListItem[] }> =>
+    request("POST", "/session/refresh"),
   getInvoices: (): Promise<InvoiceListResponse> => request("GET", "/invoices"),
   getInvoiceInspection: (invoice_group_key: string): Promise<InvoiceInspectionResponse> =>
     request("GET", `/invoice/${encodeURIComponent(invoice_group_key)}/inspection`),
@@ -294,4 +355,12 @@ export const api = {
   exportDocuments: (req: DryRunRequest): Promise<DryRunResult> => request("POST", `/po/${req.po_no}/export`, req),
   exportDocumentGroups: (req: BatchExportRequest): Promise<DryRunResult> =>
     request("POST", `/po/${req.po_no}/export-batch`, req),
+  getSchemaIssues: (workspaceId?: string): Promise<SchemaIssuesResponse> =>
+    request("GET", `/schema/issues${workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : ""}`),
+  getSchemaMappings: (workspaceId?: string): Promise<SchemaMappingsResponse> =>
+    request("GET", `/schema/mappings${workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : ""}`),
+  verifySchemaPin: (pin: string): Promise<{ verified: boolean }> =>
+    request("POST", "/schema/verify-pin", { pin }),
+  saveSchemaOverride: (req: SchemaOverrideSaveRequest, workspaceId?: string): Promise<SchemaOverrideSaveResponse> =>
+    request("POST", `/schema/override${workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : ""}`, req),
 };

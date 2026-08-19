@@ -4,9 +4,10 @@
 ``GenerationContext``，构建候选快照并管理 session 临时目录。它不把业务校验复制到
 API 层；base 文件的结构校验仍由 ``ro_generator.build_workbook_snapshot`` 完成。
 
-激活分成两个边界清晰的阶段：候选 session 在内存中准备完成后，才持久化
-``current_workspace_id``；持久化成功后才发布 active 指针。发布异常会恢复旧配置和旧
-session，避免出现“配置指向新客户、内存仍在使用旧客户”的半切换状态。
+激活分成两个边界清晰的阶段：候选 session 在内存中准备完成后才发布 active
+指针。快照失败时仍记下 ``current_workspace_id``，让界面停在用户刚选的工作区；
+发布异常会恢复旧配置和旧 session，避免出现“配置已切走、内存仍在使用旧客户”
+的半切换状态。
 """
 
 from __future__ import annotations
@@ -19,10 +20,11 @@ import time
 import uuid
 from collections.abc import Callable
 from contextlib import suppress
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Literal
+from typing import Literal, NoReturn
 
+from ro_generator.base_schema import effective_schema
 from ro_generator.errors import ProfileNotFoundError, WorkbookOpenError
 from ro_generator.profiles import (
     GenerationContext,
@@ -217,17 +219,18 @@ class SessionManager:
         return self.get_session(session_id, allow_draining=allow_draining).context
 
     def refresh_snapshot(self, session_id: str) -> WorkbookSnapshot:
-        """重建并替换 active session 的快照。"""
+        """重建并替换 active session 的快照。
+
+        同时按 base 旁的 override 文件重载生效 schema，否则总览/向导保存后
+        session 仍会按激活时的旧映射取数。
+        """
         with _ACTIVATION_LOCK:
             session = self.get_session(session_id)
             try:
-                snapshot = self._snapshot_factory(session.context)
+                context = self._context_with_effective_schema(session)
+                snapshot = self._snapshot_factory(context)
             except Exception as exc:
-                if isinstance(exc, SessionManagerError):
-                    raise
-                raise SessionSnapshotRefreshError(
-                    f"session {session_id!r} 快照刷新失败：{exc}"
-                ) from exc
+                _reraise_snapshot_error(exc, refresh_session_id=session_id)
 
             with self._lock:
                 current = self._sessions.get(session_id)
@@ -237,6 +240,7 @@ class SessionManager:
                     or session_id != self._active_session_id
                 ):
                     raise SessionInactiveError(f"session {session_id!r} 不是当前 active session")
+                current.context = context
                 current.snapshot = snapshot
                 current.touch(self._clock())
             return snapshot
@@ -304,7 +308,13 @@ class SessionManager:
     def _activate_locked(self, workspace_id: str) -> SessionActivation:
         settings_before = self._store.load()
         workspace = self._get_workspace(workspace_id)
-        candidate = self._prepare_candidate(workspace)
+        try:
+            candidate = self._prepare_candidate(workspace)
+        except WorkspaceActivationError:
+            # 用户已经选了这个工作区：快照失败也要记下 current，
+            # 否则顶部会继续显示上一个客户（例如 PF→RO 失败后仍显示 PF）。
+            self._store.set_current_workspace(workspace.id)
+            raise
 
         with self._lock:
             old_active_id = self._active_session_id
@@ -313,7 +323,7 @@ class SessionManager:
             old_drain_until = old_active.drain_until if old_active is not None else None
 
         try:
-            # 只有候选快照成功后才修改持久化 current 指针。
+            # 快照已成功：发布失败才回滚 current，避免出现“配置已切走、session 仍是旧客户”。
             self._store.set_current_workspace(workspace.id)
             self._publish_candidate(candidate, old_active_id=old_active_id)
         except Exception as exc:
@@ -362,27 +372,14 @@ class SessionManager:
         self._validate_base_path(path)
         temp_dir: str | None = None
         try:
-            profile = self._profile_registry.get(workspace.profile_id)
-            context = GenerationContext(profile=profile, base_file=path)
+            context = self._generation_context(workspace.profile_id, path)
+            profile = context.profile
             temp_dir = self._temp_dir_factory(workspace.id)
             snapshot = self._snapshot_factory(context)
         except Exception as exc:
             if temp_dir is not None:
                 _remove_temp_dir(temp_dir)
-            if isinstance(exc, ProfileNotFoundError):
-                raise WorkspaceActivationError(str(exc), code="PROFILE_NOT_FOUND") from exc
-            if isinstance(exc, (PermissionError, OSError)):
-                code = (
-                    "WORKSPACE_FILE_PERMISSION_DENIED"
-                    if _is_permission_error(exc)
-                    else "WORKSPACE_FILE_MISSING"
-                )
-                raise WorkspaceActivationError(str(exc), code=code) from exc
-            if isinstance(exc, (BuildSnapshotError, WorkbookOpenError)):
-                raise WorkspaceActivationError(str(exc), code="WORKSPACE_SCHEMA_MISMATCH") from exc
-            if isinstance(exc, WorkspaceActivationError):
-                raise
-            raise WorkspaceActivationError(str(exc), code="WORKSPACE_SCHEMA_MISMATCH") from exc
+            _reraise_snapshot_error(exc)
 
         session_id = uuid.uuid4().hex[:12]
         return SessionInfo(
@@ -396,6 +393,16 @@ class SessionManager:
             created_at=self._clock(),
             last_access=self._clock(),
         )
+
+    def _context_with_effective_schema(self, session: SessionInfo) -> GenerationContext:
+        return self._generation_context(session.profile_id, Path(session.base_file))
+
+    def _generation_context(self, profile_id: str, path: Path) -> GenerationContext:
+        profile = self._profile_registry.get(profile_id)
+        merged = effective_schema(profile.schema, path)
+        if merged is not profile.schema:
+            profile = replace(profile, schema=merged)
+        return GenerationContext(profile=profile, base_file=path)
 
     def _publish_candidate(self, candidate: SessionInfo, *, old_active_id: str | None) -> None:
         with self._lock:
@@ -482,6 +489,31 @@ class SessionManager:
                 else "WORKSPACE_FILE_MISSING"
             )
             raise WorkspaceActivationError(str(exc), code=code) from exc
+
+
+def _reraise_snapshot_error(
+    exc: BaseException, *, refresh_session_id: str | None = None
+) -> NoReturn:
+    """把快照构建失败映射为激活/刷新共用的稳定错误码。"""
+
+    if isinstance(exc, SessionManagerError):
+        raise exc
+    if isinstance(exc, ProfileNotFoundError):
+        raise WorkspaceActivationError(str(exc), code="PROFILE_NOT_FOUND") from exc
+    if isinstance(exc, OSError):
+        code = (
+            "WORKSPACE_FILE_PERMISSION_DENIED"
+            if _is_permission_error(exc)
+            else "WORKSPACE_FILE_MISSING"
+        )
+        raise WorkspaceActivationError(str(exc), code=code) from exc
+    if isinstance(exc, (BuildSnapshotError, WorkbookOpenError)):
+        raise WorkspaceActivationError(str(exc), code="WORKSPACE_SCHEMA_MISMATCH") from exc
+    if refresh_session_id is not None:
+        raise SessionSnapshotRefreshError(
+            f"session {refresh_session_id!r} 快照刷新失败：{exc}"
+        ) from exc
+    raise WorkspaceActivationError(str(exc), code="WORKSPACE_SCHEMA_MISMATCH") from exc
 
 
 def _is_permission_error(error: OSError) -> bool:

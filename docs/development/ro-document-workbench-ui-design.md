@@ -47,7 +47,7 @@ StatusBar（30px）
 
 ## 3. TopBar
 
-正式模式顶部栏显示当前工作区、Customer Profile 和 base 文件名；下拉菜单调用真实 HTTP `WorkspaceService` 激活工作区，旧页面在切换期间保留并显示 busy 状态。
+正式模式顶部栏显示当前工作区、Customer Profile 和 base 文件名；下拉菜单调用真实 HTTP `WorkspaceService` 激活工作区。切换开始时先清空页面数据；列名对不上时顶部显示刚选中的工作区，并在数据检查页用黄色横幅提示，不再弹框。文件不存在、无权限等仍弹出「无法打开工作区」。
 
 “管理工作区”打开工作区设置：
 
@@ -55,7 +55,8 @@ StatusBar（30px）
 - 新增/编辑表单的“检测路径”调用 `POST /api/workspaces/validate`，只读取 Profile 与 base，不落盘。
 - “保存工作区”和“设为当前”是两个独立操作，避免误把保存配置当成激活。
 - 编辑当前工作区后旧 session 暂时保留，但卡片和顶部栏显示“待重新激活”，并把“设为当前”变为可操作的“重新激活”；激活成功才替换 session 和工作台数据。
-- 启动先调用 `GET /api/bootstrap`。旧版本 `localStorage` 的 `ro-workbench-base-path` 只在没有当前工作区时迁移；创建和激活都成功后才删除旧 key，失败时保留并打开设置。
+- 启动先调用 `GET /api/bootstrap`。若内存里已有匹配当前工作区的 session，仍会重建快照并做结构校验，不能直接复用上次激活留下的旧数据。列名对不上时不弹框，只在数据检查页显示黄色横幅；文件不存在等仍弹出错误。旧版本 `localStorage` 的 `ro-workbench-base-path` 只在没有当前工作区时迁移；创建和激活都成功后才删除旧 key，失败时保留并打开设置。
+- 「重新加载」走 `POST /api/session/refresh`（无 session 时改为重新激活当前工作区）。列名对不上时清空页面并刷新黄色横幅；文件缺失等仍弹框。成功后刷新数据检查里的列名问题提示。
 - 正式模式使用 `frontend/src/services/workspace.http.ts`；访问 `?workspace-prototype=1` 时仅在开发环境切换到 mock，供交互评审和失败回滚测试。
 
 当前 TopBar 不提供撤销、重做、版本历史或文件选择器；用户输入本机 `.xlsx` 路径。若 HTTP 工作区服务不可用，临时回退到旧系统设置入口以保持 RO 兼容流程。
@@ -97,6 +98,12 @@ PF 会在这里显示两类非阻断 high warning：
 - `FULL_CARTON_NOT_MET`：订单合计不是 `round value` 的整数倍。
 
 提示详情直接显示 `new PO template / row / Order Quantity`，前端不自行读取 MOQ 或计算余数。
+
+### 5.4 列名对应关系
+
+黄色提示条和修复向导共用同一套计数：缺失 Sheet、缺失数据列和缺失价格列都算进去。列名对不上只走黄条，不再弹框。「对应到」下拉显示 Excel 列号和列名，例如 `A:SAP`。
+
+旧列仍在、只想改指到新加列时，打开「字段对应关系总览」。总览按产品主数据、PO/出货记录、客户订单、价格列分页，一次只显示一组。点「修改对应关系」并验证 PIN 后用下拉调整，保存仍写入同一个 override 文件，并提交所有分组里的改动。
 
 ## 6. 单据预览
 

@@ -55,6 +55,12 @@ export const useWorkbench = defineStore("workbench", () => {
 
   const exporting = ref(false);
   const lastExportFile = ref("");
+  const reloading = ref(false);
+  // 主工作区当前激活的功能 tab，供激活失败等场景跨组件切换到数据检查。
+  const activeTab = ref<"check" | "preview" | "export">("check");
+  function setActiveTab(tab: "check" | "preview" | "export") {
+    activeTab.value = tab;
+  }
 
   const blockingErrors = ref<ValidationIssue[]>([]);
   const warnings = ref<ValidationIssue[]>([]);
@@ -105,6 +111,18 @@ export const useWorkbench = defineStore("workbench", () => {
     lastExportFile.value = "";
   }
 
+  /** 切换工作区前清空整页数据，避免新旧工作区内容混在一起。 */
+  function resetSession() {
+    clearSessionState();
+    poList.value = [];
+    invoiceList.value = [];
+    baseFile.value = "";
+    error.value = "";
+    previewScope.value = "po";
+    activeTab.value = "check";
+    setSessionId("");
+  }
+
   function applySessionData(
     file: string,
     sessionId: string,
@@ -153,6 +171,38 @@ export const useWorkbench = defineStore("workbench", () => {
       activation.workspace.profile_id,
     );
     loading.value = false;
+  }
+
+  /** 共享盘 base 文件被更新后重新加载：重建快照并刷新 PO/invoice 列表。
+   * 保留当前选中的 PO 与 invoice（若仍存在于新快照），不清空预览。
+   */
+  async function reloadData() {
+    if (!getSessionId() || reloading.value) return;
+    reloading.value = true;
+    error.value = "";
+    try {
+      const data = await api.refreshSession();
+      poList.value = data.po_list;
+      invoiceList.value = data.invoices;
+      // 选中项在新快照中已消失时，回落到第一个可用项。
+      if (selectedPo.value && !data.po_list.some((p) => p.po_no === selectedPo.value)) {
+        selectedPo.value = "";
+      }
+      if (
+        selectedInvoiceGroup.value
+        && !data.invoices.some((item) => item.invoice_group_key === selectedInvoiceGroup.value)
+      ) {
+        const fallback = data.invoices.find((item) => item.status !== "blocked") ?? data.invoices[0];
+        selectedInvoiceGroup.value = fallback?.invoice_group_key ?? "";
+      }
+      if (selectedPo.value) await selectPo(selectedPo.value);
+      else await refreshPreview();
+    } catch (e) {
+      error.value = e instanceof ApiError ? e.message : `重新加载失败：${e}`;
+      throw e;
+    } finally {
+      reloading.value = false;
+    }
   }
 
   async function selectPo(po_no: string) {
@@ -545,12 +595,15 @@ export const useWorkbench = defineStore("workbench", () => {
     invoiceOptions,
     preview, previewData, previewDocuments, previewDocType, previewLoading, sourceIndex, previewSourceEntries,
     exporting, lastExportFile,
+    reloading,
+    activeTab,
     blockingErrors, warnings,
     poIssues, issuesLoading, issuesError,
     previewError, exportError, libreOfficeMissing,
     poEntry, poStatus, invoiceEntry, invoiceStatus,
-    openSession, adoptWorkspaceSession, selectPo, refreshPreview, editCell, doExport, doExportPdf, doExportGroups, doExportInvoiceGroups,
+    openSession, adoptWorkspaceSession, resetSession, reloadData, selectPo, refreshPreview, editCell, doExport, doExportPdf, doExportGroups, doExportInvoiceGroups,
     selectSeller, selectInvoice, selectPreviewScope, selectInvoiceGroup,
     refreshPoIssues, refreshInvoiceInspection, dismissLibreOfficePrompt,
+    setActiveTab,
   };
 });

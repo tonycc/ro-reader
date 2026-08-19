@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { storeToRefs } from "pinia";
 import TopBar from "./components/layout/TopBar.vue";
 import StatusBar from "./components/layout/StatusBar.vue";
 import QueueSidebar from "./components/po-list/QueueSidebar.vue";
@@ -7,13 +7,21 @@ import DataCheckScreen from "./components/data-view/DataCheckScreen.vue";
 import PreviewScreen from "./components/preview/PreviewScreen.vue";
 import ExportScreen from "./components/export/ExportScreen.vue";
 import LibreOfficePrompt from "./components/common/LibreOfficePrompt.vue";
+import PinDialog from "./components/schema/PinDialog.vue";
 import { useWorkbench } from "./stores/workbench";
+import { useSchemaRepair } from "./stores/schemaRepair";
 
 const wb = useWorkbench();
-const activeTab = ref<"check" | "preview" | "export">("check");
+const repair = useSchemaRepair();
+const { activeTab } = storeToRefs(wb);
+const selectWorkflowTab = wb.setActiveTab;
 
-function selectWorkflowTab(tab: "check" | "preview" | "export") {
-  activeTab.value = tab;
+async function onPinConfirm(pin: string) {
+  try {
+    await repair.confirmPin(pin);
+  } catch {
+    // store 已写入 pinError，弹窗保持打开
+  }
 }
 </script>
 
@@ -42,6 +50,12 @@ function selectWorkflowTab(tab: "check" | "preview" | "export") {
     </main>
     <StatusBar />
     <LibreOfficePrompt v-if="wb.libreOfficeMissing" />
+    <PinDialog
+      :open="repair.pinDialogOpen"
+      :error-message="repair.pinError"
+      @confirm="onPinConfirm"
+      @cancel="repair.cancelPin()"
+    />
   </div>
 </template>
 

@@ -14,7 +14,7 @@ import threading
 import uuid
 from collections.abc import Callable, Mapping
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -234,11 +234,7 @@ class WorkspaceStore:
                 profile_id=profile_id,
                 base_file=base_file,
             )
-            updated = WorkspaceSettings(
-                schema_version=WORKSPACE_SCHEMA_VERSION,
-                current_workspace_id=settings.current_workspace_id,
-                workspaces=(*settings.workspaces, workspace),
-            )
+            updated = replace(settings, workspaces=(*settings.workspaces, workspace))
             self._write_locked(updated)
             return workspace
 
@@ -274,13 +270,7 @@ class WorkspaceStore:
             workspaces = tuple(
                 updated_workspace if item.id == current.id else item for item in settings.workspaces
             )
-            self._write_locked(
-                WorkspaceSettings(
-                    schema_version=WORKSPACE_SCHEMA_VERSION,
-                    current_workspace_id=settings.current_workspace_id,
-                    workspaces=workspaces,
-                )
-            )
+            self._write_locked(replace(settings, workspaces=workspaces))
             return updated_workspace
 
     def delete(self, workspace_id: str) -> None:
@@ -293,13 +283,7 @@ class WorkspaceStore:
             if settings.current_workspace_id == normalized_id:
                 raise CurrentWorkspaceDeleteError("当前工作区不能直接删除，请先切换到其他工作区")
             workspaces = tuple(item for item in settings.workspaces if item.id != normalized_id)
-            self._write_locked(
-                WorkspaceSettings(
-                    schema_version=WORKSPACE_SCHEMA_VERSION,
-                    current_workspace_id=settings.current_workspace_id,
-                    workspaces=workspaces,
-                )
-            )
+            self._write_locked(replace(settings, workspaces=workspaces))
 
     def set_current_workspace(self, workspace_id: str | None) -> WorkspaceSettings:
         """更新当前工作区指针；传 ``None`` 可清空指针。"""
@@ -310,11 +294,7 @@ class WorkspaceStore:
             if workspace_id is not None:
                 normalized_id = self._normalise_workspace_id(workspace_id)
                 self._find(settings, normalized_id)
-            updated = WorkspaceSettings(
-                schema_version=WORKSPACE_SCHEMA_VERSION,
-                current_workspace_id=normalized_id,
-                workspaces=settings.workspaces,
-            )
+            updated = replace(settings, current_workspace_id=normalized_id)
             self._write_locked(updated)
             return updated
 
@@ -342,13 +322,7 @@ class WorkspaceStore:
             workspaces = tuple(
                 updated_workspace if item.id == current.id else item for item in settings.workspaces
             )
-            self._write_locked(
-                WorkspaceSettings(
-                    schema_version=WORKSPACE_SCHEMA_VERSION,
-                    current_workspace_id=settings.current_workspace_id,
-                    workspaces=workspaces,
-                )
-            )
+            self._write_locked(replace(settings, workspaces=workspaces))
             return updated_workspace
 
     @classmethod

@@ -9,6 +9,7 @@ from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
+from openpyxl import load_workbook
 from pytest import MonkeyPatch
 from ro_workbench_api import app as app_module
 
@@ -39,6 +40,20 @@ def _create(name: str = "RO 2026", base: Path = FIXTURE) -> dict[str, Any]:
     )
     assert response.status_code == 200, response.text
     return _json(response)
+
+
+def _break_required_header(src: Path, dest: Path) -> None:
+    """复制 fixture 并把 DATA BASE 的 SAP 表头改掉，使结构校验失败。"""
+
+    shutil.copy(src, dest)
+    workbook = load_workbook(dest)
+    sheet = workbook["DATA BASE"]
+    for cell in sheet[4]:
+        if cell.value == "SAP":
+            cell.value = "SAP_RENAMED"
+            workbook.save(dest)
+            return
+    raise AssertionError("DATA BASE 第 4 行没有 SAP 表头")
 
 
 def test_profiles_and_first_bootstrap() -> None:
@@ -122,6 +137,31 @@ def test_activate_bootstrap_and_existing_invoice_api_use_session_identity() -> N
     assert bootstrap["current_workspace_id"] == workspace_id
     assert bootstrap["session_id"] == session_id
     assert bootstrap["activation_error"] is None
+
+
+def test_bootstrap_and_refresh_revalidate_reused_session(tmp_path: Path) -> None:
+    """复用 session 时仍重建快照；文件结构坏了要返回与激活失败相同的错误。"""
+
+    base = tmp_path / "live.xlsx"
+    shutil.copy(FIXTURE, base)
+    workspace = _create("Live file", base)
+    activated = _json(client.post(f"/api/workspaces/{workspace['id']}/activate"))
+    session_id = activated["session_id"]
+
+    healthy = _json(client.get("/api/bootstrap"))
+    assert healthy["session_id"] == session_id
+    assert healthy["activation_error"] is None
+
+    _break_required_header(FIXTURE, base)
+
+    broken_bootstrap = _json(client.get("/api/bootstrap"))
+    assert broken_bootstrap["current_workspace_id"] == workspace["id"]
+    assert broken_bootstrap["session_id"] is None
+    assert broken_bootstrap["activation_error"]["code"] == "WORKSPACE_SCHEMA_MISMATCH"
+
+    refresh = client.post("/api/session/refresh", headers={"X-Session-Id": session_id})
+    assert refresh.status_code == 400
+    assert _json(refresh)["detail"]["code"] == "WORKSPACE_SCHEMA_MISMATCH"
 
 
 def test_edit_refreshes_managed_session_snapshot_for_preview(tmp_path: Path) -> None:
@@ -236,7 +276,7 @@ def test_invalid_current_workspace_update_keeps_old_session_and_surfaces_bootstr
     assert old_invoices.status_code == 200
 
 
-def test_activation_failure_keeps_current_and_legacy_open_requires_activation(
+def test_activation_failure_records_target_and_legacy_open_requires_activation(
     tmp_path: Path,
 ) -> None:
     workspace = _create()
@@ -254,7 +294,8 @@ def test_activation_failure_keeps_current_and_legacy_open_requires_activation(
     assert failed.status_code == 400
     assert _json(failed)["detail"]["code"] == "WORKSPACE_FILE_MISSING"
     bootstrap = _json(client.get("/api/bootstrap"))
-    assert bootstrap["current_workspace_id"] == workspace["id"]
+    assert bootstrap["current_workspace_id"] == missing["id"]
+    assert bootstrap["activation_error"]["code"] == "WORKSPACE_FILE_MISSING"
 
 
 def test_current_workspace_cannot_be_deleted_and_unknown_workspace_has_stable_error() -> None:

@@ -6,18 +6,19 @@ test.describe("Workspace interaction prototype", () => {
     await expect(page.getByTestId("workspace-switcher-trigger")).toContainText("RO 2026");
   });
 
-  test("switcher keeps the current workspace when activation fails", async ({ page }) => {
+  test("switcher shows the target workspace when activation fails", async ({ page }) => {
     await page.getByTestId("workspace-switcher-trigger").click();
     await expect(page.getByTestId("workspace-option-ro-test")).toContainText("RO 测试");
 
     await page.getByTestId("workspace-option-ro-test").click();
 
-    const error = page.getByTestId("workspace-switch-error");
+    const error = page.getByTestId("workspace-activation-error");
     const trigger = page.getByTestId("workspace-switcher-trigger");
     const topbar = page.locator("header.topbar");
     const workflowTabs = page.locator(".mode-tabs");
-    await expect(error).toContainText("找不到 base 文件");
-    await expect(trigger).toContainText("RO 2026");
+    await expect(error).toBeVisible();
+    await expect(error.getByTestId("workspace-switch-error")).toContainText("找不到 base 文件");
+    await expect(trigger).toContainText("RO 测试");
     const topbarBox = await topbar.boundingBox();
     const tabsBox = await workflowTabs.boundingBox();
     expect(topbarBox).not.toBeNull();

@@ -12,7 +12,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+import os
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -27,6 +28,38 @@ class SheetConfig:
     name: str
     header_row: int
     first_data_row: int
+
+
+@dataclass(frozen=True)
+class SheetOverride:
+    """单张 sheet 可覆盖的结构属性；None 表示沿用内置值。"""
+
+    header_row: int | None = None
+    first_data_row: int | None = None
+
+
+@dataclass(frozen=True)
+class SchemaOverride:
+    """Per-workspace schema 覆盖补丁（稀疏）。
+
+    承载结构映射差异：sheet 表头行、三张逻辑 sheet 的字段→新表头，
+    以及价格列→新表头。价格列 override 仅允许把已有价格键重定向到
+    同 sheet 内的另一列，不允许新增价格键，防止凭空造金额来源。
+    空对象等价于"无 override"。
+    """
+
+    sheets: Mapping[str, SheetOverride] = field(default_factory=dict)
+    field_aliases: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    # 价格列补丁：外层 key 为配置块名（data_base_price_columns 等），
+    # 内层 key 为价格键（如 "EMAX PTE/combo"），value 为用户指定的新表头。
+    price_columns: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+
+    def is_empty(self) -> bool:
+        return (
+            not self.sheets
+            and not any(alias for alias in self.field_aliases.values())
+            and not any(cols for cols in self.price_columns.values())
+        )
 
 
 @dataclass(frozen=True)
@@ -65,6 +98,24 @@ class FieldAliases:
 
     def items(self) -> Iterator[tuple[str, str]]:
         return ((internal_key, self.get(internal_key)) for internal_key in self._mapping)
+
+    def merged(self, patch: Mapping[str, str]) -> FieldAliases:
+        """用 override 补丁覆盖主表头，未声明的键保持原值。
+
+        override 的映射值是用户选择的单一新表头；别名（tuple）结构只存在于
+        内置 schema，override 补丁永远以单值覆盖，替换掉原有多别名条目。
+        """
+
+        if not patch:
+            return self
+        next_mapping: dict[str, str | tuple[str, ...]] = dict(self._mapping)
+        for internal_key, header in patch.items():
+            if not isinstance(internal_key, str) or not isinstance(header, str):
+                continue
+            cleaned = header.strip()
+            if cleaned:
+                next_mapping[internal_key] = cleaned
+        return FieldAliases(_mapping=next_mapping)
 
 
 @dataclass(frozen=True)
@@ -124,6 +175,81 @@ class BaseSchema:
     def canonical_header(self, sheet: str, header: str) -> str:
         aliases = self._field_aliases_for_sheet(sheet)
         return aliases.canonicalize(header) if aliases is not None else header
+
+    def with_override(self, override: SchemaOverride) -> BaseSchema:
+        """合并 per-workspace override，返回新的生效 schema。
+
+        开放结构映射（sheet 表头行 + 三张表的字段别名）和价格列重定向。
+        价格列只允许把已声明的价格键指向新表头，不新增键、不删除键，
+        未声明的字段沿用内置值（稀疏补丁）。
+        """
+
+        from dataclasses import replace
+
+        sheets = dict(self.sheets)
+        for logical_name, sheet_patch in override.sheets.items():
+            base_cfg = sheets.get(logical_name)
+            if base_cfg is None:
+                continue
+            sheets[logical_name] = replace(
+                base_cfg,
+                header_row=(
+                    sheet_patch.header_row
+                    if sheet_patch.header_row is not None
+                    else base_cfg.header_row
+                ),
+                first_data_row=(
+                    sheet_patch.first_data_row
+                    if sheet_patch.first_data_row is not None
+                    else base_cfg.first_data_row
+                ),
+            )
+
+        return replace(
+            self,
+            sheets=sheets,
+            data_base_fields=self.data_base_fields.merged(
+                override.field_aliases.get("DATA BASE", {})
+            ),
+            po_record_fields=self.po_record_fields.merged(
+                override.field_aliases.get("PO record", {})
+            ),
+            customer_po_fields=self.customer_po_fields.merged(
+                override.field_aliases.get("客户PO", {})
+            ),
+            data_base_price_columns=_merge_price_columns(
+                self.data_base_price_columns,
+                override.price_columns.get("data_base_price_columns", {}),
+            ),
+            invoice_data_base_price_columns=_merge_price_columns(
+                self.invoice_data_base_price_columns,
+                override.price_columns.get("invoice_data_base_price_columns", {}),
+            ),
+            data_base_component_price_columns=_merge_price_columns(
+                self.data_base_component_price_columns,
+                override.price_columns.get("data_base_component_price_columns", {}),
+            ),
+            invoice_amount_columns=_merge_price_columns(
+                self.invoice_amount_columns,
+                override.price_columns.get("invoice_amount_columns", {}),
+            ),
+            price_columns=_merge_price_columns(
+                self.price_columns,
+                override.price_columns.get("price_columns", {}),
+            ),
+        )
+
+
+def _merge_price_columns(base: Mapping[str, str], patch: Mapping[str, str]) -> dict[str, str]:
+    """用价格列补丁覆盖已声明的价格键；不新增键，保证金额来源不外扩。"""
+
+    if not patch:
+        return dict(base)
+    merged = dict(base)
+    for key, header in patch.items():
+        if key in merged and isinstance(header, str) and header.strip():
+            merged[key] = header.strip()
+    return merged
 
 
 # —————————————————————————————————————
@@ -344,6 +470,114 @@ def _default_schema() -> BaseSchema:
 
 
 # —————————————————————————————————————
+# Per-workspace override 加载 / 保存
+# —————————————————————————————————————
+
+OVERRIDE_SUFFIX = ".schema.yaml"
+
+
+def override_path_for(base_file: str | Path) -> Path:
+    """override 文件与 base 文件同目录同主干名：`<base 文件名>.schema.yaml`。"""
+
+    base = Path(base_file).expanduser()
+    # 去掉 .xlsx/.xlsm 等扩展名，避免 "xxx.xlsx.schema.yaml" 这类双后缀。
+    return base.with_suffix("").parent / f"{base.with_suffix('').name}{OVERRIDE_SUFFIX}"
+
+
+def load_schema_override(path: str | Path) -> SchemaOverride:
+    """从 YAML 读取 override；不存在或为空时返回空补丁。"""
+
+    override_path = Path(path).expanduser()
+    if not override_path.exists():
+        return SchemaOverride()
+    with override_path.open(encoding="utf-8") as fp:
+        raw = yaml.safe_load(fp)
+    if not isinstance(raw, dict):
+        return SchemaOverride()
+
+    sheets: dict[str, SheetOverride] = {}
+    sheets_raw = raw.get("sheets", {})
+    if isinstance(sheets_raw, dict):
+        for logical_name, cfg in sheets_raw.items():
+            if not isinstance(logical_name, str) or not isinstance(cfg, dict):
+                continue
+            header_row = cfg.get("header_row")
+            first_data_row = cfg.get("first_data_row")
+            sheets[logical_name] = SheetOverride(
+                header_row=int(header_row) if header_row is not None else None,
+                first_data_row=int(first_data_row) if first_data_row is not None else None,
+            )
+
+    field_aliases: dict[str, dict[str, str]] = {}
+    aliases_raw = raw.get("field_aliases", {})
+    if isinstance(aliases_raw, dict):
+        for sheet_name, sheet_aliases in aliases_raw.items():
+            if not isinstance(sheet_name, str) or not isinstance(sheet_aliases, dict):
+                continue
+            cleaned: dict[str, str] = {}
+            for internal_key, header in sheet_aliases.items():
+                if isinstance(internal_key, str) and isinstance(header, str) and header.strip():
+                    cleaned[internal_key] = header.strip()
+            if cleaned:
+                field_aliases[sheet_name] = cleaned
+
+    price_columns: dict[str, dict[str, str]] = {}
+    price_raw = raw.get("price_columns", {})
+    if isinstance(price_raw, dict):
+        for block_name, block in price_raw.items():
+            if not isinstance(block_name, str) or not isinstance(block, dict):
+                continue
+            cleaned_block: dict[str, str] = {}
+            for price_key, header in block.items():
+                if isinstance(price_key, str) and isinstance(header, str) and header.strip():
+                    cleaned_block[price_key] = header.strip()
+            if cleaned_block:
+                price_columns[block_name] = cleaned_block
+
+    return SchemaOverride(sheets=sheets, field_aliases=field_aliases, price_columns=price_columns)
+
+
+def save_schema_override(path: str | Path, override: SchemaOverride) -> Path:
+    """把 override 原子写入 YAML；空补丁时删除文件，避免残留噪音。"""
+
+    override_path = Path(path).expanduser()
+    if override.is_empty():
+        override_path.unlink(missing_ok=True)
+        return override_path
+
+    payload: dict[str, object] = {}
+    if override.sheets:
+        payload["sheets"] = {
+            name: {
+                key: value
+                for key, value in (
+                    ("header_row", patch.header_row),
+                    ("first_data_row", patch.first_data_row),
+                )
+                if value is not None
+            }
+            for name, patch in override.sheets.items()
+        }
+    if override.field_aliases:
+        payload["field_aliases"] = {
+            sheet: dict(aliases) for sheet, aliases in override.field_aliases.items() if aliases
+        }
+    if override.price_columns:
+        payload["price_columns"] = {
+            block: dict(cols) for block, cols in override.price_columns.items() if cols
+        }
+
+    override_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = override_path.with_name(f".{override_path.name}.tmp")
+    with temporary_path.open("w", encoding="utf-8") as fp:
+        yaml.safe_dump(payload, fp, allow_unicode=True, sort_keys=False)
+        fp.flush()
+        os.fsync(fp.fileno())
+    temporary_path.replace(override_path)
+    return override_path
+
+
+# —————————————————————————————————————
 # 兼容入口和按路径缓存
 # —————————————————————————————————————
 
@@ -372,3 +606,33 @@ def base_schema(profile_or_path: object | None = None) -> BaseSchema:
         else profile_root("ro") / "base_schema.yaml"
     )
     return _cached_schema(str(schema_path.expanduser().resolve()))
+
+
+def effective_schema(profile_schema: BaseSchema, base_file: str | Path) -> BaseSchema:
+    """返回内置 schema 叠加 base 文件旁 override 后的生效版本。
+
+    不存在 override 时原样返回，保证绝大多数场景零开销。override 的加载不走
+    lru_cache：它由 API 层在保存后显式触发快照重建，业务层每次都按当前文件
+    状态合并，避免缓存把"保存即生效"变成跨进程才可见。
+    """
+
+    override = load_schema_override(override_path_for(base_file))
+    if override.is_empty():
+        return profile_schema
+    return profile_schema.with_override(override)
+
+
+__all__ = [
+    "OVERRIDE_SUFFIX",
+    "BaseSchema",
+    "FieldAliases",
+    "SchemaOverride",
+    "SheetConfig",
+    "SheetOverride",
+    "base_schema",
+    "effective_schema",
+    "load_base_schema",
+    "load_schema_override",
+    "override_path_for",
+    "save_schema_override",
+]

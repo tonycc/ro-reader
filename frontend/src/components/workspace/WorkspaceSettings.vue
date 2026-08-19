@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { useWorkspace } from "../../stores/workspace";
+import { activationErrorCode, isSchemaMismatchCode, useWorkspace } from "../../stores/workspace";
+import { useSchemaRepair } from "../../stores/schemaRepair";
+import { useWorkbench } from "../../stores/workbench";
 import type { CustomerWorkspace, WorkspaceInput, WorkspaceValidationResult } from "../../services/workspace";
 import WorkspaceForm from "./WorkspaceForm.vue";
 import WorkspaceStatusBadge from "./WorkspaceStatusBadge.vue";
@@ -14,6 +16,8 @@ const emit = defineEmits<{
 }>();
 
 const workspace = useWorkspace();
+const repair = useSchemaRepair();
+const wb = useWorkbench();
 const editingWorkspace = ref<CustomerWorkspace | null>(null);
 const formVisible = ref(false);
 const operationMessage = ref("");
@@ -94,11 +98,21 @@ async function validate(item: CustomerWorkspace) {
 
 async function activate(item: CustomerWorkspace) {
   clearOperation();
+  repair.reset();
+  workspace.clearLastActivation();
+  wb.resetSession();
+  wb.loading = true;
   try {
     await workspace.activateWorkspace(item.id);
     showOperation("success", `已切换到「${item.display_name}」`);
   } catch (cause) {
+    wb.loading = false;
     showOperation("error", cause instanceof Error ? cause.message : String(cause));
+    if (isSchemaMismatchCode(activationErrorCode(cause))) {
+      emit("close");
+      wb.setActiveTab("check");
+      await repair.refreshIssues();
+    }
   }
 }
 
@@ -111,6 +125,17 @@ async function remove(item: CustomerWorkspace) {
     showOperation("success", "工作区配置已删除");
   } catch (cause) {
     showOperation("error", cause instanceof Error ? cause.message : String(cause));
+  }
+}
+
+async function openRepair(item: CustomerWorkspace) {
+  clearOperation();
+  // 统一到数据检查 tab 的修复面板；先关闭设置窗口再切换。
+  emit("close");
+  wb.setActiveTab("check");
+  await repair.openRepairFor(item.id);
+  if (repair.error) {
+    repair.setTargetWorkspace(null);
   }
 }
 
@@ -199,6 +224,13 @@ function clearPathCheck() {
                   {{ item.id === workspace.currentWorkspaceId && workspace.needsActivation ? '重新激活' : '设为当前' }}
                 </button>
                 <button type="button" class="text-button" :disabled="workspace.saving || workspace.switching" @click="openEdit(item)">编辑</button>
+                <button
+                  v-if="item.status === 'schema_mismatch'"
+                  type="button"
+                  class="text-button primary-text"
+                  :disabled="workspace.saving || workspace.switching"
+                  @click="openRepair(item)"
+                >修复列</button>
                 <button type="button" class="text-button danger-text" :disabled="workspace.saving || workspace.switching || item.id === workspace.currentWorkspaceId" @click="remove(item)">删除</button>
               </div>
             </article>
@@ -262,7 +294,7 @@ function clearPathCheck() {
 .card-path { overflow: hidden; margin-top: 5px; color: var(--subtle); text-overflow: ellipsis; white-space: nowrap; }
 .card-message { margin: 7px 0 0; color: var(--green); }
 .card-message.danger { color: var(--red); }
-.card-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 3px; max-width: 190px; }
+.card-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 3px; max-width: 220px; }
 .text-button { padding: 5px 6px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font: inherit; font-size: 11px; cursor: pointer; }
 .text-button:hover:not(:disabled) { background: var(--panel-soft); color: var(--text); }
 .primary-text { color: var(--blue); font-weight: 700; }

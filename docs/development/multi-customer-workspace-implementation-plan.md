@@ -172,7 +172,7 @@ frontend/src/components/workspace/
    - 顶部显示当前工作区、Profile 和 base 文件名；
    - 下拉切换和“管理工作区”入口；
    - 切换时保留旧页面内容并显示 loading；
-   - 失败时仍显示旧工作区。
+   - 失败时顶部显示目标工作区；列名对不上用黄色横幅，其它错误弹框。
 2. `WorkspaceSettings`：
    - 列表、新建、编辑、删除、验证和设为当前；
    - 保存配置与激活分开；
@@ -580,7 +580,7 @@ packages/ro_workbench_api/src/ro_workbench_api/
    - 准备一个尚不可路由的候选 session；
    - 原子提交 `current_workspace_id`；
    - 在同一临界区将候选发布为 active，并把旧 session 标记为 draining；
-4. 任一步失败均保留旧工作区和旧 active session；
+4. 快照失败时记下目标 `current_workspace_id`，但不发布新 session，旧 active session 仍留在内存；
 5. 提交后的内存发布若异常，恢复旧 `current_workspace_id` 并丢弃候选；进程崩溃后由 bootstrap 按持久化配置重建；
 6. draining session 只允许下载已生成文件，宽限期默认 5 分钟；
 7. session TTL 保持当前 1 小时；
@@ -601,9 +601,9 @@ packages/ro_workbench_api/src/ro_workbench_api/
 
 完成条件：
 
-- `current_workspace_id` 只在新 session 完整可用后更新；
+- 快照失败后 `current_workspace_id` 切到目标工作区，但不发布新 session；
+- 内存发布失败才回滚 `current_workspace_id` 和旧 active session；
 - 任一业务 API 都能从 session 取得 workspace/profile/base 三元组；
-- 切换失败不影响旧工作台继续使用。
 
 执行记录（2026-08-07）：
 
@@ -778,7 +778,7 @@ packages/ro_workbench_api/src/ro_workbench_api/
 
 任务：
 
-1. 后端 bootstrap 比较 active session 的 `workspace_id`、`profile_id` 和规范化 base 路径，只有三者都一致时才复用现有 snapshot；
+1. 后端 bootstrap 比较 active session 的 `workspace_id`、`profile_id` 和规范化 base 路径；三者一致时复用 session 身份，但仍 `refresh_snapshot` 重新做结构校验，不能直接返回内存里的旧 snapshot；
 2. 修改当前工作区后，API 明确返回 `unchecked` 和“请重新检测并激活”，但不提前切断旧 active session；
 3. 新配置有效时，下一次 bootstrap 自动构建新 session，旧 session 进入 draining；
 4. 新配置无效时，bootstrap 返回稳定 activation error，旧 session 继续可读，用户修复后可再次激活；

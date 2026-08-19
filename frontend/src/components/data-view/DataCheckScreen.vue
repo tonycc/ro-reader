@@ -1,11 +1,19 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useWorkbench } from "../../stores/workbench";
+import { useSchemaRepair } from "../../stores/schemaRepair";
 import InvoiceDataCheck from "./InvoiceDataCheck.vue";
 import IssueSummaryBar from "./IssueSummaryBar.vue";
+import SchemaRepairPanel from "../schema/SchemaRepairPanel.vue";
+import SchemaMappingOverview from "../schema/SchemaMappingOverview.vue";
 
 const wb = useWorkbench();
+const repair = useSchemaRepair();
 const editingCell = ref<{ row: number; field: string } | null>(null);
+
+onMounted(() => {
+  void repair.refreshIssues();
+});
 const editValue = ref("");
 const editError = ref("");
 
@@ -54,6 +62,25 @@ function cancelEdit() {
 <template>
   <InvoiceDataCheck v-if="wb.previewScope === 'invoice'" />
   <div v-else class="check-screen">
+    <!-- Schema 结构问题提示条：表头漂移时引导修复 -->
+    <div v-if="repair.hasIssues && !repair.wizardOpen" class="schema-banner">
+      <span class="schema-banner-text">
+        base 文件有 {{ repair.issueCount }} 处列名对不上，可能影响取数。
+      </span>
+      <button class="schema-banner-btn" type="button" @click="repair.enterWizard()">修复列对应关系</button>
+      <button class="schema-banner-link" type="button" @click="repair.toggleOverview()">
+        查看全部对应关系
+      </button>
+    </div>
+    <div v-else-if="!repair.hasIssues && !repair.wizardOpen && !repair.loading" class="schema-toolbar">
+      <button class="schema-toolbar-link" type="button" @click="repair.toggleOverview()">
+        {{ repair.overviewOpen ? "收起字段对应关系" : "查看字段对应关系" }}
+      </button>
+    </div>
+
+    <SchemaMappingOverview v-if="repair.overviewOpen" />
+    <SchemaRepairPanel />
+
     <div v-if="!wb.selectedPo" class="placeholder">选择左侧 PO 开始数据检查</div>
     <template v-else>
       <IssueSummaryBar
@@ -112,6 +139,41 @@ function cancelEdit() {
 
 <style scoped>
 .check-screen { padding: 14px 20px 22px; display: flex; flex-direction: column; min-height: 0; }
+.schema-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border: 1px solid #f2c17d;
+  border-radius: 10px;
+  background: #fffaf0;
+  color: #92400e;
+  font-size: 12px;
+}
+.schema-banner-text { flex: 1; line-height: 1.45; }
+.schema-banner-btn {
+  flex-shrink: 0;
+  height: 30px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 8px;
+  background: var(--blue);
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.schema-banner-link, .schema-toolbar-link {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--blue);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.schema-toolbar { margin-bottom: 8px; display: flex; justify-content: flex-end; }
 .placeholder { padding: var(--space-8); text-align: center; color: var(--subtle); }
 .projection-note { margin-bottom: 10px; padding: 9px 12px; border: 1px solid #bfdbfe; border-radius: 8px; background: #eff6ff; color: #1e40af; font-size: 12px; line-height: 1.45; }
 .edit-error { padding: 8px 10px; color: var(--red); background: var(--red-weak); border-bottom: 1px solid var(--line); font-size: 12px; }

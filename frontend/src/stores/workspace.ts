@@ -11,6 +11,17 @@ import {
   type WorkspaceStatus,
 } from "../services/workspace";
 
+export function isSchemaMismatchCode(code: string | undefined): boolean {
+  return (code ?? "").includes("SCHEMA_MISMATCH");
+}
+
+export function activationErrorCode(cause: unknown): string {
+  if (cause && typeof cause === "object" && "code" in cause && typeof (cause as { code: unknown }).code === "string") {
+    return (cause as { code: string }).code;
+  }
+  return "";
+}
+
 export const useWorkspace = defineStore("workspace", () => {
   const service = shallowRef<WorkspaceService | null>(null);
   const profiles = ref<ProfileSummary[]>([]);
@@ -25,6 +36,13 @@ export const useWorkspace = defineStore("workspace", () => {
   // 当前工作区配置修改后，旧 session 仍可继续使用，但必须重新激活。
   const needsActivation = ref(false);
   const lastActivation = shallowRef<WorkspaceActivationResult | null>(null);
+  // 激活/恢复失败时记录失败目标工作区；失败时 currentWorkspaceId 仍切到该目标。
+  const activationErrorWorkspaceId = ref<string | null>(null);
+  const activationError = ref<{
+    message: string;
+    workspaceId: string;
+    code: string;
+  } | null>(null);
 
   const currentWorkspace = computed(() =>
     workspaces.value.find((workspace) => workspace.id === currentWorkspaceId.value) ?? null,
@@ -61,7 +79,21 @@ export const useWorkspace = defineStore("workspace", () => {
       needsActivation.value = false;
     } else {
       lastActivation.value = null;
-      if (data.activation_error) needsActivation.value = Boolean(data.current_workspace_id);
+      if (data.activation_error && data.current_workspace_id) {
+        needsActivation.value = true;
+        error.value = data.activation_error.message;
+        activationErrorWorkspaceId.value = data.current_workspace_id;
+        activationError.value = isSchemaMismatchCode(data.activation_error.code)
+          ? null
+          : {
+              message: data.activation_error.message,
+              workspaceId: data.current_workspace_id,
+              code: data.activation_error.code,
+            };
+      } else {
+        activationErrorWorkspaceId.value = null;
+        activationError.value = null;
+      }
     }
   }
 
@@ -158,6 +190,9 @@ export const useWorkspace = defineStore("workspace", () => {
     if (!canSwitch.value) throw new WorkspaceServiceError("WORKSPACE_BUSY", "当前工作区仍在处理中");
     switching.value = true;
     error.value = "";
+    sessionId.value = "";
+    activationError.value = null;
+    activationErrorWorkspaceId.value = null;
     try {
       const result = await requireService().activateWorkspace(id);
       replaceWorkspace(result.workspace);
@@ -167,11 +202,35 @@ export const useWorkspace = defineStore("workspace", () => {
       lastActivation.value = result;
       return result;
     } catch (cause) {
-      error.value = messageFor(cause);
+      const message = messageFor(cause);
+      const code = cause instanceof WorkspaceServiceError ? cause.code : "WORKSPACE_ACTIVATION_FAILED";
+      error.value = message;
+      currentWorkspaceId.value = id;
+      sessionId.value = "";
+      lastActivation.value = null;
+      activationErrorWorkspaceId.value = id;
+      activationError.value = isSchemaMismatchCode(code)
+        ? null
+        : { message, workspaceId: id, code };
       throw cause;
     } finally {
       switching.value = false;
     }
+  }
+
+  function dismissActivationError() {
+    activationError.value = null;
+  }
+
+  /** 重新加载失败：文件缺失等仍弹框；列名对不上只走数据检查黄条。 */
+  function surfaceActivationFailure(workspaceId: string, message: string, code: string) {
+    error.value = message;
+    lastActivation.value = null;
+    sessionId.value = "";
+    activationErrorWorkspaceId.value = workspaceId;
+    activationError.value = isSchemaMismatchCode(code)
+      ? null
+      : { message, workspaceId, code };
   }
 
   function replaceWorkspace(updated: CustomerWorkspace) {
@@ -219,6 +278,8 @@ export const useWorkspace = defineStore("workspace", () => {
     initialized,
     needsActivation,
     lastActivation,
+    activationErrorWorkspaceId,
+    activationError,
     configure,
     bootstrap,
     createWorkspace,
@@ -227,6 +288,8 @@ export const useWorkspace = defineStore("workspace", () => {
     validateWorkspaceInput,
     validateWorkspace,
     activateWorkspace,
+    dismissActivationError,
+    surfaceActivationFailure,
     clearLastActivation,
     profileDisplayName,
     statusLabel,

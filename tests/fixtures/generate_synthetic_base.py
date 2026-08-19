@@ -44,6 +44,16 @@ DATA_BASE_HEADER = [
     "H",
     "CBM",
     "主件编号",
+    # 价格列（schema 的 data_base_price_columns 期望的全部表头）
+    "GS-SK/YM COMBO FOB 2026",
+    "GS-SK/YM YM ROD FOB 2026",
+    "GS-SK/YM SK REEL FOB 2026",
+    "EMAX-GS PTE COMBO FOB 2026",
+    "EMAX-GS PTE ROD FOB 2026",
+    "EMAX-GS PTE REEL FOB 2026",
+    "EMAX PTE COMBO FOB 2026",
+    "EMAX PTE ROD FOB 2026",
+    "EMAX PTE REEL FOB 2026",
 ]
 
 PO_RECORD_HEADER = [

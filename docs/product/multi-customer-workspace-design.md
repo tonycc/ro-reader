@@ -27,7 +27,7 @@
 - 顶部栏可以快速切换，不必进入设置页。
 - 应用任一时刻只有一个当前工作区和一个可执行业务操作的 active session。
 - 启动时自动恢复上次成功使用的工作区。
-- 切换失败时继续保留旧工作区，不进入空白或半切换状态。
+- 切换失败时顶部切到目标工作区；列名对不上只显示数据检查黄条，文件不存在等仍弹框。不发布新 session，也不继续显示上一个客户。
 - Profile、base 文件、snapshot、模板、导出和 session 全程绑定。
 - 当前 RO 的预览、校验、文件名和导出结果保持兼容。
 - 新客户的差异集中在 Profile 配置和策略中，不在通用模块增加散落的客户判断。
@@ -354,7 +354,8 @@ sequenceDiagram
     API->>Cache: 用 profile + base 构建/读取 snapshot
     alt 验证失败
         Cache-->>API: error
-        API-->>UI: 保留旧工作区并返回错误
+        API->>Store: 记下 current_workspace_id（目标工作区）
+        API-->>UI: 返回错误；顶部显示目标工作区（列名问题走黄条）
     else 准备成功
         Cache-->>API: snapshot
         API->>Session: 准备不可路由的候选 session
@@ -364,9 +365,9 @@ sequenceDiagram
     end
 ```
 
-激活过程由全局 activation lock 串行化。候选 session 在发布前不能被业务端点访问；只有 snapshot 和业务检查成功后，才能更新 `current_workspace_id`，随后在同一临界区切换 active session 指针。若提交后的内存发布异常，立即恢复旧 `current_workspace_id` 并丢弃候选 session。进程在两步之间崩溃时，下一次启动由 bootstrap 根据已持久化工作区重新创建 session。
+激活过程由全局 activation lock 串行化。候选 session 在发布前不能被业务端点访问。快照成功后才发布 active session；若快照失败，仍把 `current_workspace_id` 记为目标工作区，这样顶部和刷新后都会停在用户刚选的客户，并再次弹出错误。内存发布异常时回滚 `current_workspace_id` 并丢弃候选 session。
 
-切换期间前端禁用编辑、预览和导出操作。激活失败时不得清空现有 store。
+切换期间前端禁用编辑、预览和导出操作。激活失败时先清空页面数据，顶部显示目标工作区，并弹出错误。
 
 ## 11. Session 和下载
 

@@ -152,3 +152,21 @@ def test_config_directory_environment_override(
     monkeypatch.setenv("RO_WORKBENCH_CONFIG_DIR", str(tmp_path / "portable"))
     store = WorkspaceStore()
     assert store.config_dir == (tmp_path / "portable").absolute()
+
+
+def test_legacy_pin_hash_in_config_is_ignored(tmp_path: Path) -> None:
+    """旧版根级或工作区上的 pin_hash 不再读写，配置仍可加载。"""
+
+    store = WorkspaceStore(config_dir=tmp_path)
+    workspace = store.create(display_name="RO", profile_id="ro", base_file="base.xlsx")
+    payload = json.loads(store.config_path.read_text(encoding="utf-8"))
+    payload["pin_hash"] = "deadbeef"
+    payload["workspaces"][0]["pin_hash"] = "cafe"
+    store.config_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    reloaded = WorkspaceStore(config_dir=tmp_path)
+    assert reloaded.get(workspace.id).id == workspace.id
+    reloaded.update(workspace.id, display_name="RO 2027")
+    saved = json.loads(reloaded.config_path.read_text(encoding="utf-8"))
+    assert "pin_hash" not in saved
+    assert "pin_hash" not in saved["workspaces"][0]

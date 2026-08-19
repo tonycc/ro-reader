@@ -185,6 +185,7 @@ export class MockWorkspaceService implements WorkspaceService {
     if (result.status !== "ready") {
       const updated = { ...workspace, ...result, updated_at: now() };
       this.workspaces[index] = updated;
+      this.currentWorkspaceId = id;
       throw new WorkspaceServiceError(result.status.toUpperCase(), result.message ?? "工作区无法激活");
     }
     const opened = {

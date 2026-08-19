@@ -27,6 +27,14 @@ from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from ro_generator.base_schema import (
+    SchemaOverride,
+    SheetOverride,
+    effective_schema,
+    load_schema_override,
+    override_path_for,
+    save_schema_override,
+)
 from ro_generator.document_preview import DocumentPreview
 from ro_generator.errors import ProfileNotFoundError, WorkbookOpenError
 from ro_generator.generator import (
@@ -46,6 +54,7 @@ from ro_generator.models import (
     ValidationMessage,
 )
 from ro_generator.profiles import GenerationContext
+from ro_generator.schema_inspect import inspect_schema, sheet_header_candidates
 from ro_generator.source_index import SourceIndex
 from ro_generator.workbench_service import (
     ExportDocumentGroup,
@@ -59,6 +68,7 @@ from ro_generator.workbench_service import (
 )
 from ro_generator.workbook_cache import get_cache_manager
 from ro_generator.workbook_editor import edit_workbook_cell
+from ro_generator.workbook_reader import WorkbookReader
 from ro_generator.workbook_snapshot import (
     BuildSnapshotError,
     WorkbookSnapshot,
@@ -66,11 +76,13 @@ from ro_generator.workbook_snapshot import (
 )
 
 from ro_workbench_api import __version__
+from ro_workbench_api.schema_pin import ensure_schema_pin_file, verify_schema_pin
 from ro_workbench_api.session_manager import (
     SessionActivation,
     SessionInactiveError,
     SessionManager,
     SessionManagerError,
+    SessionSnapshotRefreshError,
     WorkspaceActivationError,
 )
 from ro_workbench_api.session_manager import (
@@ -170,6 +182,7 @@ def _workspace_runtime() -> tuple[WorkspaceStore, SessionManager]:
             or _workspace_runtime_key != config_key
         ):
             _workspace_store = WorkspaceStore()
+            ensure_schema_pin_file(_workspace_store.config_dir)
             _workspace_session_manager = SessionManager(_workspace_store)
             _workspace_runtime_key = config_key
         return _workspace_store, _workspace_session_manager
@@ -330,6 +343,19 @@ class WorkspaceUpdateRequest(BaseModel):
     display_name: str
     profile_id: str
     base_file: str
+
+
+class PinVerifyRequest(BaseModel):
+    pin: str
+
+
+class SchemaOverrideSaveRequest(BaseModel):
+    # 逻辑 sheet key → {内部字段键 → 用户选定的新表头}
+    field_aliases: dict[str, dict[str, str]] = {}
+    # 逻辑 sheet key → 可选的表头行覆盖
+    sheets: dict[str, dict[str, int]] = {}
+    # 价格块名 → {价格键 → 用户选定的新表头}
+    price_columns: dict[str, dict[str, str]] = {}
 
 
 # —————————————————————————————————————
@@ -879,9 +905,12 @@ def bootstrap() -> dict[str, object]:
         active = manager.active_session()
         current_workspace = store.get(current_id)
         if active is not None and _session_matches_workspace(active, current_workspace):
+            # 身份一致仍要重建快照：共享盘文件可能在上次激活后改坏，
+            # 刷新页面必须重新做结构校验，不能直接复用内存里的旧 snapshot。
+            snapshot = manager.refresh_snapshot(active.session_id)
             activation = SessionActivation(
                 session=active,
-                snapshot=active.snapshot,
+                snapshot=snapshot,
                 workspace=current_workspace,
             )
         else:
@@ -914,7 +943,12 @@ def bootstrap() -> dict[str, object]:
             }
         )
         return payload
-    except (WorkspaceStoreError, ProfileNotFoundError, WorkspaceActivationError) as exc:
+    except (
+        WorkspaceStoreError,
+        ProfileNotFoundError,
+        WorkspaceActivationError,
+        SessionSnapshotRefreshError,
+    ) as exc:
         status, message = _status_for_error(exc)
         return {
             "profiles": _profile_summaries(store),
@@ -1443,6 +1477,32 @@ def download_file(
     return FileResponse(str(p), media_type=media_type)
 
 
+@app.post("/api/session/refresh")
+def refresh_session(x_session_id: str = Header(..., alias="X-Session-Id")) -> dict[str, Any]:
+    """重建 active session 快照，返回最新的 PO 与 invoice 列表。
+
+    共享盘上的 base 文件被他人更新后，前端调用此端点重新读取数据，
+    不需要重新激活工作区。快照按文件签名自动重建，内容未变时是低开销的。
+    """
+
+    session = _get_session(x_session_id)
+    if session is None:
+        raise HTTPException(
+            400,
+            detail={"code": "INVALID_SESSION", "message": f"session {x_session_id!r} 无效或已过期"},
+        )
+    _store, manager = _workspace_runtime()
+    try:
+        snapshot = manager.refresh_snapshot(session.session_id)
+    except SessionManagerError as exc:
+        raise _workspace_http_error(exc) from exc
+    return {
+        "session_id": session.session_id,
+        "po_list": _po_list_payload(snapshot.po_summary),
+        "invoices": [asdict(item) for item in snapshot.invoice_summary],
+    }
+
+
 @app.post("/api/session/close")
 def close_session(req: SessionCloseRequest) -> dict[str, str]:
     """关闭 session 并清理临时目录。"""
@@ -1456,6 +1516,371 @@ def close_session(req: SessionCloseRequest) -> dict[str, str]:
     if manager.close(req.session_id):
         return {"status": "closed"}
     return {"status": "not_found"}
+
+
+# —————————————————————————————————————
+# Schema 结构映射配置（per-workspace override + 修复 PIN）
+# —————————————————————————————————————
+
+
+def _workspace_for_session(session: ManagedSessionInfo) -> CustomerWorkspace:
+    store, _manager = _workspace_runtime()
+    try:
+        return store.get(session.workspace_id)
+    except WorkspaceStoreError as exc:
+        raise HTTPException(
+            400, detail={"code": "WORKSPACE_NOT_FOUND", "message": str(exc)}
+        ) from exc
+
+
+@dataclass(frozen=True)
+class _SchemaTarget:
+    """schema 端点的解析目标：生效 schema、base 文件路径、工作区身份、可选 session。"""
+
+    workspace: CustomerWorkspace
+    base_file: str
+    schema: Any
+    session: ManagedSessionInfo | None
+
+
+def _resolve_schema_target(
+    session_id: str | None,
+    workspace_id: str | None,
+) -> _SchemaTarget:
+    """优先按 active session 解析；缺失时按 workspace_id 直接构造生效 schema。
+
+    表头漂移会让工作区激活失败、拿不到 session，但修复向导恰恰要在这种
+    场景下可用。因此只读的 schema 探测与 PIN 校验允许按 workspace_id 直达；
+    保存 override 仍需尝试刷新 active session（若存在）。
+    """
+
+    store, _manager = _workspace_runtime()
+
+    if session_id:
+        session = _get_session(session_id)
+        if session is not None:
+            managed = cast(ManagedSessionInfo, session)
+            workspace = _workspace_for_session(managed)
+            return _SchemaTarget(
+                workspace=workspace,
+                base_file=managed.base_file,
+                schema=_effective_schema_for(workspace, managed.base_file),
+                session=managed,
+            )
+
+    if not workspace_id:
+        raise HTTPException(
+            400,
+            detail={"code": "INVALID_SESSION", "message": "缺少 session 或 workspace_id"},
+        )
+    try:
+        workspace = store.get(workspace_id)
+    except WorkspaceStoreError as exc:
+        raise HTTPException(
+            400, detail={"code": "WORKSPACE_NOT_FOUND", "message": str(exc)}
+        ) from exc
+    base_path = Path(workspace.base_file).expanduser().absolute()
+    return _SchemaTarget(
+        workspace=workspace,
+        base_file=str(base_path),
+        schema=_effective_schema_for(workspace, str(base_path)),
+        session=None,
+    )
+
+
+def _effective_schema_for(workspace: Any, base_file: str) -> Any:
+    """按 Profile 内置 schema + base 旁 override 构造当前生效 schema。"""
+
+    store, _manager = _workspace_runtime()
+    try:
+        profile = store.profile_registry.get(workspace.profile_id)
+    except ProfileNotFoundError as exc:
+        raise HTTPException(
+            400, detail={"code": "WORKSPACE_NOT_FOUND", "message": str(exc)}
+        ) from exc
+    merged = effective_schema(profile.schema, Path(base_file))
+    return merged
+
+
+@app.get("/api/schema/issues")
+def schema_issues(
+    x_session_id: str | None = Header(None, alias="X-Session-Id"),
+    workspace_id: str | None = Query(None),
+) -> dict[str, Any]:
+    """探测当前 base 文件的结构问题：缺失 sheet + 缺失表头（含候选列）。"""
+
+    target = _resolve_schema_target(x_session_id, workspace_id)
+    try:
+        reader = WorkbookReader(target.base_file, schema=target.schema)
+        inspection = inspect_schema(reader, target.schema)
+    except (WorkbookOpenError, OSError) as exc:
+        raise HTTPException(
+            400, detail={"code": "WORKBOOK_OPEN_FAILED", "message": str(exc)}
+        ) from exc
+    return {
+        "has_issues": inspection.has_issues(),
+        "sheet_issues": [asdict(item) for item in inspection.sheet_issues],
+        "field_issues": [asdict(item) for item in inspection.field_issues],
+        "price_issues": [asdict(item) for item in inspection.price_issues],
+    }
+
+
+@app.get("/api/schema/mappings")
+def schema_mappings(
+    x_session_id: str | None = Header(None, alias="X-Session-Id"),
+    workspace_id: str | None = Query(None),
+) -> dict[str, Any]:
+    """返回三张逻辑 sheet 的全部字段映射总览（内置 + override 生效值）。"""
+
+    target = _resolve_schema_target(x_session_id, workspace_id)
+    schema = target.schema
+    override = load_schema_override(override_path_for(target.base_file))
+    reader = _schema_reader(target)
+    groups = []
+    for logical_sheet, (attr, label) in (
+        ("DATA BASE", ("data_base_fields", "产品主数据")),
+        ("PO record", ("po_record_fields", "PO/出货记录")),
+        ("客户PO", ("customer_po_fields", "客户订单")),
+    ):
+        aliases = getattr(schema, attr)
+        override_aliases = override.field_aliases.get(logical_sheet, {})
+        sheet_cfg = schema.sheets.get(logical_sheet)
+        actual_sheet = sheet_cfg.name if sheet_cfg else logical_sheet
+        available, letters = _sheet_candidates(reader, schema, logical_sheet, actual_sheet)
+        rows = [
+            {
+                "internal_key": internal_key,
+                "effective_header": effective_header,
+                "is_overridden": internal_key in override_aliases,
+                "builtin_header": (
+                    _builtin_header(target.workspace.id, logical_sheet, internal_key)
+                ),
+            }
+            for internal_key, effective_header in aliases.items()
+        ]
+        groups.append(
+            {
+                "logical_sheet": logical_sheet,
+                "sheet_label": label,
+                "actual_sheet": actual_sheet,
+                "header_row": sheet_cfg.header_row if sheet_cfg else None,
+                "fields": rows,
+                "available_headers": list(available),
+                "column_letters": letters,
+            }
+        )
+
+    # DATA BASE 价格列分组：键为 seller/category，值随 override 生效。
+    override_prices = override.price_columns.get("data_base_price_columns", {})
+    builtin = _builtin_schema(target.workspace.id)
+    builtin_prices = builtin.data_base_price_columns if builtin is not None else {}
+    db_cfg = schema.sheets.get("DATA BASE")
+    db_actual = db_cfg.name if db_cfg else "DATA BASE"
+    db_available, db_letters = _sheet_candidates(reader, schema, "DATA BASE", db_actual)
+    price_rows = [
+        {
+            "internal_key": price_key,
+            "effective_header": effective_header,
+            "is_overridden": price_key in override_prices,
+            "builtin_header": builtin_prices.get(price_key),
+        }
+        for price_key, effective_header in schema.data_base_price_columns.items()
+    ]
+    groups.append(
+        {
+            "logical_sheet": "DATA BASE",
+            "sheet_label": "产品主数据 · 价格列",
+            "actual_sheet": db_actual,
+            "header_row": db_cfg.header_row if db_cfg else None,
+            "fields": price_rows,
+            "kind": "price",
+            "available_headers": list(db_available),
+            "column_letters": db_letters,
+        }
+    )
+    return {"groups": groups}
+
+
+def _schema_reader(target: _SchemaTarget) -> WorkbookReader | None:
+    try:
+        return WorkbookReader(target.base_file, schema=target.schema)
+    except (WorkbookOpenError, OSError):
+        return None
+
+
+def _sheet_candidates(
+    reader: WorkbookReader | None,
+    schema: Any,
+    logical_sheet: str,
+    actual_sheet: str,
+) -> tuple[tuple[str, ...], dict[str, str]]:
+    if reader is None:
+        return (), {}
+    return sheet_header_candidates(reader, schema, logical_sheet, actual_sheet)
+
+
+def _builtin_schema(workspace_id: str) -> Any | None:
+    """返回工作区 Profile 的内置（未叠加 override）schema。"""
+
+    store, _manager = _workspace_runtime()
+    try:
+        workspace = store.get(workspace_id)
+        profile = store.profile_registry.get(workspace.profile_id)
+    except (WorkspaceStoreError, ProfileNotFoundError):
+        return None
+    return profile.schema
+
+
+def _builtin_header(workspace_id: str, logical_sheet: str, internal_key: str) -> str | None:
+    """查内置（未叠加 override）schema 的表头，用于总览对比。"""
+
+    builtin = _builtin_schema(workspace_id)
+    if builtin is None:
+        return None
+    aliases = {
+        "DATA BASE": builtin.data_base_fields,
+        "PO record": builtin.po_record_fields,
+        "客户PO": builtin.customer_po_fields,
+    }.get(logical_sheet)
+    return aliases.get(internal_key) if aliases is not None else None
+
+
+def _merge_schema_override(
+    existing: SchemaOverride,
+    patch: SchemaOverride,
+    *,
+    builtin: Any | None,
+) -> SchemaOverride:
+    """把本次提交合并进已有 override，避免总览/向导互相覆盖无关字段。
+
+    提交值等于内置默认时删除该键，使 override 保持稀疏。
+    """
+
+    sheets = dict(existing.sheets)
+    if patch.sheets:
+        sheets.update(patch.sheets)
+
+    aliases: dict[str, dict[str, str]] = {
+        sheet: dict(items) for sheet, items in existing.field_aliases.items()
+    }
+    builtin_aliases = {
+        "DATA BASE": getattr(builtin, "data_base_fields", None),
+        "PO record": getattr(builtin, "po_record_fields", None),
+        "客户PO": getattr(builtin, "customer_po_fields", None),
+    }
+    for sheet, items in patch.field_aliases.items():
+        bucket = aliases.setdefault(sheet, {})
+        sheet_aliases = builtin_aliases.get(sheet)
+        for key, header in items.items():
+            mapped = sheet_aliases.headers(key) if sheet_aliases is not None else ()
+            default = mapped[0] if mapped else None
+            cleaned = header.strip()
+            if not cleaned or (default is not None and cleaned == default):
+                bucket.pop(key, None)
+            else:
+                bucket[key] = cleaned
+        if not bucket:
+            aliases.pop(sheet, None)
+
+    prices: dict[str, dict[str, str]] = {
+        block: dict(items) for block, items in existing.price_columns.items()
+    }
+    for block, items in patch.price_columns.items():
+        bucket = prices.setdefault(block, {})
+        builtin_block = getattr(builtin, block, {}) if builtin is not None else {}
+        if not isinstance(builtin_block, dict):
+            builtin_block = {}
+        for key, header in items.items():
+            default = builtin_block.get(key)
+            cleaned = header.strip()
+            if not cleaned or (default is not None and cleaned == default):
+                bucket.pop(key, None)
+            else:
+                bucket[key] = cleaned
+        if not bucket:
+            prices.pop(block, None)
+
+    return SchemaOverride(sheets=sheets, field_aliases=aliases, price_columns=prices)
+
+
+@app.post("/api/schema/verify-pin")
+def schema_verify_pin(req: PinVerifyRequest) -> dict[str, Any]:
+    """进入修复向导前校验系统 PIN。优先读本机配置文件，缺省回退内置默认码。"""
+
+    store, _manager = _workspace_runtime()
+    if not verify_schema_pin(req.pin, config_dir=store.config_dir):
+        raise HTTPException(403, detail={"code": "PIN_INVALID", "message": "校验码不正确"})
+    return {"verified": True}
+
+
+@app.post("/api/schema/override")
+def schema_save_override(
+    req: SchemaOverrideSaveRequest,
+    x_session_id: str | None = Header(None, alias="X-Session-Id"),
+    workspace_id: str | None = Query(None),
+) -> dict[str, Any]:
+    """保存 per-workspace schema override；有 active session 时重建其快照。
+
+    激活失败（schema_mismatch）场景没有 session，此时只落盘 override 并复查
+    遗留问题；用户重新激活工作区即应用新映射。
+    """
+
+    target = _resolve_schema_target(x_session_id, workspace_id)
+
+    sheets = {
+        logical: SheetOverride(
+            header_row=cfg.get("header_row"),
+            first_data_row=cfg.get("first_data_row"),
+        )
+        for logical, cfg in req.sheets.items()
+        if isinstance(cfg, dict)
+    }
+    patch = SchemaOverride(
+        sheets=sheets, field_aliases=req.field_aliases, price_columns=req.price_columns
+    )
+    override_path = override_path_for(target.base_file)
+    existing = load_schema_override(override_path)
+    override = _merge_schema_override(existing, patch, builtin=_builtin_schema(target.workspace.id))
+    save_schema_override(override_path, override)
+
+    snapshot_rows: int | None = None
+    if target.session is not None:
+        _store, manager = _workspace_runtime()
+        try:
+            snapshot = manager.refresh_snapshot(target.session.session_id)
+            snapshot_rows = len(getattr(snapshot, "po_rows", ()) or ())
+        except SessionManagerError as exc:
+            raise HTTPException(
+                409,
+                detail={"code": exc.code, "message": f"已保存，但快照刷新失败：{exc.message}"},
+            ) from exc
+
+    # 用合并 override 后的生效 schema 复查，告知是否还有遗留问题。
+    remaining: dict[str, Any] = {
+        "has_issues": False,
+        "field_issues": [],
+        "sheet_issues": [],
+        "price_issues": [],
+    }
+    try:
+        fresh = _resolve_schema_target(None, target.workspace.id)
+        reader = WorkbookReader(fresh.base_file, schema=fresh.schema)
+        inspection = inspect_schema(reader, fresh.schema)
+        remaining = {
+            "has_issues": inspection.has_issues(),
+            "sheet_issues": [asdict(item) for item in inspection.sheet_issues],
+            "field_issues": [asdict(item) for item in inspection.field_issues],
+            "price_issues": [asdict(item) for item in inspection.price_issues],
+        }
+    except (WorkbookOpenError, OSError, HTTPException):
+        pass
+    return {
+        "saved": True,
+        "override_path": str(override_path),
+        "snapshot_rows": snapshot_rows,
+        "session_refreshed": target.session is not None,
+        "remaining_issues": remaining,
+    }
 
 
 def main() -> None:

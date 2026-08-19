@@ -617,3 +617,31 @@ def test_edit_field_writes_value(tmp_path: Path) -> None:
         assert cell_val == "TEST_VALUE"
     finally:
         base.unlink(missing_ok=True)
+
+
+def test_session_refresh_returns_updated_lists(tmp_path: Path) -> None:
+    """重建快照后返回最新 PO/invoice 列表；无效 session 拒绝。"""
+    import shutil
+
+    base = tmp_path / "base.xlsx"
+    shutil.copy(FIXTURE, base)
+    create = client.post(
+        "/api/workspaces",
+        json={"display_name": "刷新测试", "profile_id": "ro", "base_file": str(base)},
+    )
+    assert create.status_code == 200, create.text
+    workspace_id = _response_json(create)["id"]
+    act = client.post(f"/api/workspaces/{workspace_id}/activate")
+    assert act.status_code == 200, act.text
+    session_id = _response_json(act)["session_id"]
+
+    resp = client.post("/api/session/refresh", headers={"X-Session-Id": session_id})
+    assert resp.status_code == 200, resp.text
+    data = _response_json(resp)
+    assert data["session_id"] == session_id
+    assert len(data["po_list"]) == 3
+    assert "invoices" in data
+
+    bad = client.post("/api/session/refresh", headers={"X-Session-Id": "nope-nope-nope"})
+    assert bad.status_code == 400
+    assert _response_json(bad)["detail"]["code"] == "INVALID_SESSION"

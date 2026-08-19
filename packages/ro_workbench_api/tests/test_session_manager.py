@@ -98,6 +98,23 @@ def test_refresh_snapshot_replaces_active_session_snapshot(tmp_path: Path) -> No
     assert activated.session.snapshot is refreshed
 
 
+def test_refresh_snapshot_maps_build_error_to_schema_mismatch(tmp_path: Path) -> None:
+    store, workspaces = _store(tmp_path, "A")
+    manager = SessionManager(store, snapshot_factory=_snapshot)
+    activated = manager.activate(workspaces["A"].id)
+
+    def fail(context: object) -> WorkbookSnapshot:
+        del context
+        raise BuildSnapshotError("schema mismatch")
+
+    manager._snapshot_factory = fail
+    with pytest.raises(WorkspaceActivationError) as error:
+        manager.refresh_snapshot(activated.session.session_id)
+    assert error.value.code == "WORKSPACE_SCHEMA_MISMATCH"
+    assert manager.active_session_id == activated.session.session_id
+    assert activated.session.snapshot.base_file == "fake.xlsx"
+
+
 def test_switch_marks_old_session_draining_and_limits_routing(tmp_path: Path) -> None:
     store, workspaces = _store(tmp_path, "A", "B")
     clock = FakeClock()
@@ -136,7 +153,7 @@ def test_missing_base_file_does_not_change_existing_active_session(tmp_path: Pat
     with pytest.raises(WorkspaceActivationError) as error:
         manager.activate(missing.id)
     assert error.value.code == "WORKSPACE_FILE_MISSING"
-    assert store.load().current_workspace_id == first.workspace.id
+    assert store.load().current_workspace_id == missing.id
     assert manager.active_session_id == first.session.session_id
     assert len(manager.sessions()) == 1
 
@@ -155,7 +172,7 @@ def test_snapshot_failure_rolls_back_and_removes_candidate_temp_dir(tmp_path: Pa
     with pytest.raises(WorkspaceActivationError) as error:
         manager.activate(workspaces["B"].id)
     assert error.value.code == "WORKSPACE_SCHEMA_MISMATCH"
-    assert store.load().current_workspace_id == first.workspace.id
+    assert store.load().current_workspace_id == workspaces["B"].id
     assert manager.active_session_id == first.session.session_id
     assert {path for path in tmp_path.glob("ro-session-*")} == candidate_dirs
 

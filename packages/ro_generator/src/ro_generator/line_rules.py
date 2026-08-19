@@ -48,7 +48,7 @@ LINE_FIELD_SPECS: Final[dict[str, LineFieldSpec]] = {
     "po_no": LineFieldSpec(
         rule="客户PO 的 Purchasing Document 列",
         source_sheet=SHEET_CUSTOMER_PO,
-        source_field="Purchasing Document",
+        source_field="purchasing_document",
     ),
     "item_line_no": LineFieldSpec(
         rule='客户PO B列 "Item"',
@@ -62,16 +62,17 @@ LINE_FIELD_SPECS: Final[dict[str, LineFieldSpec]] = {
     ),
     "sap": LineFieldSpec(
         rule="PO record 的 SAP Number 列，关联 DATA BASE",
-        source_field="SAP Number",
+        source_field="sap",
     ),
     "description": LineFieldSpec(
         rule="DATA BASE 的 Material Description 列，通过 SAP 关联",
         source_sheet=SHEET_DATA_BASE,
-        source_field="Material Description",
+        source_field="description",
     ),
     "gs_model": LineFieldSpec(
         rule="DATA BASE 的 GS Model 列，通过 SAP 关联",
-        source_field="GS MODEL",
+        source_sheet=SHEET_DATA_BASE,
+        source_field="gs_model",
     ),
     "unit_price": LineFieldSpec(
         rule="DATA BASE 中按主体 + Category 选择对应 FOB 单价列",
@@ -84,7 +85,7 @@ LINE_FIELD_SPECS: Final[dict[str, LineFieldSpec]] = {
     "quantity": LineFieldSpec(
         rule="PI/PO 使用客户PO 的 Order Quantity；Invoice/PL 使用 PO record 的 SHIP QTY",
         source_sheet=SHEET_CUSTOMER_PO,
-        source_field="Order Quantity",
+        source_field="order_quantity",
         zero_placeholder="需填: 数量",
     ),
     "amount": LineFieldSpec(
@@ -132,34 +133,34 @@ LINE_FIELD_SPECS: Final[dict[str, LineFieldSpec]] = {
     ),
     "carton_count": LineFieldSpec(
         rule='PL 使用 PO record AD列 "CTNS"',
-        source_field="CTNS",
+        source_field="carton_count",
         skip_if_none=True,
     ),
     "length": LineFieldSpec(
         rule="DATA BASE 的 L 列",
         source_sheet=SHEET_DATA_BASE,
-        source_field="L",
+        source_field="length",
         skip_if_none=True,
         display_decimal_places=2,
     ),
     "width": LineFieldSpec(
         rule="DATA BASE 的 W 列",
         source_sheet=SHEET_DATA_BASE,
-        source_field="W",
+        source_field="width",
         skip_if_none=True,
         display_decimal_places=2,
     ),
     "height": LineFieldSpec(
         rule="DATA BASE 的 H 列",
         source_sheet=SHEET_DATA_BASE,
-        source_field="H",
+        source_field="height",
         skip_if_none=True,
         display_decimal_places=2,
     ),
     "confirmed_ex_factory_date": LineFieldSpec(
         rule="客户PO 的 ship DATE 列",
         source_sheet=SHEET_CUSTOMER_PO,
-        source_field="ship DATE",
+        source_field="ship_date",
         none_placeholder="需填: 出厂日期",
     ),
 }
@@ -175,12 +176,12 @@ _INVOICE_PL_OVERRIDES: Final[dict[str, LineFieldOverride]] = {
     "quantity": {
         "rule": "Invoice/PL 使用 PO record 的月度出货数量",
         "source_sheet": SHEET_PO_RECORD,
-        "source_field": "SHIP QTY",
+        "source_field": "ship_qty",
     },
     "description": {
         "rule": "Invoice/PL 使用 PO record 的 DESCRIPTION 列",
         "source_sheet": SHEET_PO_RECORD,
-        "source_field": "DESCRIPTION",
+        "source_field": "description",
     },
 }
 
@@ -189,7 +190,7 @@ _PL_ONLY_OVERRIDES: Final[dict[str, LineFieldOverride]] = {
     "cbm": {
         "rule": 'PL 使用 PO record AJ列 "TOTAL CBM"',
         "source_sheet": SHEET_PO_RECORD,
-        "source_field": "TOTAL CBM",
+        "source_field": "total_cbm",
         "source_type": "base_field",
     },
 }
@@ -214,7 +215,7 @@ _SELLER_LINE_OVERRIDES: Final[dict[str, list[tuple[frozenset[str], LineFieldOver
             {
                 "rule": 'PO record 的 "FINAL EX-FACTORY DATE" 列',
                 "source_sheet": SHEET_PO_RECORD,
-                "source_field": "FINAL EX-FACTORY DATE",
+                "source_field": "final_ex_factory_date",
             },
         ),
     ],
@@ -224,12 +225,12 @@ _CONTEXT_LINE_OVERRIDES: Final[dict[tuple[str, str, str], LineFieldOverride]] = 
     ("PI", "EMAX PTE", "confirmed_ex_factory_date"): {
         "rule": 'PO record 的 "FINAL EX-FACTORY DATE" 列',
         "source_sheet": SHEET_PO_RECORD,
-        "source_field": "FINAL EX-FACTORY DATE",
+        "source_field": "final_ex_factory_date",
     },
     ("PO", "GS PTE", "confirmed_ex_factory_date"): {
         "rule": '客户PO 的 "ship DATE" 列',
         "source_sheet": SHEET_CUSTOMER_PO,
-        "source_field": "ship DATE",
+        "source_field": "ship_date",
     },
 }
 

@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from "vue";
 import { useWorkbench } from "../../stores/workbench";
-import { api } from "../../stores/api";
-import { useWorkspace } from "../../stores/workspace";
+import { api, ApiError, getSessionId } from "../../stores/api";
+import { activationErrorCode, isSchemaMismatchCode, useWorkspace } from "../../stores/workspace";
+import { useSchemaRepair } from "../../stores/schemaRepair";
 import { createMockWorkspaceService } from "../../services/workspace.mock";
 import { createHttpWorkspaceService } from "../../services/workspace.http";
 import { baseFileName } from "../../services/workspace";
 import WorkspaceSwitcher from "../workspace/WorkspaceSwitcher.vue";
 import WorkspaceSettings from "../workspace/WorkspaceSettings.vue";
+import ActivationErrorDialog from "../workspace/ActivationErrorDialog.vue";
 
 const wb = useWorkbench();
 const workspaceStore = useWorkspace();
+const schemaRepair = useSchemaRepair();
 const workspacePrototypeEnabled = typeof window !== "undefined"
   && import.meta.env.DEV
   && new URLSearchParams(window.location.search).get("workspace-prototype") === "1";
@@ -47,16 +50,16 @@ async function initializeWorkspace(legacyPath: string | null) {
   );
   try {
     const bootstrap = await workspaceStore.bootstrap();
+    if (isSchemaMismatchCode(bootstrap.activation_error?.code)) {
+      wb.setActiveTab("check");
+      await schemaRepair.refreshIssues();
+    }
     if (
       !workspacePrototypeEnabled
       && !bootstrap.current_workspace_id
       && legacyPath?.trim()
     ) {
       await migrateLegacyWorkspace(legacyPath.trim());
-    }
-    if (bootstrap.activation_error && bootstrap.current_workspace_id) {
-      workspaceStore.error = bootstrap.activation_error.message;
-      showWorkspaceSettings.value = true;
     }
   } catch {
     // API 不可用时保留旧入口，确保升级不会把现有 RO 流程变成空白页。
@@ -128,14 +131,65 @@ async function loadData() {
     status.value = "error";
   }
 }
+
+async function reloadWorkspaceData() {
+  const workspaceId = workspaceStore.currentWorkspaceId;
+  if (!workspaceId) {
+    await wb.reloadData();
+    return;
+  }
+  workspaceStore.dismissActivationError();
+  if (!getSessionId()) {
+    wb.resetSession();
+    wb.loading = true;
+    try {
+      await workspaceStore.activateWorkspace(workspaceId);
+    } catch (cause) {
+      wb.loading = false;
+      await surfaceSchemaBannerIfNeeded(cause);
+    }
+    return;
+  }
+  try {
+    await wb.reloadData();
+    await schemaRepair.refreshIssues();
+  } catch (cause) {
+    const message = cause instanceof ApiError ? cause.message : String(cause);
+    const code = cause instanceof ApiError ? cause.code : "WORKSPACE_ACTIVATION_FAILED";
+    wb.resetSession();
+    workspaceStore.surfaceActivationFailure(workspaceId, message, code);
+    await surfaceSchemaBannerIfNeeded(cause);
+  }
+}
+
+async function surfaceSchemaBannerIfNeeded(cause: unknown) {
+  if (!isSchemaMismatchCode(activationErrorCode(cause))) return;
+  showWorkspaceSettings.value = false;
+  wb.setActiveTab("check");
+  await schemaRepair.refreshIssues();
+}
 </script>
 
 <template>
   <header class="topbar">
     <div class="brand">
       <div class="brand-mark">RO</div>
-      <WorkspaceSwitcher v-if="workspaceEnabled" @manage="showWorkspaceSettings = true" />
-      <template v-else>
+      <WorkspaceSwitcher
+        v-if="workspaceEnabled"
+        @manage="showWorkspaceSettings = true"
+      />
+      <button
+        v-if="workspaceEnabled && (wb.baseFile || workspaceStore.currentWorkspaceId)"
+        class="reload-btn"
+        type="button"
+        title="共享盘数据更新后，点击重新加载最新数据"
+        :disabled="wb.reloading"
+        @click="reloadWorkspaceData"
+      >
+        <span class="reload-icon" :class="{ spinning: wb.reloading }" aria-hidden="true">⟳</span>
+        {{ wb.reloading ? '加载中…' : '重新加载' }}
+      </button>
+      <template v-else-if="!workspaceEnabled">
         <div class="file-title">
           <strong v-if="wb.baseFile">{{ wb.baseFile.split("/").pop() }}</strong>
           <strong v-else-if="configuredPath">{{ configuredPath.split("/").pop() }}</strong>
@@ -162,6 +216,7 @@ async function loadData() {
   </header>
 
   <WorkspaceSettings :open="showWorkspaceSettings" @close="showWorkspaceSettings = false" />
+  <ActivationErrorDialog @close="workspaceStore.dismissActivationError()" />
 
   <!-- 设置面板 -->
   <Teleport to="body">
@@ -244,6 +299,20 @@ async function loadData() {
 }
 .load-btn:hover { background: #dce7ff; }
 .load-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.reload-btn {
+  display: flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 13px; flex-shrink: 0;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel); color: var(--text);
+  font: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+  white-space: nowrap;
+}
+.reload-btn:hover:not(:disabled) { border-color: var(--blue); color: var(--blue); background: var(--blue-weak); }
+.reload-btn:disabled { opacity: 0.6; cursor: wait; }
+.reload-icon { font-size: 15px; line-height: 1; display: inline-block; }
+.reload-icon.spinning { animation: reload-spin 0.9s linear infinite; }
+@keyframes reload-spin { to { transform: rotate(360deg); } }
 
 .top-actions { display: flex; align-items: center; gap: 8px; }
 .prototype-label { padding: 4px 7px; border-radius: 5px; color: var(--blue); background: var(--blue-weak); font-size: 10px; font-weight: 800; letter-spacing: .04em; }
