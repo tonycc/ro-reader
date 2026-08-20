@@ -14,7 +14,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any, cast
 
-from ro_generator.document_model import DocumentModel
+from ro_generator.document_model import DocumentLine, DocumentModel
 from ro_generator.generator import BuildDocumentResult
 from ro_generator.header_rules import (
     HEADER_MANUAL_KEYS,
@@ -98,6 +98,8 @@ _COLUMN_LABEL_DEFAULTS: dict[str, str] = {
     "gross_weight": "G/W (KGS)",
     "cbm": "CBM",
     "carton_count": "CTNS",
+    "carton_from": "Fr",
+    "carton_to": "To",
     "confirmed_ex_factory_date": "EX-FACTORY DATE",
 }
 
@@ -696,9 +698,15 @@ def _build_header_source_entries(
                 ):
                     source_type, sheet, field = ("system_generated", None, None)
                     rule = "预览时自动填入程序运行当天日期"
-                elif field_name in HEADER_MANUAL_KEYS:
+                elif field_name in HEADER_MANUAL_KEYS or (
+                    spec is not None and spec.source_type == "manual_input"
+                ):
                     source_type, sheet, field = ("manual_input", None, None)
-                    rule = "业务字段，需由业务人员在工作台中录入，工具不自动生成"
+                    rule = (
+                        spec.rule
+                        if spec is not None and spec.rule
+                        else "业务字段，需由业务人员在工作台中录入，工具不自动生成"
+                    )
                 else:
                     if spec is None:
                         source_type, sheet, field = ("template_content", None, None)
@@ -763,6 +771,10 @@ def _build_line_source_entries(
             fixed_value, fixed_column = _preview_fixed_value(mapping, key)
             line_spec = None
             val: object = None
+            source_type = "template_content"
+            sheet: str | None = None
+            field: str | None = None
+            rule = ""
             if fixed_value is not None:
                 val = fixed_value
                 if not val:
@@ -795,6 +807,7 @@ def _build_line_source_entries(
                 if key == "quantity" and dl.quantity_source_field:
                     field = dl.quantity_source_field
                     rule = f'PO RECORD 的 INV# 对应月度出货列 "{field}"'
+                sheet, field, rule = _apply_packing_weight_source(dl, key, sheet, field, rule)
 
             if val is None or val == "":
                 continue
@@ -808,13 +821,47 @@ def _build_line_source_entries(
                     "label": f"{label} (Row {i + 1})",
                     "source_type": source_type,
                     "sheet": sheet,
-                    "row": dl.source_row if line_spec and uses_po_record_row(line_spec) else None,
+                    "row": _line_source_row(dl, sheet, line_spec),
                     "field": field,
                     "value": display_value,
                     "rule": rule,
                 }
             )
     return entries
+
+
+def _line_source_row(
+    line: DocumentLine,
+    sheet: str | None,
+    line_spec: Any,
+) -> int | None:
+    if sheet == current_schema().sheet("PO record").name:
+        return line.source_row
+    if line_spec and uses_po_record_row(line_spec):
+        return line.source_row
+    return None
+
+
+def _apply_packing_weight_source(
+    line: DocumentLine,
+    key: str,
+    sheet: str | None,
+    field: str | None,
+    rule: str,
+) -> tuple[str | None, str | None, str]:
+    if key == "net_weight" and line.net_weight_source_field:
+        return (
+            line.net_weight_source_sheet,
+            line.net_weight_source_field,
+            line.net_weight_source_rule or rule,
+        )
+    if key == "gross_weight" and line.gross_weight_source_field:
+        return (
+            line.gross_weight_source_sheet,
+            line.gross_weight_source_field,
+            line.gross_weight_source_rule or rule,
+        )
+    return sheet, field, rule
 
 
 def _preview_fixed_value(mapping: Any, key: str) -> tuple[str | None, str]:

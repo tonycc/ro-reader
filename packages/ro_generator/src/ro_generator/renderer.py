@@ -456,7 +456,20 @@ def _write_data_row(
         if spec.computed:
             if val is not None:
                 _write_line_cell(ws[addr], val, spec)
-            builder.add_computed(addr, key)
+            packing_sheet, packing_field = _packing_weight_location(doc_line, key)
+            if packing_field:
+                builder.add(
+                    addr,
+                    SourceLocation(
+                        packing_sheet or current_schema().sheet("DATA BASE").name,
+                        src_row
+                        if packing_sheet == current_schema().sheet("PO record").name
+                        else None,
+                        packing_field,
+                    ),
+                )
+            else:
+                builder.add_computed(addr, key)
             continue
 
         source_field = spec.source_field or key
@@ -795,6 +808,17 @@ def _apply_print_layout(ws: Worksheet) -> None:
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 1
     ws.page_setup.scale = None
+
+
+def _packing_weight_location(
+    doc_line: DocumentLine,
+    key: str,
+) -> tuple[str | None, str | None]:
+    if key == "net_weight":
+        return doc_line.net_weight_source_sheet, doc_line.net_weight_source_field
+    if key == "gross_weight":
+        return doc_line.gross_weight_source_sheet, doc_line.gross_weight_source_field
+    return None, None
 
 
 __all__ = ["render_document", "render_document_bundle"]

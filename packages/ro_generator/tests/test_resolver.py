@@ -707,6 +707,22 @@ class TestFormulaFallback:
         line = result.lines[0]
         assert line.net_weight == Decimal("0")
         assert line.gross_weight == Decimal("0")
+        assert line.po_net_weight == Decimal("0")
+        assert line.po_gross_weight == Decimal("0")
+
+    def test_missing_po_weights_do_not_copy_into_po_total_fields(self, tmp_path: Path) -> None:
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[basic_po_row()],
+        )
+        with WorkbookReader(path) as reader:
+            result = resolve_po_lines(reader, "4500030844")
+        line = result.lines[0]
+        assert line.po_net_weight is None
+        assert line.po_gross_weight is None
+        assert line.net_weight == Decimal("12.5")
+        assert line.gross_weight == Decimal("13.8")
 
     def test_total_cbm_preserves_source_decimal_places(self, tmp_path: Path) -> None:
         path = make_base_file(

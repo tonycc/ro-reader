@@ -88,6 +88,7 @@ base 文件、缓存、临时导出和 PDF 转换都在用户机器上完成。�
 - PO 行编辑和 Invoice 只读 inspection。
 - 六种内部单据类型的结构化预览。
 - Excel 导出、批量 ZIP、LibreOffice PDF。
+- Invoice/PL PDF 按出具方叠主体印章；缺章文件不阻断导出。
 - YAML 模板 mapping、模板引用校验和超行插入。
 - CLI、FastAPI、本地浏览器工作台和 PyInstaller 启动器。
 - macOS/Windows CI 构建。
@@ -282,6 +283,8 @@ CLI 写入 `--output-dir`，支持 `overwrite`、`rename`、`abort` 冲突策略
 ### 12.4 PDF
 
 PDF 复用 Excel renderer：先写模板，再调用 LibreOffice `soffice --headless --convert-to pdf`。转换使用独立 LibreOffice user profile，避免与用户正在运行的实例争锁。渲染时按实际有内容的单元格重设打印区，并把工作表缩放到一页宽、一页高，避免模板里残留的样例打印区或空列把 Invoice/PL 拆到多页、切断表头。
+
+Invoice 与 PL 的 PDF 会再叠出具方印章，Excel 导出不加章。尺寸：SK 圆章直径 4cm，GS PTE / EMAX PTE 圆章直径 3cm，YM 长条章 6×2.5cm，位置在页面右下（签字附近）；双页 Invoice+PL 每页都盖。PI、PO、CI、RO_PL 不盖。印章文件在 `customer_profiles/stamps/`，两个 Profile 共用同一套卖方公章。缺文件时静默跳过，不阻断 PDF 导出。
 
 ## 13. 模板策略
 

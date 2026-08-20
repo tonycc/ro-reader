@@ -1,5 +1,5 @@
 document: PI
-template_version: pf_2026.1
+template_version: pf_2026.2
 template: templates/gs/pi.xlsx
 sheet: Sheet1
 header:

@@ -52,6 +52,7 @@ from ro_generator.packager import (
     resolve_output_path,
 )
 from ro_generator.pdf_convert import convert_to_pdf
+from ro_generator.pdf_stamp import apply_seller_stamp
 from ro_generator.profiles import (
     GenerationContext,
     current_profile,
@@ -82,18 +83,25 @@ if TYPE_CHECKING:
     from ro_generator.workbook_snapshot import WorkbookSnapshot
 
 
-def _finalize_as_pdf(xlsx_path: Path) -> Path:
+def _finalize_as_pdf(
+    xlsx_path: Path,
+    *,
+    seller: str = "",
+    document_types: tuple[str, ...] = (),
+) -> Path:
     """把已渲染的 .xlsx 用 LibreOffice 转成 .pdf，并删除中间 .xlsx，返回 pdf 路径。
 
     PDF 导出走"先渲染 xlsx 模板、再无头转换"路径以保证纸面 = Excel 模板。
     转换失败（含未装 LibreOffice）由 convert_to_pdf 抛 RoGeneratorError，
     调用方（generate / export_invoice_group_from_snapshot）负责转成阻断错误结果。
+    Invoice/PL 在转换成功后叠主体印章；缺章文件不阻断导出。
     """
     try:
         pdf_path = convert_to_pdf(xlsx_path)
     finally:
         with suppress(OSError):
             xlsx_path.unlink()
+    apply_seller_stamp(pdf_path, seller=seller, document_types=document_types)
     return pdf_path
 
 
@@ -619,7 +627,11 @@ def _export_invoice_group_from_snapshot(
             )
             rendered_xlsx = render_document_bundle(bundle_items, output_path)
             final_path = (
-                _finalize_as_pdf(Path(rendered_xlsx.output_path))
+                _finalize_as_pdf(
+                    Path(rendered_xlsx.output_path),
+                    seller=seller,
+                    document_types=tuple(normalized_documents),
+                )
                 if is_pdf
                 else Path(rendered_xlsx.output_path)
             )
@@ -637,7 +649,11 @@ def _export_invoice_group_from_snapshot(
                 assert build.model is not None and build.mapping is not None
                 rendered_xlsx = render_document(build.model, build.mapping, output_path)
                 final_path = (
-                    _finalize_as_pdf(Path(rendered_xlsx.output_path))
+                    _finalize_as_pdf(
+                        Path(rendered_xlsx.output_path),
+                        seller=seller,
+                        document_types=(document,),
+                    )
                     if is_pdf
                     else Path(rendered_xlsx.output_path)
                 )
@@ -1049,7 +1065,11 @@ def _generate_one(
     render_result = render_document(build.model, build.mapping, output_path)
 
     if request.output_format == "pdf":
-        pdf_path = _finalize_as_pdf(Path(render_result.output_path))
+        pdf_path = _finalize_as_pdf(
+            Path(render_result.output_path),
+            seller=seller,
+            document_types=(doc_type,),
+        )
         return GenerationResult(
             status="success",
             files=(pdf_path.name,),
@@ -1159,7 +1179,11 @@ def _generate_invoice_pl_bundle(
     render_result = render_document_bundle(bundle_items, output_path)
 
     if request.output_format == "pdf":
-        pdf_path = _finalize_as_pdf(Path(render_result.output_path))
+        pdf_path = _finalize_as_pdf(
+            Path(render_result.output_path),
+            seller=seller,
+            document_types=tuple(combined_documents),
+        )
         return GenerationResult(
             status="success",
             files=(pdf_path.name,),

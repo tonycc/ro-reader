@@ -58,6 +58,8 @@ COMMON = dict(
         "ro_workbench_launcher",
         "openpyxl",
         "yaml",
+        "pypdf",
+        "ro_generator.pdf_stamp",
         "uvicorn",
         "uvicorn.loops",
         "uvicorn.loops.auto",

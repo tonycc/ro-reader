@@ -143,7 +143,7 @@ source_entries
 
 标题和出具方文本由 mapping loader 按 `preview_content.template_fields` 指向的模板单元格读取；`header_labels` 则来自各 header 值单元格同一行的模板标签。`layout` 决定这些字段位于顶部或左右信息区。映射存在但业务值为空的字段仍保留空白横线，连续地址行不重复显示标签。前端只呈现这些结构化结果，不写 SK、YM、GS 或 EMAX 的专属抬头。
 
-`column_labels` 已由核心包从当前 mapping 对应的 Excel 表头解析：YAML 键只决定列及顺序，实际文案来自 `table_header_row`。对于 mapping 声明 `merged_headers: true` 的模板，核心包还返回 `column_header_rows` 的 `rowspan/colspan` 结构，前端按 Excel 的合并关系渲染；其他多行表头仍以换行符呈现，不维护主体或单据专属列名。
+`column_labels` 已由核心包从当前 mapping 对应的 Excel 表头解析：YAML 键只决定列及顺序，实际文案来自 `table_header_row`。对于 mapping 声明 `merged_headers: true` 的模板，核心包还返回 `column_header_rows` 的 `rowspan/colspan` 结构，前端按 Excel 的合并关系渲染，并用 `colgroup` 给每个叶子列固定宽度（含装箱单 `carton_from` / `carton_to`），避免 `table-layout: fixed` 把未声明列挤成 0%。其他多行表头仍以换行符呈现，不维护主体或单据专属列名。
 
 ### 6.4 来源信息
 
@@ -175,7 +175,7 @@ source_entries
 
 后端返回单文件或 ZIP 路径后，store 通过 `/api/download` 触发浏览器下载。
 
-当错误 code 为 `PDF_CONVERTER_UNAVAILABLE` 时设置全局 `libreOfficeMissing`，展示安装引导。前端不得自行把 PDF 请求降级为 Excel。
+当错误 code 为 `PDF_CONVERTER_UNAVAILABLE` 时设置全局 `libreOfficeMissing`，展示安装引导。前端不得自行把 PDF 请求降级为 Excel。Invoice/PL 的 PDF 由核心包叠主体印章；前端不处理印章文件或坐标。
 
 ## 8. Store 状态
 

@@ -1,5 +1,5 @@
 document: PI
-template_version: pf_2026.1
+template_version: pf_2026.2
 template: templates/ym/pi.xlsx
 sheet: SHEET1
 header:
@@ -35,8 +35,8 @@ header_fixed:
   final_destination: USA
   manufacturer_code: "134102"
   manufacturer: WEIHAI E-MAX SPORT APPARATUS CO.LTD
-  manufacturer_address: NO. 93 GRAPE BEACH ROAD
-  manufacturer_address_2: SUNJIATUAN TOWN, WEIHAI, SHANGDONG, CHINA
+  manufacturer_address: "NO.25 TONGYI NORTH ROAD,"
+  manufacturer_address_2: HUANCUI DISTRICT, WEIHAI, SHANDONG, CHINA.
 table_header_row: 19
 lines:
   start_row: 20

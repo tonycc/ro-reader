@@ -8,6 +8,7 @@ from zipfile import ZipFile
 
 import pytest
 from openpyxl import Workbook, load_workbook
+from ro_generator.document_model import CODE_LINE_NOT_PRICED
 from ro_generator.generator import (
     export_invoice_group_from_snapshot,
     generate,
@@ -124,6 +125,54 @@ def test_pf_invoice_and_pl_from_separate_templates_export_as_zip(tmp_path: Path)
     assert result.output_file.endswith(".zip")
     with ZipFile(result.output_file) as archive:
         assert sorted(archive.namelist()) == sorted(result.files)
+
+
+def test_pf_gs_pl_writes_sequential_carton_numbers(tmp_path: Path) -> None:
+    base_file = _make_pf_base(tmp_path)
+    workbook = load_workbook(base_file)
+    data_base = workbook["DATA BASE TEMPLATE"]
+    data_base["D3"] = 30
+    data_base["I2"] = "N/W"
+    data_base["J2"] = "G/W"
+    data_base["K2"] = "L"
+    data_base["L2"] = "W"
+    data_base["M2"] = "H"
+    data_base["I3"] = 1.1
+    data_base["J3"] = 2.0
+    data_base["K3"] = 119
+    data_base["L3"] = 11.5
+    data_base["M3"] = 17
+    po_record = workbook["PO RECORD 26"]
+    po_record.append(["4500000001", 10, "10001", "G26010101", 90, None])
+    workbook.save(base_file)
+    workbook.close()
+
+    profile = create_pf_profile()
+    context = GenerationContext(profile=profile, base_file=base_file)
+    snapshot = build_workbook_snapshot(str(base_file), context=context)
+    request = DocumentRequest(
+        base_file=str(base_file),
+        po_no="4500000001",
+        documents=("PL",),
+        seller="GS PTE",
+        invoice_no="G26010101",
+        output_dir=str(tmp_path / "output"),
+    )
+
+    preview_result = preview_from_snapshot(snapshot, request, context=context)
+    assert preview_result.status == "success", preview_result.errors
+    assert preview_result.preview is not None
+    assert preview_result.preview.lines[0]["carton_from"] == 1
+    assert preview_result.preview.lines[0]["carton_to"] == 3
+
+    export_result = generate(request, context=context)
+    assert export_result.status == "success", export_result.errors
+    assert export_result.output_file is not None
+    exported = load_workbook(export_result.output_file, data_only=False)
+    sheet = exported["PL"]
+    assert sheet["A21"].value == 1
+    assert sheet["B21"].value == 3
+    exported.close()
 
 
 def test_pf_invoice_inspection_uses_context_for_monthly_ship_quantity(tmp_path: Path) -> None:
@@ -251,7 +300,48 @@ def test_pf_gs_invoice_uses_invoice_source_rules_and_combo_breakdown(
     assert sheet["F31"].value == 7
     assert sheet["E32"].value.endswith("- REELS")
     assert sheet["F32"].value == 4
+    for addr in ("E20", "A29", "B30", "B31", "E31", "E32"):
+        font = sheet[addr].font
+        assert font.name == "Arial", addr
+        assert font.size == 9, addr
     exported.close()
+
+
+def test_pf_gs_invoice_single_rod_uses_combo_fob_column(tmp_path: Path) -> None:
+    """Single Rod 的 GS PTE 卖价在 COMBO FOB 列；ROD 列是 Combo 组件价，不能当主单价。"""
+
+    base_file = _make_pf_base(tmp_path, category="Single Rod")
+    workbook = load_workbook(base_file)
+    data_base = workbook["DATA BASE TEMPLATE"]
+    data_base["I2"] = "EMAX-GS ROD FOB 20260612-NEW PO 留下3%"
+    data_base["I3"] = None
+    po_record = workbook["PO RECORD 26"]
+    po_record.append(["4500000001", 20, "10001", "G26010101", 90, None])
+    workbook.save(base_file)
+    workbook.close()
+
+    profile = create_pf_profile()
+    context = GenerationContext(profile=profile, base_file=base_file)
+    snapshot = build_workbook_snapshot(str(base_file), context=context)
+    request = DocumentRequest(
+        base_file=str(base_file),
+        po_no="4500000001",
+        documents=("INVOICE",),
+        seller="GS PTE",
+        invoice_no="G26010101",
+        output_dir=str(tmp_path / "output"),
+    )
+
+    preview_result = preview_from_snapshot(snapshot, request, context=context)
+    assert preview_result.status == "success", preview_result.errors
+    assert preview_result.preview is not None
+    preview = preview_result.preview
+    assert preview.lines[0]["unit_price"] == "$11.00"
+    assert all(message.code != CODE_LINE_NOT_PRICED for message in preview_result.warnings)
+    source_by_field = {entry["preview_field"]: entry for entry in preview.source_entries}
+    assert source_by_field["line[0].unit_price"]["field"] == (
+        "EMAX-GS COMBO FOB 20260612-NEW PO 留下3%"
+    )
 
 
 def test_pf_invoice_combo_breakdown_prefers_po_record_category(tmp_path: Path) -> None:
@@ -305,29 +395,10 @@ def test_pf_invoice_combo_breakdown_prefers_po_record_category(tmp_path: Path) -
     assert [row["component"] for row in result.preview.cost_breakdown] == ["RODS", "REELS"]
 
 
-@pytest.mark.parametrize(
-    ("category", "expected_manufacturer", "expected_address", "expected_address_2"),
-    [
-        (
-            "Single Reel",
-            "GUANGDONG GLOBALSINO OUTDOOR SPORTS EQUIPMENT LIMITED",
-            "NO.40 BAIJIA ST12 NO. 93 GRAPE BEACH ROAD",
-            "DEVELOPMENT ZONE QINGYUAN GUANGDONG CHINA",
-        ),
-        (
-            "Single Rod",
-            "WEIHAI E-MAX SPORT APPARATUS CO.LTD",
-            "NO. 93 GRAPE BEACH ROAD",
-            "SUNJIATUAN TOWN, WEIHAI, SHANGDONG, CHINA",
-        ),
-    ],
-)
+@pytest.mark.parametrize("category", ["Single Reel", "Single Rod"])
 def test_pf_gs_pi_uses_screenshot_field_rules_for_preview_and_export(
     tmp_path: Path,
     category: str,
-    expected_manufacturer: str,
-    expected_address: str,
-    expected_address_2: str,
 ) -> None:
     base_file = _make_pf_base(tmp_path, category=category)
     workbook = load_workbook(base_file)
@@ -356,9 +427,9 @@ def test_pf_gs_pi_uses_screenshot_field_rules_for_preview_and_export(
     assert preview.resolved_values["pi_no"] == "4500000001"
     assert preview.resolved_values["document_date"] == "2026-08-01"
     assert preview.resolved_values["ex_factory_date"] == "SEE BELOW"
-    assert preview.resolved_values["manufacturer"] == expected_manufacturer
-    assert preview.resolved_values["manufacturer_address"] == expected_address
-    assert preview.resolved_values["manufacturer_address_2"] == expected_address_2
+    assert preview.resolved_values["manufacturer"] == ""
+    assert preview.resolved_values["manufacturer_address"] == ""
+    assert preview.resolved_values["manufacturer_address_2"] == ""
     assert preview.lines[0]["po_no"] == "4500000001"
     assert preview.lines[0]["item_number"] == "10001"
     assert preview.lines[0]["description"] == "Customer PO description"
@@ -390,8 +461,9 @@ def test_pf_gs_pi_uses_screenshot_field_rules_for_preview_and_export(
     )
     assert source_by_field["document_date"]["field"] == "PO Creation Date"
     assert source_by_field["totals.signature_date"]["field"] == "PO Creation Date"
-    assert source_by_field["manufacturer"]["sheet"] == "DATA BASE TEMPLATE"
-    assert source_by_field["manufacturer"]["field"] == "Category"
+    assert source_by_field["manufacturer"]["source_type"] == "manual_input"
+    assert source_by_field["manufacturer_address"]["source_type"] == "manual_input"
+    assert source_by_field["manufacturer_address_2"]["source_type"] == "manual_input"
 
     export_result = generate(request, context=context)
     assert export_result.status == "success", export_result.errors
@@ -400,9 +472,9 @@ def test_pf_gs_pi_uses_screenshot_field_rules_for_preview_and_export(
     sheet = exported["Sheet1"]
     assert sheet["G7"].value == "2026-08-01"
     assert sheet["G8"].value == "SEE BELOW"
-    assert sheet["G15"].value == expected_manufacturer
-    assert sheet["G16"].value == expected_address
-    assert sheet["G17"].value == expected_address_2
+    assert sheet["G15"].value in (None, "")
+    assert sheet["G16"].value in (None, "")
+    assert sheet["G17"].value in (None, "")
     assert sheet["D20"].value == "10001"
     assert sheet["E20"].value == "Customer PO description"
     assert sheet["I20"].value.strftime("%Y-%m-%d") == "2026-09-15"
@@ -750,6 +822,11 @@ def test_pf_sk_ym_pi_preview_uses_template_document_header(
     assert preview.resolved_values["bill_to_line2"] == (
         "10 KAKI BUKIT ROAD 2, #01-37, FIRST EAST CENTRE"
     )
+    if seller == "YM":
+        assert preview.resolved_values["manufacturer_address"] == "NO.25 TONGYI NORTH ROAD,"
+        assert preview.resolved_values["manufacturer_address_2"] == (
+            "HUANCUI DISTRICT, WEIHAI, SHANDONG, CHINA."
+        )
     po_no_entry = next(
         entry for entry in preview.source_entries if entry["preview_field"] == "line[0].po_no"
     )

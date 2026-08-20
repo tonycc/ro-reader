@@ -121,6 +121,17 @@ class RoRules:
             line.total_cbm,
         )
 
+    def packing_weight_source_for_line(
+        self,
+        line: OrderLine,
+        field: str,
+    ) -> tuple[str, str, str]:
+        label = "N/W" if field == "net_weight" else "G/W"
+        po_total = line.po_net_weight if field == "net_weight" else line.po_gross_weight
+        if po_total is not None:
+            return "PO record", field, f"PO record 的 {label} 列 × CTNS（箱数）"
+        return "DATA BASE", field, f"DATA BASE 的 {label} 列 × CTNS（箱数）"
+
     def price_segment(
         self,
         document_type: str,

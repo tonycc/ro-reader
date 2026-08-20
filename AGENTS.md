@@ -38,7 +38,7 @@ RO 单据工作台把 Excel 数据检查、结构化预览和单据装配合并�
 - 工具只读取、校验、装配和呈现，不生成业务编号。
 - 所有数据留在本机；当前没有云端、多用户协作、ERP/SAP 集成或 Agent/MCP。
 - 当前没有撤销/重做、导出历史或模板预览工具。
-- PDF 依赖用户预装 LibreOffice；缺失时明确阻断，不静默降级。
+- PDF 依赖用户预装 LibreOffice；缺失时明确阻断，不静默降级。Invoice/PL 的 PDF 会叠主体印章，缺章文件不阻断。
 - 当前仅支持 USD。
 
 ## 架构纪律
@@ -54,6 +54,8 @@ Excel
   → Renderer / PDF converter / Packager
 ```
 
+Invoice/PL 的 PDF 在 LibreOffice 转换后叠主体印章；缺章文件不阻断导出。Excel 导出不加章。
+
 - CLI 只做参数解析、核心调用和结果序列化。
 - FastAPI 只做 HTTP、session、事件路由和结果序列化。
 - 前端只做交互和呈现，不重复价格、主体、校验或装配规则。
@@ -67,7 +69,7 @@ Excel
 | 核心 | Python 3.11+、openpyxl、PyYAML、Decimal、冻结 dataclass |
 | API | FastAPI、uvicorn |
 | 前端 | Vue 3、TypeScript、Pinia、Vite、自研 table/CSS token |
-| PDF | LibreOffice headless |
+| PDF | LibreOffice headless；Invoice/PL 印章用 pypdf |
 | 启动器 | PyInstaller、pystray、Pillow |
 | 测试 | pytest、Playwright |
 
@@ -201,7 +203,7 @@ uv run pyinstaller packages/ro_workbench_launcher/ro-workbench.spec --noconfirm
 - 合成 fixture：`tests/fixtures/synthetic_base.xlsx`，由生成脚本创建并被 gitignore。
 - 真实业务 Excel 不入库。
 - PF 真实文件只用于本机只读验收；自动回归使用 `test_pf_snapshot.py` 和 `test_order_constraints.py` 的合成 workbook。
-- 测试应覆盖 combo/rod/reel、Profile 实际 Sheet、主体过滤、RO SHIP QTY、PF 月度数量、多发票号、缺 SAP、客户 PO 先行、MOQ/整箱、模板插行、票据组、PDF 错误路径和 API session 边界。
+- 测试应覆盖 combo/rod/reel、Profile 实际 Sheet、主体过滤、RO SHIP QTY、PF 月度数量、多发票号、缺 SAP、客户 PO 先行、MOQ/整箱、模板插行、票据组、PDF 错误路径、Invoice/PL PDF 印章和 API session 边界。
 
 ## 文档维护
 

@@ -57,6 +57,7 @@ launcher-build/
 # Debug artifacts
 *.png
 !packages/ro_workbench_launcher/resources/tray-icon.png
+!customer_profiles/stamps/*.png
 dry-run-resp.json
 .playwright-mcp/
 .claude/

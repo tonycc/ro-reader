@@ -136,6 +136,22 @@ LINE_FIELD_SPECS: Final[dict[str, LineFieldSpec]] = {
         source_field="carton_count",
         skip_if_none=True,
     ),
+    "carton_from": LineFieldSpec(
+        rule="按本单明细箱数累计的起始箱号",
+        source_sheet=None,
+        source_field=None,
+        source_type="computed",
+        computed=True,
+        skip_if_none=True,
+    ),
+    "carton_to": LineFieldSpec(
+        rule="按本单明细箱数累计的截止箱号",
+        source_sheet=None,
+        source_field=None,
+        source_type="computed",
+        computed=True,
+        skip_if_none=True,
+    ),
     "length": LineFieldSpec(
         rule="DATA BASE 的 L 列",
         source_sheet=SHEET_DATA_BASE,
@@ -302,6 +318,42 @@ _PROFILE_LINE_OVERRIDES: Final[dict[tuple[str, str, str, str], LineFieldOverride
     },
     ("pf", "PO", "EMAX PTE", "quantity"): {
         "rule": 'new PO template L列 "Order Quantity"',
+    },
+    ("pf", "PL", "GS PTE", "net_weight"): {
+        "rule": (
+            "DATA BASE 单箱 N/W × 本月出货箱数；PO RECORD 有订单总净重时按出货箱数/订单箱数缩放"
+        ),
+        "source_sheet": SHEET_DATA_BASE,
+        "source_field": "net_weight",
+        "source_type": "computed",
+        "computed": True,
+    },
+    ("pf", "PL", "GS PTE", "gross_weight"): {
+        "rule": (
+            "DATA BASE 单箱 G/W × 本月出货箱数；PO RECORD 有订单总毛重时按出货箱数/订单箱数缩放"
+        ),
+        "source_sheet": SHEET_DATA_BASE,
+        "source_field": "gross_weight",
+        "source_type": "computed",
+        "computed": True,
+    },
+    ("pf", "PL", "EMAX PTE", "net_weight"): {
+        "rule": (
+            "DATA BASE 单箱 N/W × 本月出货箱数；PO RECORD 有订单总净重时按出货箱数/订单箱数缩放"
+        ),
+        "source_sheet": SHEET_DATA_BASE,
+        "source_field": "net_weight",
+        "source_type": "computed",
+        "computed": True,
+    },
+    ("pf", "PL", "EMAX PTE", "gross_weight"): {
+        "rule": (
+            "DATA BASE 单箱 G/W × 本月出货箱数；PO RECORD 有订单总毛重时按出货箱数/订单箱数缩放"
+        ),
+        "source_sheet": SHEET_DATA_BASE,
+        "source_field": "gross_weight",
+        "source_type": "computed",
+        "computed": True,
     },
 }
 

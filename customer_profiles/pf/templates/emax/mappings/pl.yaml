@@ -1,5 +1,5 @@
 document: PL
-template_version: pf_2026.1
+template_version: pf_2026.3
 template: templates/emax/pl.xlsx
 sheet: PL
 header:
@@ -34,6 +34,8 @@ lines:
   start_row: 22
   style_source_row: 22
   columns:
+    carton_from: A
+    carton_to: B
     po_no: C
     sap: D
     description: E
@@ -57,6 +59,8 @@ preview_content:
     title: E4
     seller_info: [A1, A2]
   column_labels:
+    carton_from: "CTN#\nFr"
+    carton_to: To
     po_no: PO#
     sap: "DESCRIPTION OF GOODS\nITEM#"
     description: DESCRIPTION

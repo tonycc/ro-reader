@@ -557,6 +557,8 @@ def _resolve_row(
         net_weight=po_net_weight if po_net_weight is not None else product.net_weight,
         gross_weight=po_gross_weight if po_gross_weight is not None else product.gross_weight,
         total_cbm=total_cbm,
+        po_net_weight=po_net_weight,
+        po_gross_weight=po_gross_weight,
         prices=prices,
         subtotals=subtotals,
         po_record_prices=po_record_prices,

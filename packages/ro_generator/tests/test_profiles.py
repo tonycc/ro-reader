@@ -54,6 +54,42 @@ def test_ro_profile_loads_every_declared_mapping() -> None:
         assert mapping.template_path.is_relative_to(profile.assets.root)
 
 
+def test_ro_packing_weight_source_explains_carton_multiply() -> None:
+    profile = create_ro_profile()
+    product = Product(
+        sap="21-44640",
+        description="CB2500.B2",
+        category=1,
+        carton_qty=Decimal("24"),
+        net_weight=Decimal("8.5"),
+        gross_weight=Decimal("10.1"),
+    )
+    line = OrderLine(
+        po_no="4500030844",
+        item_line_no="10",
+        sap=product.sap,
+        description=product.description,
+        category=product.category,
+        quantity=Decimal("100"),
+        product=product,
+        carton_count=Decimal("5"),
+        net_weight=Decimal("8.5"),
+        gross_weight=Decimal("10.1"),
+        po_net_weight=Decimal("8.5"),
+        po_gross_weight=Decimal("10.1"),
+    )
+    assert profile.rules.packing_values_for_line(line, Decimal("100")) == (
+        Decimal("5"),
+        Decimal("42.50"),
+        Decimal("50.50"),
+        None,
+    )
+    sheet, field, rule = profile.rules.packing_weight_source_for_line(line, "net_weight")
+    assert (sheet, field) == ("PO record", "net_weight")
+    assert "× CTNS" in rule
+    assert "按出货箱数/订单箱数缩放" not in rule
+
+
 def test_pf_profile_loads_supplied_capability_matrix_and_mappings() -> None:
     profile = create_pf_profile()
 
@@ -115,6 +151,8 @@ def test_pf_packing_values_scale_order_totals_to_invoice_month_quantity() -> Non
         product=product,
         ship_qty=Decimal("3003"),
         carton_count=Decimal("1015"),
+        po_net_weight=Decimal("1136.8"),
+        po_gross_weight=Decimal("1725.5"),
         net_weight=Decimal("1136.8"),
         gross_weight=Decimal("1725.5"),
         total_cbm=Decimal("20.92600125"),
@@ -126,6 +164,150 @@ def test_pf_packing_values_scale_order_totals_to_invoice_month_quantity() -> Non
         Decimal("1701.70"),
         Decimal("20.6374"),
     )
+
+
+def test_pf_packing_values_use_data_base_per_carton_when_po_weight_missing() -> None:
+    """PO RECORD 缺 N/W 时只用 DATA BASE 单箱重量 × 本月出货箱数。"""
+
+    profile = create_pf_profile()
+    product = Product(
+        sap="1429058",
+        description="PF rod",
+        category=2,
+        carton_qty=Decimal("3"),
+        net_weight=Decimal("1.10"),
+        gross_weight=Decimal("2.00"),
+        length=Decimal("119"),
+        width=Decimal("11.5"),
+        height=Decimal("17"),
+    )
+    line = OrderLine(
+        po_no="4500754841",
+        item_line_no="10",
+        sap=product.sap,
+        description=product.description,
+        category=product.category,
+        quantity=Decimal("0"),
+        product=product,
+        ship_qty=Decimal("501"),
+        carton_count=Decimal("167"),
+        po_net_weight=None,
+        po_gross_weight=None,
+        net_weight=product.net_weight,
+        gross_weight=product.gross_weight,
+    )
+
+    assert profile.rules.packing_values_for_line(line, Decimal("501")) == (
+        Decimal("167"),
+        Decimal("183.70"),
+        Decimal("334.00"),
+        Decimal("3.8852"),
+    )
+
+    with profile_scope(profile):
+        spec = resolve_line_field_spec("net_weight", seller="GS PTE", document_type="PL")
+    assert spec.source_sheet == "DATA BASE TEMPLATE"
+    assert spec.source_field == "N/W"
+    assert "单箱 N/W × 本月出货箱数" in spec.rule
+    sheet, field, rule = profile.rules.packing_weight_source_for_line(line, "net_weight")
+    assert (sheet, field) == ("DATA BASE", "net_weight")
+    assert "单箱 N/W × 本月出货箱数" in rule
+
+
+def test_pf_packing_values_scale_po_total_even_when_equal_to_data_base_per_carton() -> None:
+    """PO 总量碰巧等于单箱重量时仍按订单箱数缩放，不能当缺失回退。"""
+
+    profile = create_pf_profile()
+    product = Product(
+        sap="1429058",
+        description="PF rod",
+        category=2,
+        carton_qty=Decimal("5"),
+        net_weight=Decimal("10"),
+        gross_weight=Decimal("12"),
+        length=Decimal("10"),
+        width=Decimal("10"),
+        height=Decimal("10"),
+    )
+    line = OrderLine(
+        po_no="4500754841",
+        item_line_no="10",
+        sap=product.sap,
+        description=product.description,
+        category=product.category,
+        quantity=Decimal("0"),
+        product=product,
+        ship_qty=Decimal("5"),
+        carton_count=Decimal("2"),
+        po_net_weight=Decimal("10"),
+        po_gross_weight=Decimal("12"),
+        net_weight=Decimal("10"),
+        gross_weight=Decimal("12"),
+    )
+
+    assert profile.rules.packing_values_for_line(line, Decimal("5")) == (
+        Decimal("1"),
+        Decimal("5.00"),
+        Decimal("6.00"),
+        Decimal("0.0010"),
+    )
+    sheet, field, rule = profile.rules.packing_weight_source_for_line(line, "net_weight")
+    assert (sheet, field) == ("PO record", "net_weight")
+    assert "按出货箱数/订单箱数缩放" in rule
+
+
+@pytest.mark.parametrize("carton_count", [None, Decimal("0")])
+def test_pf_packing_weight_source_falls_back_when_order_cartons_missing(
+    carton_count: Decimal | None,
+) -> None:
+    """PO 有总量但订单箱数缺失或为 0 时，计算和溯源都回退 DATA BASE 单箱重量。"""
+
+    profile = create_pf_profile()
+    product = Product(
+        sap="1429058",
+        description="PF rod",
+        category=2,
+        carton_qty=Decimal("1"),
+        net_weight=Decimal("1.10"),
+        gross_weight=Decimal("2.00"),
+        length=Decimal("10"),
+        width=Decimal("10"),
+        height=Decimal("10"),
+    )
+    line = OrderLine(
+        po_no="4500754841",
+        item_line_no="10",
+        sap=product.sap,
+        description=product.description,
+        category=product.category,
+        quantity=Decimal("0"),
+        product=product,
+        ship_qty=Decimal("1"),
+        carton_count=carton_count,
+        po_net_weight=Decimal("10"),
+        po_gross_weight=Decimal("12"),
+        net_weight=Decimal("10"),
+        gross_weight=Decimal("12"),
+    )
+
+    assert profile.rules.packing_values_for_line(line, Decimal("1")) == (
+        Decimal("1"),
+        Decimal("1.10"),
+        Decimal("2.00"),
+        Decimal("0.0010"),
+    )
+    net_sheet, net_field, net_rule = profile.rules.packing_weight_source_for_line(
+        line, "net_weight"
+    )
+    gross_sheet, gross_field, gross_rule = profile.rules.packing_weight_source_for_line(
+        line, "gross_weight"
+    )
+    assert (net_sheet, net_field) == ("DATA BASE", "net_weight")
+    assert "单箱 N/W × 本月出货箱数" in net_rule
+    assert "按出货箱数/订单箱数缩放" not in net_rule
+    assert (gross_sheet, gross_field) == ("DATA BASE", "gross_weight")
+    assert "单箱 G/W × 本月出货箱数" in gross_rule
+    assert "按出货箱数/订单箱数缩放" not in gross_rule
 
 
 def test_pf_invoice_ex_factory_source_uses_actual_ex_factory_column() -> None:

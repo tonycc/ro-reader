@@ -1,0 +1,24 @@
+# 卖方公章：RO / PF 共用。只叠在 Invoice、PL 的 PDF 上；缺文件不阻断导出。
+documents:
+  - INVOICE
+  - PL
+margin_right_cm: 1.2
+margin_bottom_cm: 1.5
+sellers:
+  GS PTE:
+    file: gs-pte.png
+    shape: circle
+    diameter_cm: 3
+  EMAX PTE:
+    file: emax-pte.png
+    shape: circle
+    diameter_cm: 3
+  SK:
+    file: skhy.png
+    shape: circle
+    diameter_cm: 4
+  YM:
+    file: whym.png
+    shape: rect
+    width_cm: 6
+    height_cm: 2.5

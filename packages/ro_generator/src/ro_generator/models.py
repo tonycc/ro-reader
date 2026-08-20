@@ -167,6 +167,9 @@ class OrderLine:
     net_weight: Decimal | None = None
     gross_weight: Decimal | None = None
     total_cbm: Decimal | None = None
+    # PO RECORD 订单总净重/毛重。缺失为 None，不把 DATA BASE 单箱值填进来。
+    po_net_weight: Decimal | None = None
+    po_gross_weight: Decimal | None = None
 
     # 单价快照（按 (seller, buyer) 建索引，已选定本行 category 对应的列）
     prices: dict[tuple[str, str], Decimal] = field(default_factory=dict)

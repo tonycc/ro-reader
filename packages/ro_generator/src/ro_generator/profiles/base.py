@@ -106,6 +106,13 @@ class CustomerRules(Protocol):
     ) -> tuple[Decimal | None, Decimal | None, Decimal | None, Decimal | None]:
         """返回 PL 行的箱数、净重、毛重和总体积。"""
 
+    def packing_weight_source_for_line(
+        self,
+        line: OrderLine,
+        field: str,
+    ) -> tuple[str, str, str]:
+        """返回装箱重量实际使用的逻辑 Sheet、内部字段键和取值说明。"""
+
     def price_segment(
         self,
         document_type: str,

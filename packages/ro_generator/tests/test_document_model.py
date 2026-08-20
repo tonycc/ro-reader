@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from pathlib import Path
 
+import pytest
 from ro_generator.document_model import (
     CODE_INVOICE_NO_MISSING,
     CODE_LINE_NOT_PRICED,
@@ -13,7 +15,16 @@ from ro_generator.document_model import (
     build_pi_model,
     build_pl_model,
 )
+from ro_generator.document_preview import build_preview
+from ro_generator.generator import BuildDocumentResult
 from ro_generator.models import OrderLine, Product
+from ro_generator.profiles import create_pf_profile, create_ro_profile, profile_scope
+from ro_generator.renderer import render_document
+from ro_generator.template_mapping import TemplateMapping, load_template_mapping
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+RO_TEMPLATES = REPO_ROOT / "customer_profiles" / "ro" / "templates"
+PF_TEMPLATES = REPO_ROOT / "customer_profiles" / "pf" / "templates"
 
 
 def make_product(sap="21-44640", description="CB2500.B2", category=1, gs_model="Q1", **kw):
@@ -192,9 +203,7 @@ class TestInvoice:
                 ("YM", "GS PTE"): shared,
             },
         )
-        sk = build_invoice_model(
-            (line,), seller="SK", buyer="YM", po_no="P", invoice_no="SKYM-001"
-        )
+        sk = build_invoice_model((line,), seller="SK", buyer="YM", po_no="P", invoice_no="SKYM-001")
         ym = build_invoice_model(
             (line,), seller="YM", buyer="GS PTE", po_no="P", invoice_no="SKYM-001"
         )
@@ -264,6 +273,70 @@ class TestPL:
         assert result.model.lines[0].gross_weight == Decimal("50.50")
         assert result.model.lines[0].cbm == Decimal("0.36")
 
+    def test_pl_assigns_sequential_carton_numbers(self) -> None:
+        line1 = make_order_line(
+            item_line_no="10", carton_count=Decimal("2"), ship_qty=Decimal("50")
+        )
+        line2 = make_order_line(
+            item_line_no="20",
+            sap="21-44641",
+            description="X",
+            carton_count=Decimal("3"),
+            ship_qty=Decimal("50"),
+        )
+        result = build_pl_model((line1, line2), seller="GS PTE", buyer="EMAX PTE", po_no="P")
+        assert result.model is not None
+        assert [(line.carton_from, line.carton_to) for line in result.model.lines] == [
+            (1, 2),
+            (3, 5),
+        ]
+
+    def test_pl_skips_carton_numbers_when_carton_count_is_zero(self) -> None:
+        line = make_order_line(
+            carton_count=Decimal("0"),
+            net_weight=Decimal("0"),
+            gross_weight=Decimal("0"),
+            total_cbm=Decimal("0"),
+        )
+        result = build_pl_model((line,), seller="GS PTE", buyer="EMAX PTE", po_no="P")
+        assert result.model is not None
+        assert result.model.lines[0].carton_from is None
+        assert result.model.lines[0].carton_to is None
+
+    def test_pl_ceils_fractional_cartons_and_continues_numbering(self) -> None:
+        line1 = make_order_line(
+            item_line_no="10", carton_count=Decimal("0.4"), ship_qty=Decimal("10")
+        )
+        line2 = make_order_line(
+            item_line_no="20",
+            sap="21-44641",
+            description="X",
+            carton_count=Decimal("3"),
+            ship_qty=Decimal("50"),
+        )
+        result = build_pl_model((line1, line2), seller="GS PTE", buyer="EMAX PTE", po_no="P")
+        assert result.model is not None
+        assert [(line.carton_from, line.carton_to) for line in result.model.lines] == [
+            (1, 1),
+            (2, 4),
+        ]
+
+    def test_pl_stops_carton_numbers_after_unknown_carton_count(self) -> None:
+        line1 = make_order_line(item_line_no="10", carton_count=None, ship_qty=Decimal("10"))
+        line2 = make_order_line(
+            item_line_no="20",
+            sap="21-44641",
+            description="X",
+            carton_count=Decimal("3"),
+            ship_qty=Decimal("50"),
+        )
+        result = build_pl_model((line1, line2), seller="GS PTE", buyer="EMAX PTE", po_no="P")
+        assert result.model is not None
+        assert [(line.carton_from, line.carton_to) for line in result.model.lines] == [
+            (None, None),
+            (None, None),
+        ]
+
     def test_pl_missing_packing_warns(self):
         line = make_order_line(carton_count=None)
         result = build_pl_model((line,), seller="GS PTE", buyer="EMAX PTE", po_no="P")
@@ -288,3 +361,184 @@ class TestPL:
         result = build_pl_model((line,), seller="GS PTE", buyer="EMAX PTE", po_no="P")
         assert result.model is not None
         assert not any(m.code == CODE_PACKING_DATA_MISSING for m in result.messages)
+
+
+def _pf_pl_mapping(seller: str) -> TemplateMapping:
+    mapping_name = "gs" if seller == "GS PTE" else "emax"
+    return load_template_mapping(PF_TEMPLATES / mapping_name / "mappings" / "pl.yaml")
+
+
+def _assert_pf_pl_weight_sources(
+    *,
+    seller: str,
+    buyer: str,
+    line: OrderLine,
+    tmp_path: Path,
+    expected_sheet: str,
+    expected_row: int | None,
+    net_rule: str,
+    gross_rule: str,
+) -> None:
+    mapping = _pf_pl_mapping(seller)
+    with profile_scope(create_pf_profile()):
+        result = build_pl_model((line,), seller=seller, buyer=buyer, po_no="P")
+        assert result.model is not None
+        packed = result.model.lines[0]
+        assert packed.net_weight_source_sheet == expected_sheet
+        assert packed.net_weight_source_field == "N/W"
+        assert packed.gross_weight_source_sheet == expected_sheet
+        assert packed.gross_weight_source_field == "G/W"
+        preview = build_preview(
+            BuildDocumentResult(model=result.model, mapping=mapping, messages=result.messages)
+        )
+        rendered = render_document(result.model, mapping, tmp_path / "pl.xlsx")
+    source_by_field = {entry["preview_field"]: entry for entry in preview.source_entries}
+    net = source_by_field["line[0].net_weight"]
+    gross = source_by_field["line[0].gross_weight"]
+    assert net["sheet"] == expected_sheet
+    assert net["field"] == "N/W"
+    assert net["row"] == expected_row
+    assert net_rule in str(net["rule"])
+    assert gross["sheet"] == expected_sheet
+    assert gross["field"] == "G/W"
+    assert gross["row"] == expected_row
+    assert gross_rule in str(gross["rule"])
+    if expected_sheet != "PO RECORD 26":
+        assert "按出货箱数/订单箱数缩放" not in str(net["rule"])
+        assert "按出货箱数/订单箱数缩放" not in str(gross["rule"])
+    start_row = mapping.lines.start_row
+    net_loc = rendered.source_index.lookup_source(f"H{start_row}")
+    gross_loc = rendered.source_index.lookup_source(f"I{start_row}")
+    assert net_loc is not None
+    assert net_loc.sheet == expected_sheet
+    assert net_loc.field == "N/W"
+    assert net_loc.row == expected_row
+    assert gross_loc is not None
+    assert gross_loc.sheet == expected_sheet
+    assert gross_loc.field == "G/W"
+    assert gross_loc.row == expected_row
+
+
+@pytest.mark.parametrize("seller,buyer", [("GS PTE", "EMAX PTE"), ("EMAX PTE", "PF")])
+def test_pf_pl_weight_source_uses_po_record_when_order_total_present(
+    seller: str, buyer: str, tmp_path: Path
+) -> None:
+    line = make_order_line(
+        ship_qty=Decimal("24"),
+        carton_count=Decimal("2"),
+        po_net_weight=Decimal("10"),
+        po_gross_weight=Decimal("12"),
+        source_row=18,
+        product=make_product(
+            carton_qty=Decimal("24"), net_weight=Decimal("10"), gross_weight=Decimal("12")
+        ),
+    )
+    _assert_pf_pl_weight_sources(
+        seller=seller,
+        buyer=buyer,
+        line=line,
+        tmp_path=tmp_path,
+        expected_sheet="PO RECORD 26",
+        expected_row=18,
+        net_rule="订单总净重",
+        gross_rule="订单总毛重",
+    )
+
+
+@pytest.mark.parametrize("seller,buyer", [("GS PTE", "EMAX PTE"), ("EMAX PTE", "PF")])
+def test_pf_pl_weight_source_falls_back_to_data_base(
+    seller: str, buyer: str, tmp_path: Path
+) -> None:
+    line = make_order_line(
+        ship_qty=Decimal("24"),
+        carton_count=Decimal("2"),
+        po_net_weight=None,
+        po_gross_weight=None,
+        source_row=18,
+        product=make_product(
+            carton_qty=Decimal("24"), net_weight=Decimal("1.10"), gross_weight=Decimal("2.00")
+        ),
+    )
+    _assert_pf_pl_weight_sources(
+        seller=seller,
+        buyer=buyer,
+        line=line,
+        tmp_path=tmp_path,
+        expected_sheet="DATA BASE TEMPLATE",
+        expected_row=None,
+        net_rule="单箱 N/W",
+        gross_rule="单箱 G/W",
+    )
+
+
+@pytest.mark.parametrize("carton_count", [None, Decimal("0")])
+@pytest.mark.parametrize("seller,buyer", [("GS PTE", "EMAX PTE"), ("EMAX PTE", "PF")])
+def test_pf_pl_weight_source_falls_back_when_order_cartons_missing(
+    carton_count: Decimal | None, seller: str, buyer: str, tmp_path: Path
+) -> None:
+    line = make_order_line(
+        ship_qty=Decimal("1"),
+        carton_count=carton_count,
+        po_net_weight=Decimal("10"),
+        po_gross_weight=Decimal("12"),
+        source_row=18,
+        product=make_product(
+            carton_qty=Decimal("1"), net_weight=Decimal("1.10"), gross_weight=Decimal("2.00")
+        ),
+    )
+    _assert_pf_pl_weight_sources(
+        seller=seller,
+        buyer=buyer,
+        line=line,
+        tmp_path=tmp_path,
+        expected_sheet="DATA BASE TEMPLATE",
+        expected_row=None,
+        net_rule="单箱 N/W",
+        gross_rule="单箱 G/W",
+    )
+
+
+def test_ro_gs_pl_weight_source_explains_carton_multiply_not_pf_scale(
+    tmp_path: Path,
+) -> None:
+    mapping = load_template_mapping(RO_TEMPLATES / "gs" / "mappings" / "pl.yaml")
+    line = make_order_line(
+        ship_qty=Decimal("100"),
+        carton_count=Decimal("5"),
+        net_weight=Decimal("8.5"),
+        gross_weight=Decimal("10.1"),
+        po_net_weight=Decimal("8.5"),
+        po_gross_weight=Decimal("10.1"),
+        source_row=5,
+    )
+    with profile_scope(create_ro_profile()):
+        result = build_pl_model((line,), seller="GS PTE", buyer="EMAX PTE", po_no="P")
+        assert result.model is not None
+        packed = result.model.lines[0]
+        assert packed.net_weight == Decimal("42.50")
+        assert packed.gross_weight == Decimal("50.50")
+        assert packed.net_weight_source_sheet == "PO record"
+        assert packed.net_weight_source_field == "N/W"
+        assert packed.net_weight_source_rule is not None
+        assert "× CTNS" in packed.net_weight_source_rule
+        assert "按出货箱数/订单箱数缩放" not in packed.net_weight_source_rule
+        preview = build_preview(
+            BuildDocumentResult(model=result.model, mapping=mapping, messages=result.messages)
+        )
+        rendered = render_document(result.model, mapping, tmp_path / "pl.xlsx")
+    source_by_field = {entry["preview_field"]: entry for entry in preview.source_entries}
+    net = source_by_field["line[0].net_weight"]
+    gross = source_by_field["line[0].gross_weight"]
+    assert net["sheet"] == "PO record"
+    assert net["field"] == "N/W"
+    assert net["row"] == 5
+    assert net["value"] == "42.50"
+    assert "× CTNS" in str(net["rule"])
+    assert "按出货箱数/订单箱数缩放" not in str(net["rule"])
+    assert "本月出货箱数" not in str(net["rule"])
+    assert "× CTNS" in str(gross["rule"])
+    loc = rendered.source_index.lookup_source("G9")
+    assert loc is not None
+    assert loc.sheet == "PO record"
+    assert loc.field == "N/W"
+    assert loc.row == 5

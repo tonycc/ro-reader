@@ -5,7 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font
 from ro_generator.errors import MappingError, TemplateError
 from ro_generator.template_mapping import (
     LineColumns,
@@ -36,9 +37,19 @@ YM_PI_MAPPING = RO_TEMPLATES / "ym" / "mappings" / "pi.yaml"
 YM_INVOICE_MAPPING = RO_TEMPLATES / "ym" / "mappings" / "invoice.yaml"
 YM_PL_MAPPING = RO_TEMPLATES / "ym" / "mappings" / "pl.yaml"
 PF_GS_PL_MAPPING = PF_TEMPLATES / "gs" / "mappings" / "pl.yaml"
+PF_EMAX_PL_MAPPING = PF_TEMPLATES / "emax" / "mappings" / "pl.yaml"
 PF_GS_PI_MAPPING = PF_TEMPLATES / "gs" / "mappings" / "pi.yaml"
 PF_SK_PI_MAPPING = PF_TEMPLATES / "sk" / "mappings" / "pi.yaml"
 PF_YM_PI_MAPPING = PF_TEMPLATES / "ym" / "mappings" / "pi.yaml"
+
+
+def _font_is_red(font: Font) -> bool:
+    color = font.color
+    if color is None:
+        return False
+    if color.type == "rgb" and str(color.rgb).upper() in {"FFFF0000", "FF0000", "00FF0000"}:
+        return True
+    return bool(color.type == "indexed" and color.indexed == 10)
 
 
 class TestRealGsInvoiceMapping:
@@ -194,10 +205,12 @@ class TestPreviewColumnHeaders:
         assert labels["description"] == "DESCRIPTION"
         assert labels["quantity"] == "QUANTITY\n(PCS)"
         assert labels["width"] == "W"
+        assert labels["carton_from"] == "CTN#\nFr"
+        assert labels["carton_to"] == "To"
 
     @pytest.mark.parametrize(
         "mapping_path",
-        [PF_GS_PL_MAPPING, PF_TEMPLATES / "emax" / "mappings" / "pl.yaml"],
+        [PF_GS_PL_MAPPING, PF_EMAX_PL_MAPPING],
     )
     def test_pf_pl_exposes_merged_header_rows(self, mapping_path: Path) -> None:
         mapping = load_template_mapping(mapping_path)
@@ -205,6 +218,7 @@ class TestPreviewColumnHeaders:
         assert len(mapping.preview_header_rows) == 3
         first_row = list(mapping.preview_header_rows[0])
         assert {cell["label"] for cell in first_row} >= {
+            "CTN#",
             "PO#",
             "DESCRIPTION OF GOODS",
             "MEASUREMENT",
@@ -264,17 +278,118 @@ class TestPreviewDocumentHeaders:
     def test_pf_gs_pi_declares_material_column_and_customer_creation_date(self) -> None:
         mapping = load_template_mapping(PF_GS_PI_MAPPING)
 
+        assert mapping.template_version == "pf_2026.2"
         assert mapping.lines.columns.item_number == "D"
         assert mapping.lines.columns.sap is None
         assert dict(mapping.preview_column_labels)["item_number"] == "Item Number"
         assert mapping.header_fixed["ex_factory_date"] == "SEE BELOW"
+        assert mapping.header_fixed["manufacturer_code"] == "134102"
+        assert "manufacturer" not in mapping.header_fixed
+        assert "manufacturer_address" not in mapping.header_fixed
         assert mapping.totals["signature_date"].value_mode == "model_date"
+        assert mapping.lines.start_row == 20
+        assert mapping.totals["subtotal"].cell == "H21"
+        assert mapping.totals["signature"].cell == "G24"
+
+    def test_pf_gs_pi_template_keeps_reserved_line_row_without_source_notes(self) -> None:
+        workbook = load_workbook(PF_TEMPLATES / "gs" / "pi.xlsx")
+        sheet = workbook["Sheet1"]
+        try:
+            assert sheet["F21"].value is not None and "Sub-Total" in str(sheet["F21"].value)
+            assert sheet["G22"].value is not None and "TOTAL EXCLUDING EXCISE TAX" in str(
+                sheet["G22"].value
+            )
+            assert sheet["F24"].value == "Signature:"
+            assert sheet["F25"].value == "Date:"
+            assert sheet["G15"].value in (None, "")
+            assert sheet["G16"].value in (None, "")
+            assert sheet["G17"].value in (None, "")
+            assert sheet["A20"].border.left.style == "thin"
+            assert sheet["F20"].number_format == "#,##0.00"
+            assert sheet["I20"].number_format == "dd/mmm/yy"
+            leaked = [
+                f"{cell.coordinate}={cell.value!r}"
+                for row in sheet.iter_rows(min_row=1, max_row=30, max_col=13)
+                for cell in row
+                if isinstance(cell.value, str)
+                and any(
+                    marker in cell.value
+                    for marker in ("new PO template", "固定值", "空着", "DATA BASE BK")
+                )
+            ]
+            assert leaked == []
+        finally:
+            workbook.close()
 
     def test_pf_emax_pi_declares_screenshot_header_rules(self) -> None:
         mapping = load_template_mapping(PF_TEMPLATES / "emax" / "mappings" / "pi.yaml")
 
         assert mapping.header_fixed["ex_factory_date"] == "SEE BELOW"
         assert mapping.totals["signature_date"].value_mode == "model_date"
+
+    def test_pf_ym_pi_manufacturer_address_matches_updated_template(self) -> None:
+        mapping = load_template_mapping(PF_YM_PI_MAPPING)
+        workbook = load_workbook(PF_TEMPLATES / "ym" / "pi.xlsx")
+        sheet = workbook["SHEET1"]
+        try:
+            assert mapping.template_version == "pf_2026.2"
+            assert mapping.header_fixed["manufacturer"] == ("WEIHAI E-MAX SPORT APPARATUS CO.LTD")
+            assert mapping.header_fixed["manufacturer_address"] == "NO.25 TONGYI NORTH ROAD,"
+            assert mapping.header_fixed["manufacturer_address_2"] == (
+                "HUANCUI DISTRICT, WEIHAI, SHANDONG, CHINA."
+            )
+            assert sheet["G16"].value == "NO.25 TONGYI NORTH ROAD,"
+            assert sheet["G17"].value == "HUANCUI DISTRICT, WEIHAI, SHANDONG, CHINA."
+            assert sheet["F21"].value is not None and "Sub-Total" in str(sheet["F21"].value)
+            assert sheet["F24"].value == "Signature:"
+        finally:
+            workbook.close()
+
+    def test_pf_gs_invoice_body_and_cost_breakdown_use_arial_9(self) -> None:
+        mapping = load_template_mapping(PF_TEMPLATES / "gs" / "mappings" / "invoice.yaml")
+        workbook = load_workbook(PF_TEMPLATES / "gs" / "invoice.xlsx")
+        sheet = workbook["Sheet1"]
+        try:
+            assert mapping.template_version == "pf_2026.2"
+            for addr in ("E20", "A29", "B30", "C30", "F30", "B31", "E31", "F31"):
+                font = sheet[addr].font
+                assert font.name == "Arial", addr
+                assert font.size == 9, addr
+        finally:
+            workbook.close()
+
+    @pytest.mark.parametrize("mapping_path", [PF_GS_PL_MAPPING, PF_EMAX_PL_MAPPING])
+    def test_pf_pl_style_and_total_rows_use_black_font(self, mapping_path: Path) -> None:
+        mapping = load_template_mapping(mapping_path)
+        workbook = load_workbook(mapping.template_path)
+        sheet = workbook[mapping.sheet]
+        try:
+            assert mapping.template_version == "pf_2026.3"
+            columns = mapping.lines.columns
+            addrs = [
+                f"{letter}{mapping.lines.style_source_row}"
+                for letter in (
+                    columns.carton_from,
+                    columns.carton_to,
+                    columns.po_no,
+                    columns.sap,
+                    columns.description,
+                    columns.quantity,
+                    columns.carton_count,
+                    columns.net_weight,
+                    columns.gross_weight,
+                    columns.length,
+                    columns.width,
+                    columns.height,
+                    columns.cbm,
+                )
+                if letter is not None
+            ]
+            addrs.extend(total.cell for total in mapping.totals.values())
+            for addr in addrs:
+                assert not _font_is_red(sheet[addr].font), addr
+        finally:
+            workbook.close()
 
     def test_pf_gs_po_declares_material_column_and_customer_creation_date(self) -> None:
         mapping = load_template_mapping(PF_TEMPLATES / "gs" / "mappings" / "po.yaml")

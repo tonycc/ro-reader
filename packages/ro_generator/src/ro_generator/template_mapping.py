@@ -45,6 +45,8 @@ class LineColumns:
     net_weight: str | None = None  # PL 专用
     gross_weight: str | None = None  # PL 专用
     carton_count: str | None = None  # PL 专用
+    carton_from: str | None = None  # PL 箱号起
+    carton_to: str | None = None  # PL 箱号止
     cbm: str | None = None  # PL 专用
     length: str | None = None  # PL 专用
     width: str | None = None  # PL 专用
@@ -352,6 +354,8 @@ def _parse_columns(raw: dict[object, object], yaml_path: Path) -> LineColumns:
         "net_weight",
         "gross_weight",
         "carton_count",
+        "carton_from",
+        "carton_to",
         "cbm",
         "length",
         "width",
@@ -844,6 +848,8 @@ def iter_line_columns(cols: LineColumns) -> list[tuple[str, str]]:
         "unit_price",
         "amount",
         "unit_label",
+        "carton_from",
+        "carton_to",
         "net_weight",
         "gross_weight",
         "carton_count",

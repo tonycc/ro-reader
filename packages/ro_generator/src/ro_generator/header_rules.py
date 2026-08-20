@@ -423,25 +423,25 @@ _PROFILE_HEADER_OVERRIDES: Final[dict[tuple[str, str, str, str], HeaderFieldOver
         "model_attr": "document_date",
     },
     ("pf", "PI", "GS PTE", "manufacturer"): {
-        "source_type": "computed",
-        "source_sheet": SHEET_DATA_BASE,
-        "source_field": "category",
-        "rule": "按 DATA BASE Category：Single Reel 使用 Globalsino，Single Rod/Combo 使用 EMAX",
-        "model_attr": "manufacturer_name",
+        "source_type": "manual_input",
+        "source_sheet": None,
+        "source_field": None,
+        "rule": "模板留空，业务手工维护",
+        "model_attr": None,
     },
     ("pf", "PI", "GS PTE", "manufacturer_address"): {
-        "source_type": "computed",
-        "source_sheet": SHEET_DATA_BASE,
-        "source_field": "category",
-        "rule": "按 DATA BASE Category 选择对应制造商地址第 1 行",
-        "model_attr": "manufacturer_company_address",
+        "source_type": "manual_input",
+        "source_sheet": None,
+        "source_field": None,
+        "rule": "模板留空，业务手工维护",
+        "model_attr": None,
     },
     ("pf", "PI", "GS PTE", "manufacturer_address_2"): {
-        "source_type": "computed",
-        "source_sheet": SHEET_DATA_BASE,
-        "source_field": "category",
-        "rule": "按 DATA BASE Category 选择对应制造商地址第 2 行",
-        "model_attr": "manufacturer_company_address_2",
+        "source_type": "manual_input",
+        "source_sheet": None,
+        "source_field": None,
+        "rule": "模板留空，业务手工维护",
+        "model_attr": None,
     },
     ("pf", "PO", "GS PTE", "manufacturer"): {
         "source_type": "computed",
@@ -587,6 +587,11 @@ def build_header_resolved_values(
             document_type=model.document_type,
         )
         model_attr = spec.model_attr if spec is not None else None
+        if field_name in HEADER_MANUAL_KEYS or (
+            spec is not None and spec.source_type == "manual_input"
+        ):
+            resolved_values[field_name] = HEADER_MANUAL_PLACEHOLDERS.get(field_name, "")
+            continue
         if field_name in ship_to_values:
             resolved_values[field_name] = ship_to_values[field_name]
             continue
@@ -607,8 +612,6 @@ def build_header_resolved_values(
 
         if field_name in HEADER_DATE_KEYS and (spec is None or spec.model_attr is None):
             resolved_values[field_name] = date.today().strftime("%Y-%m-%d")
-        elif field_name in HEADER_MANUAL_KEYS:
-            resolved_values[field_name] = HEADER_MANUAL_PLACEHOLDERS.get(field_name, "")
 
     return resolved_values
 

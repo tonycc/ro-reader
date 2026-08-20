@@ -193,6 +193,8 @@ DocumentModel → renderer → .xlsx → LibreOffice → .pdf
 
 `find_soffice()` 按环境变量、PATH 和平台常见路径查找。转换使用临时 `UserInstallation`，失败转换为核心错误类型。渲染后会按实际内容重设 `print_area`，并用 `fitToWidth=1` / `fitToHeight=1` 缩放到一页，避免模板样例打印区或空列导致 PDF 分页、表头切断。
 
+Invoice/PL 的 PDF 在转换成功后按出具方叠主体印章（SK 圆章直径 4cm，GS/EMAX 圆章直径 3cm，YM 长条章 6×2.5cm），锚在页面右下；PI/PO/CI/RO_PL 不盖。印章资源在 `customer_profiles/stamps/`，RO 与 PF 共用。缺印章文件或叠图失败时保留未盖章 PDF，不阻断导出。Excel 导出不加章。
+
 如果同时需要 xlsx 和 pdf，工作台服务为每种格式使用独立子目录，避免 PDF 流程删除中间 xlsx 时影响 Excel 产物。
 
 ## 11. CLI

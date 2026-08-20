@@ -33,23 +33,35 @@ function formatTermKey(key: string): string {
 }
 
 function isNumericCol(key: string) {
-  return ["unit_price", "quantity", "amount", "net_weight", "gross_weight", "cbm", "carton_count"].includes(key);
+  return [
+    "unit_price",
+    "quantity",
+    "amount",
+    "net_weight",
+    "gross_weight",
+    "cbm",
+    "carton_count",
+    "carton_from",
+    "carton_to",
+  ].includes(key);
 }
 
 // 合并表头的第一行不包含每个叶子列，table-layout: fixed 不能再从首行自动推断列宽。
-// 给 PF PL 的叶子列固定比例，保证 rowspan/colspan 表头和明细列使用同一套网格。
+// 每个叶子列都必须有比例；漏列会被挤成 0%，和相邻列叠在一起。
 const MERGED_HEADER_COLUMN_WIDTHS: Record<string, string> = {
-  po_no: "9%",
+  carton_from: "5%",
+  carton_to: "5%",
+  po_no: "10%",
   sap: "8%",
-  description: "15%",
-  quantity: "10%",
-  carton_count: "10%",
-  net_weight: "9%",
-  gross_weight: "9%",
-  length: "7%",
-  width: "7%",
-  height: "7%",
-  cbm: "9%",
+  description: "14%",
+  quantity: "8%",
+  carton_count: "7%",
+  net_weight: "8%",
+  gross_weight: "8%",
+  length: "6%",
+  width: "5%",
+  height: "5%",
+  cbm: "6%",
 };
 
 function columnWidth(key: string): string {
@@ -57,7 +69,7 @@ function columnWidth(key: string): string {
   // auto 会和 PO/品名平分剩余宽度，把单价、数量表头和数字错开。
   if (key === "unit_label") return "4%";
   if (columnHeaderRows.value.length > 1) {
-    return MERGED_HEADER_COLUMN_WIDTHS[key] || "auto";
+    return MERGED_HEADER_COLUMN_WIDTHS[key] || "6%";
   }
   return isNumericCol(key) ? "10%" : "auto";
 }

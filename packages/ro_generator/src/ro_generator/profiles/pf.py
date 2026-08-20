@@ -132,14 +132,14 @@ class PfRules:
 
         shipment_cartons = quantity / carton_size
         net_weight = _scaled_packing_total(
-            line.net_weight,
+            line.po_net_weight,
             line.carton_count,
             shipment_cartons,
             line.product.net_weight,
             Decimal("0.01"),
         )
         gross_weight = _scaled_packing_total(
-            line.gross_weight,
+            line.po_gross_weight,
             line.carton_count,
             shipment_cartons,
             line.product.gross_weight,
@@ -158,6 +158,22 @@ class PfRules:
             )
         )
         return shipment_cartons, net_weight, gross_weight, total_cbm
+
+    def packing_weight_source_for_line(
+        self,
+        line: OrderLine,
+        field: str,
+    ) -> tuple[str, str, str]:
+        label = "N/W" if field == "net_weight" else "G/W"
+        po_total = line.po_net_weight if field == "net_weight" else line.po_gross_weight
+        if _po_packing_per_carton(po_total, line.carton_count) is not None:
+            kind = "总净重" if field == "net_weight" else "总毛重"
+            return (
+                "PO record",
+                field,
+                f'PO RECORD 订单{kind} "{label}"，按出货箱数/订单箱数缩放',
+            )
+        return "DATA BASE", field, f"DATA BASE 单箱 {label} × 本月出货箱数"
 
     def price_segment(
         self,
@@ -261,7 +277,7 @@ class PfRules:
         document_type: str,
         seller: str,
     ) -> tuple[str | None, str | None, str | None]:
-        if document_type not in {"PI", "PO"} or seller != "GS PTE":
+        if document_type != "PO" or seller != "GS PTE":
             return None, None, None
         category = next((line.category for line in lines if line.category in {1, 2, 3}), None)
         if category == 3:
@@ -311,6 +327,15 @@ def _dimension_cbm(line: OrderLine) -> Decimal | None:
     return product.length * product.width * product.height / Decimal("1000000")
 
 
+def _po_packing_per_carton(
+    source_total: Decimal | None,
+    source_cartons: Decimal | None,
+) -> Decimal | None:
+    if source_total is None or source_cartons is None or source_cartons == Decimal("0"):
+        return None
+    return source_total / source_cartons
+
+
 def _scaled_packing_total(
     source_total: Decimal | None,
     source_cartons: Decimal | None,
@@ -318,10 +343,8 @@ def _scaled_packing_total(
     fallback_per_carton: Decimal | None,
     quantum: Decimal,
 ) -> Decimal | None:
-    per_carton: Decimal | None
-    if source_total is not None and source_cartons is not None and source_cartons != Decimal("0"):
-        per_carton = source_total / source_cartons
-    else:
+    per_carton = _po_packing_per_carton(source_total, source_cartons)
+    if per_carton is None:
         per_carton = fallback_per_carton
     if per_carton is None:
         return None

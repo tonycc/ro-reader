@@ -11,9 +11,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_CEILING, Decimal
 from typing import Final
 
 from ro_generator.header_rules import resolve_header_field_spec
@@ -59,6 +59,8 @@ class DocumentLine:
     amount: Decimal
     source_row: int | None = None
     carton_count: Decimal | None = None
+    carton_from: int | None = None
+    carton_to: int | None = None
     net_weight: Decimal | None = None
     gross_weight: Decimal | None = None
     cbm: Decimal | None = None
@@ -68,6 +70,12 @@ class DocumentLine:
     confirmed_ex_factory_date: date | None = None
     po_ex_factory_date: date | None = None  # PO record "FINAL EX-FACTORY DATE"
     quantity_source_field: str | None = None
+    net_weight_source_sheet: str | None = None
+    net_weight_source_field: str | None = None
+    net_weight_source_rule: str | None = None
+    gross_weight_source_sheet: str | None = None
+    gross_weight_source_field: str | None = None
+    gross_weight_source_rule: str | None = None
     item_number: str = ""  # PO 模板 Item Number，实际来源由 line mapping 规则决定
     cp_item: str = ""  # 客户PO "Item" 列值，SK/YM PI 模板 PO item Line Number 来源
     cost_breakdown: tuple[CostBreakdownItem, ...] = ()
@@ -311,6 +319,16 @@ def _assemble_lines(
             document_type,
             seller,
         )
+        nw_sheet, nw_field, nw_rule = (
+            _resolve_packing_weight_source(original_line, "net_weight")
+            if packing
+            else (None, None, None)
+        )
+        gw_sheet, gw_field, gw_rule = (
+            _resolve_packing_weight_source(original_line, "gross_weight")
+            if packing
+            else (None, None, None)
+        )
 
         doc_lines.append(
             DocumentLine(
@@ -340,6 +358,12 @@ def _assemble_lines(
                     if document_type in {"INVOICE", "PL", "CI", "RO_PL"}
                     else None
                 ),
+                net_weight_source_sheet=nw_sheet,
+                net_weight_source_field=nw_field,
+                net_weight_source_rule=nw_rule,
+                gross_weight_source_sheet=gw_sheet,
+                gross_weight_source_field=gw_field,
+                gross_weight_source_rule=gw_rule,
                 cost_breakdown=current_rules().cost_breakdown_for_line(
                     original_line,
                     document_type,
@@ -348,7 +372,48 @@ def _assemble_lines(
             )
         )
 
+    if packing:
+        doc_lines = _assign_carton_ranges(doc_lines)
+
     return doc_lines, messages
+
+
+def _carton_span(carton_count: Decimal | None) -> int | None:
+    if carton_count is None or carton_count <= 0:
+        return None
+    span = int(carton_count.to_integral_value(rounding=ROUND_CEILING))
+    return span if span > 0 else None
+
+
+def _assign_carton_ranges(doc_lines: list[DocumentLine]) -> list[DocumentLine]:
+    """按明细箱数累计 CTN# Fr/To，供装箱单首列使用。"""
+
+    numbered: list[DocumentLine] = []
+    next_number = 1
+    numbering_active = True
+    for line in doc_lines:
+        span = _carton_span(line.carton_count)
+        if not numbering_active or span is None:
+            numbered.append(line)
+            if span is None:
+                numbering_active = False
+            continue
+        carton_from = next_number
+        carton_to = next_number + span - 1
+        numbered.append(replace(line, carton_from=carton_from, carton_to=carton_to))
+        next_number = carton_to + 1
+    return numbered
+
+
+def _resolve_packing_weight_source(
+    line: OrderLine,
+    internal_field: str,
+) -> tuple[str, str, str]:
+    logical_sheet, field_key, rule = current_rules().packing_weight_source_for_line(
+        line, internal_field
+    )
+    schema = current_schema()
+    return schema.sheet(logical_sheet).name, schema.field(logical_sheet, field_key), rule
 
 
 def _collect_missing_packing_fields(

@@ -9,7 +9,7 @@ RO 单据工作台读取本地 Excel base 文件，按当前 Customer Profile �
 - PO 视角：查看和编辑 `PO record` 行，预览及导出 PI/PO。
 - Invoice 视角：按发票标识聚合 `SHIP QTY > 0` 的出货行，跨 PO 检查、预览和导出发票/装箱单。
 - Excel 模板渲染：保留模板字体、边框、合并单元格、行高、列宽和打印设置。
-- PDF 导出：先生成 `.xlsx`，再使用本机 LibreOffice 无头转换。
+- PDF 导出：先生成 `.xlsx`，再使用本机 LibreOffice 无头转换。Invoice/PL 的 PDF 会叠主体印章；缺章文件不阻断导出。
 - 字段溯源：预览字段可查看源 Sheet、行、字段或计算规则。
 - 分级校验：区分阻断错误、警告和待选择输入。
 - 多客户工作区：内置 `ro` 与 `pf` Profile，可保存多个 base 文件配置并从顶部快速切换。
@@ -305,7 +305,7 @@ CI 生成的包内会额外放入面向用户的 `README.txt`。它由 workflow 
 
 - 首次打开 macOS App 可能需要右键应用并选择“打开”。
 - Windows 未签名包可能触发 SmartScreen，测试时选择“更多信息 → 仍要运行”。
-- PDF 导出需要用户预装 LibreOffice；Excel 导出不依赖 LibreOffice。
+- PDF 导出需要用户预装 LibreOffice；Excel 导出不依赖 LibreOffice。Invoice/PL 的 PDF 会盖主体印章，缺章文件时仍可导出。
 - 启动器会自动打开浏览器；如果没有打开，可访问终端提示的 `http://127.0.0.1:<端口>`。
 - 用户通过工作台选择本地 `.xlsx` base 文件，业务文件不会被打进安装包。
 - 退出应用请使用系统托盘菜单中的“退出”。

@@ -1,5 +1,5 @@
 document: INVOICE
-template_version: pf_2026.1
+template_version: pf_2026.2
 template: templates/gs/invoice.xlsx
 sheet: Sheet1
 header:

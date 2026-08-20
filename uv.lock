@@ -1006,12 +1006,16 @@ version = "1.1.0"
 source = { editable = "packages/ro_generator" }
 dependencies = [
     { name = "openpyxl" },
+    { name = "pillow" },
+    { name = "pypdf" },
     { name = "pyyaml" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "openpyxl", specifier = ">=3.1.5" },
+    { name = "pillow", specifier = ">=10.0" },
+    { name = "pypdf", specifier = ">=4.0" },
     { name = "pyyaml", specifier = ">=6.0" },
 ]
 
