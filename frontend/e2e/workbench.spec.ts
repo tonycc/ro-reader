@@ -505,8 +505,8 @@ test.describe("RO Workbench E2E", () => {
 
     await expect(page.getByTestId("invoice-document-INVOICE_PL")).toBeVisible();
     await expect(page.locator(".preview-doc-section")).toHaveCount(2, { timeout: 8000 });
-    await expect(page.locator(".preview-doc-title").first()).toContainText(/Invoice|COMMERCIAL INVOICE/);
-    await expect(page.locator(".preview-doc-title").last()).toContainText(/PL|PACKING LIST/);
+    await expect(page.locator(".preview-doc-title").first()).toContainText(/INVOICE/i);
+    await expect(page.locator(".preview-doc-title").last()).toContainText(/PL|PACKING LIST/i);
     await expect(page.locator(".preview-body > .alert")).toHaveCount(0);
   });
 

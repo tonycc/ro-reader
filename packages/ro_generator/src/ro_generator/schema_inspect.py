@@ -98,9 +98,7 @@ def inspect_schema(
         if actual_sheet in skip_sheets:
             continue
 
-        available, letters = sheet_header_candidates(
-            reader, schema, logical_sheet, actual_sheet
-        )
+        available, letters = sheet_header_candidates(reader, schema, logical_sheet, actual_sheet)
         present = set(available)
 
         for expected in required_by_sheet[actual_sheet]:
@@ -192,10 +190,7 @@ def sheet_header_candidates(
 def _column_letters(headers: SheetHeaders) -> dict[str, str]:
     """把 reader 的 1-based 列号转成 Excel 列字母，供下拉显示。"""
 
-    return {
-        header: get_column_letter(index)
-        for header, index in headers.header_columns.items()
-    }
+    return {header: get_column_letter(index) for header, index in headers.header_columns.items()}
 
 
 def _internal_key_for(schema: BaseSchema, logical_sheet: str, header: str) -> str | None:

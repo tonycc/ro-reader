@@ -24,6 +24,8 @@ test.describe("Workspace interaction prototype", () => {
     expect(topbarBox).not.toBeNull();
     expect(tabsBox).not.toBeNull();
     expect(tabsBox!.y).toBeGreaterThanOrEqual(topbarBox!.y + topbarBox!.height - 1);
+    await error.getByRole("button", { name: "关闭" }).click();
+    await expect(error).toHaveCount(0);
     await trigger.click();
     await expect(page.getByTestId("workspace-option-ro-test")).toBeVisible();
   });
