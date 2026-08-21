@@ -14,6 +14,8 @@ RO 单据工作台读取本地 Excel base 文件，按当前 Customer Profile �
 - 分级校验：区分阻断错误、警告和待选择输入。
 - 多客户工作区：内置 `ro` 与 `pf` Profile，可保存多个 base 文件配置并从顶部快速切换。
 - PF 订单检查：按 SAP 聚合客户订单数量，提醒低于 MOQ 或不是整箱数量。
+- PF PI/PO 预览：不合规 Quantity 标红，感叹号展示后端警告原文；Invoice/PL 出货数量不标红。
+- 列对应关系：表头对不上时显示黄色提示，可在工作台把逻辑字段指到实际 Excel 列。
 - CLI、FastAPI 和工作台 UI 共享同一核心业务包。
 
 RO Profile 支持的主体与内部单据类型：
@@ -101,7 +103,7 @@ PF 示例应选择 `/path/to/Template PF/PO RECORD 2026.xlsx`，不是只填写�
 
 ### 4. 单据预览
 
-预览由后端返回结构化 JSON，前端按 header、明细、合计和备注区域渲染。单据标题、出具方抬头和字段标签从当前 mapping 引用的 Excel 模板读取，区域位置由 `preview_content.layout` 声明；明细列名来自模板真实表头。点击预览字段可查看其来源。预览不会先生成临时 Excel。
+预览由后端返回结构化 JSON，前端按 header、明细、合计和备注区域渲染。单据标题、出具方抬头和字段标签从当前 mapping 引用的 Excel 模板读取，区域位置由 `preview_content.layout` 声明；明细列名来自模板真实表头。点击预览字段可查看其来源。预览不会先生成临时 Excel。PF 的 PI/PO 若未满足 MOQ 或整箱，Quantity 会标红；这两类提醒不再出现在预览顶部黄条，数据检查页仍保留。
 
 ### 5. 导出
 
@@ -132,7 +134,7 @@ PF 示例应选择 `/path/to/Template PF/PO RECORD 2026.xlsx`，不是只填写�
 
 典型阻断包括缺少 Sheet/表头、SAP 不存在、订单数量缺失、发票号不匹配和模板 mapping 不存在。公式缓存值为空时，核心包会按规则回退计算并产生警告。
 
-PF 订单提醒使用稳定 code `MOQ_NOT_MET` 和 `FULL_CARTON_NOT_MET`，详情包含 SAP、订单数量、门槛/整箱值、余数及 `new PO template` 的定位信息。
+PF 订单提醒使用稳定 code `MOQ_NOT_MET` 和 `FULL_CARTON_NOT_MET`，详情包含 SAP、订单数量、门槛/整箱值、余数及 `new PO template` 的定位信息。数据检查页展示这两类 high warning；PI/PO 预览把同一提醒标在 Quantity 上。
 
 ## CLI
 
@@ -190,15 +192,16 @@ uv run ro-generate \
 
 ## API
 
-工作台后端当前提供 27 个 `/api` 端点：
+工作台后端当前提供 32 个 `/api` 端点：
 
 | 分组 | 端点 |
 | --- | --- |
 | 健康与文件 | `GET /api/health`、`POST /api/check-path` |
 | Profile/工作区 | `GET /api/profiles`、`GET /api/workspaces`、`POST /api/workspaces`、`PATCH /api/workspaces/{id}`、`DELETE /api/workspaces/{id}`、两种 validate、activate、`GET /api/bootstrap` |
-| Session | `POST /api/session/open`、`POST /api/session/close` |
+| Session | `POST /api/session/open`、`POST /api/session/refresh`、`POST /api/session/close` |
 | Invoice | 列表、inspection、preview、export、export-batch |
 | PO | 数据、customer-po、issues、dry-run、preview、edit、export、export-batch |
+| Schema | issues、mappings、override |
 | 下载 | `GET /api/download` |
 
 Profile/工作区配置端点不依赖业务 session；Invoice、PO、预览、编辑、导出和下载请求通过 `X-Session-Id` 关联 Profile、base 文件与临时输出目录。
@@ -237,7 +240,7 @@ pnpm run test:e2e
 pnpm run test:e2e:http
 ```
 
-截至 2026-08-09，Python 套件收集并通过 531 个测试；默认 Playwright 回归包含 29 个场景（含单据预览表头与 Excel 模板一致性、PF MOQ/整箱提醒及客户 PO 只读投影），另有 1 个隔离真实 HTTP 验收场景。CI 分别覆盖 Python、前端/E2E，以及 macOS/Windows 启动器构建。
+截至 2026-08-21，Python 套件收集 642 个测试（其中 10 个历史 spike 跳过）；默认 Playwright 回归包含 29 个场景（含单据预览表头与 Excel 模板一致性、PF MOQ/整箱提醒及客户 PO 只读投影），另有 1 个隔离真实 HTTP 验收场景。CI 分别覆盖 Python、前端/E2E，以及 macOS/Windows 启动器构建。发布版本见根目录 `VERSION`，当前为 `1.2.0`。
 
 ## 桌面构建与用户测试
 

@@ -221,7 +221,7 @@ uv run pytest packages/ro_generator/tests/test_generator.py -v
 uv run pytest packages/ro_workbench_api/tests/test_app.py -v
 ```
 
-截至 2026-08-09，全量为 531 个测试。Phase 5.0 的 RO 回归基线见 `packages/ro_generator/tests/test_ro_baseline.py`；RO/PF Profile 契约见 `packages/ro_generator/tests/test_profiles.py`；PF 客户 PO 先行、分离模板导出和 SK/YM PI 抬头一致性见 `test_pf_snapshot.py`；MOQ/整箱规则见 `test_order_constraints.py`；Profile-aware cache 见 `test_workbook_cache.py`；WorkspaceStore、SessionManager 和工作区 API 见 API 对应测试；CLI Profile 和退出码见 `test_cli.py`。
+截至 2026-08-21，全量为 642 个测试（其中 10 个历史 spike 跳过）。Phase 5.0 的 RO 回归基线见 `packages/ro_generator/tests/test_ro_baseline.py`；RO/PF Profile 契约见 `packages/ro_generator/tests/test_profiles.py`；PF 客户 PO 先行、分离模板导出和 SK/YM PI 抬头一致性见 `test_pf_snapshot.py`；MOQ/整箱规则见 `test_order_constraints.py`；Profile-aware cache 见 `test_workbook_cache.py`；WorkspaceStore、SessionManager 和工作区 API 见 API 对应测试；CLI Profile 和退出码见 `test_cli.py`。
 
 ### 12.2 前端
 

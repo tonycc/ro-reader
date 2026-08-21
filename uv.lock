@@ -1002,7 +1002,7 @@ wheels = [
 
 [[package]]
 name = "ro-generator"
-version = "1.1.0"
+version = "1.2.0"
 source = { editable = "packages/ro_generator" }
 dependencies = [
     { name = "openpyxl" },
@@ -1021,7 +1021,7 @@ requires-dist = [
 
 [[package]]
 name = "ro-reader-workspace"
-version = "1.1.0"
+version = "1.2.0"
 source = { virtual = "." }
 dependencies = [
     { name = "ro-workbench-api" },
@@ -1060,7 +1060,7 @@ dev = [
 
 [[package]]
 name = "ro-workbench-api"
-version = "1.1.0"
+version = "1.2.0"
 source = { editable = "packages/ro_workbench_api" }
 dependencies = [
     { name = "fastapi" },
@@ -1079,7 +1079,7 @@ requires-dist = [
 
 [[package]]
 name = "ro-workbench-launcher"
-version = "1.1.0"
+version = "1.2.0"
 source = { editable = "packages/ro_workbench_launcher" }
 dependencies = [
     { name = "pillow" },

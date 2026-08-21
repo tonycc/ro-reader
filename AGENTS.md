@@ -15,7 +15,7 @@ customer_profiles/ro/           12 个 workbook + 18 份 mapping + base schema
 customer_profiles/pf/           10 个 workbook + 10 份 mapping + base schema
 ```
 
-截至 2026-08-09，Python 全量测试为 531 个，默认前端 Playwright 为 29 个场景，另有 1 个隔离真实 HTTP 验收场景。数量会随代码变化；执行测试命令比引用固定数字更可靠。
+截至 2026-08-21，Python 全量测试为 642 个（其中 10 个历史 spike 跳过），默认前端 Playwright 为 29 个场景，另有 1 个隔离真实 HTTP 验收场景。数量会随代码变化；执行测试命令比引用固定数字更可靠。
 
 ## 文档事实源
 

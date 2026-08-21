@@ -1,6 +1,6 @@
 # RO 单据工作台产品说明
 
-> 状态：当前实现基准，最近核对于 2026-08-08。
+> 状态：当前实现基准，最近核对于 2026-08-21。
 
 ## 1. 产品概述
 
@@ -306,7 +306,7 @@ mapping 必须声明模板、Sheet、`template_version`、header、明细起始�
 - E2E CI 安装 LibreOffice，覆盖真实 PDF 下载路径。
 - macOS/Windows 启动器由独立 CI workflow 构建。
 
-截至 2026-08-09，Python 套件通过 531 个测试，默认 Playwright 回归包含 29 个场景，另有 1 个隔离真实 HTTP 验收场景。
+截至 2026-08-21，Python 套件通过 632 个测试（另有 10 个历史 spike 跳过），默认 Playwright 回归包含 29 个场景，另有 1 个隔离真实 HTTP 验收场景。
 
 ## 15. 已知限制与风险
 

@@ -47,7 +47,7 @@ from ro_generator.workbench_service import (
 from ro_generator.workbook_editor import EditResult, edit_workbook_cell
 from ro_generator.workbook_snapshot import PoInspection
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 __all__ = [
     "CustomerProfile",
