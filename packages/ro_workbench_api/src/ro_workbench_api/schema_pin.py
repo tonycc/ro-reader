@@ -10,7 +10,7 @@ from pathlib import Path
 
 SCHEMA_PIN_FILENAME = "schema_pin.txt"
 # 配置文件不存在或无效时的内置默认码。
-SCHEMA_REPAIR_PIN = "RO8601"
+SCHEMA_REPAIR_PIN = "sk001"
 
 _PIN_FILE_HEADER = (
     "# 列对应关系修复校验码。改此文件即可，不必重新发版；下次输入时生效。\n"

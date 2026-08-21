@@ -254,7 +254,7 @@ def inspect_schema_issues(
 **存储**：
 
 - 本机文件：与 `workspaces.json` 同目录的 `schema_pin.txt`（默认 `platformdirs.user_config_dir("RO Workbench")`，便携模式跟 `RO_WORKBENCH_CONFIG_DIR`）
-- 首次启动若文件不存在，写入内置默认码 `RO8601`，之后改文件即生效（下次输入时重读，不必重启发版）
+- 首次启动若文件不存在，写入内置默认码 `sk001`，之后改文件即生效（下次输入时重读，不必重启发版）
 - 文件缺失、空或只有注释时回退到代码里的默认码
 - 不写入 `workspaces.json`；旧版 `pin_hash` 会被忽略
 
