@@ -70,6 +70,8 @@ class DocumentLine:
     confirmed_ex_factory_date: date | None = None
     po_ex_factory_date: date | None = None  # PO record "FINAL EX-FACTORY DATE"
     quantity_source_field: str | None = None
+    quantity_constraint_codes: tuple[str, ...] = ()
+    quantity_constraint_messages: tuple[str, ...] = ()
     net_weight_source_sheet: str | None = None
     net_weight_source_field: str | None = None
     net_weight_source_rule: str | None = None
@@ -357,6 +359,14 @@ def _assemble_lines(
                     original_line.ship_qty_source_field
                     if document_type in {"INVOICE", "PL", "CI", "RO_PL"}
                     else None
+                ),
+                quantity_constraint_codes=(
+                    original_line.quantity_constraint_codes if document_type in {"PI", "PO"} else ()
+                ),
+                quantity_constraint_messages=(
+                    original_line.quantity_constraint_messages
+                    if document_type in {"PI", "PO"}
+                    else ()
                 ),
                 net_weight_source_sheet=nw_sheet,
                 net_weight_source_field=nw_field,

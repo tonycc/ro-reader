@@ -54,6 +54,12 @@ const docTypeLabelMap: Record<string, string> = {
   CI_PL: "CI & PL",
 };
 
+const LINE_QUANTITY_ALERT_CODES = new Set(["MOQ_NOT_MET", "FULL_CARTON_NOT_MET"]);
+
+function bannerWarnings(warnings: ValidationIssue[]): ValidationIssue[] {
+  return warnings.filter((warning) => !LINE_QUANTITY_ALERT_CODES.has(warning.code));
+}
+
 const pd = computed(() => wb.previewData);
 const previewDocs = computed(() => {
   if (wb.previewDocuments.length) return wb.previewDocuments;
@@ -178,8 +184,16 @@ function closePopover() {
   }
 }
 
+function eventElement(event: Event): Element | null {
+  const target = event.target;
+  if (target instanceof Element) return target;
+  if (target instanceof Text) return target.parentElement;
+  return null;
+}
+
 function onDocumentClick(e: MouseEvent) {
-  const target = e.target as HTMLElement;
+  const target = eventElement(e);
+  if (!target) return;
   if (issuePanelOpen.value && !target.closest(".issue-panel-root")) {
     closeIssuePanel();
   }
@@ -340,8 +354,8 @@ onUnmounted(() => {
                 {{ (e as any).message || (e as any).code }}
               </div>
             </div>
-            <div v-if="doc.warnings.length" class="alert alert-warn">
-              <div v-for="(w, i) in doc.warnings" :key="doc.id + '-w' + i" class="alert-item">
+            <div v-if="bannerWarnings(doc.warnings).length" class="alert alert-warn">
+              <div v-for="(w, i) in bannerWarnings(doc.warnings)" :key="doc.id + '-w' + i" class="alert-item">
                 <span class="alert-dot warn"></span>
                 <span :class="{ 'severity-high': (w as any).severity === 'high' }">
                   {{ (w as any).message || (w as any).code }}

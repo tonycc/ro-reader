@@ -90,6 +90,14 @@ def test_pf_snapshot_includes_customer_po_before_po_record_and_surfaces_constrai
     )
     warning_codes = [message.code for message in result.messages if message.kind == "warning"]
     assert warning_codes == [CODE_MOQ_NOT_MET, CODE_FULL_CARTON_NOT_MET]
+    assert result.lines[0].quantity_constraint_codes == (
+        CODE_MOQ_NOT_MET,
+        CODE_FULL_CARTON_NOT_MET,
+    )
+    assert result.lines[0].quantity_constraint_messages == (
+        "SAP 10001 的客户订单数量 90 低于 MOQ 100，请确认是否调整订单数量",
+        "SAP 10001 的客户订单数量 90 不是整箱数量 24 的整数倍（余数 18），请确认装箱安排",
+    )
 
 
 def test_pf_invoice_and_pl_from_separate_templates_export_as_zip(tmp_path: Path) -> None:
@@ -249,6 +257,8 @@ def test_pf_gs_invoice_uses_invoice_source_rules_and_combo_breakdown(
     assert preview.lines[0]["sap"] == "10001"
     assert preview.lines[0]["description"] == "PO Record Description"
     assert preview.lines[0]["quantity"] == "90"
+    assert "_quantity_alerts" not in preview.lines[0]
+    assert "_quantity_alert_messages" not in preview.lines[0]
     assert preview.cost_breakdown == [
         {
             "po_no": "4500000001",
@@ -521,6 +531,11 @@ def test_pf_emax_pi_uses_screenshot_field_rules_for_preview_and_export(
     assert preview.lines[0]["description"] == "Customer PO description"
     assert preview.lines[0]["unit_price"] == "$12.00"
     assert preview.lines[0]["quantity"] == "90"
+    assert preview.lines[0]["_quantity_alerts"] == ["MOQ_NOT_MET", "FULL_CARTON_NOT_MET"]
+    assert preview.lines[0]["_quantity_alert_messages"] == [
+        "SAP 10001 的客户订单数量 90 低于 MOQ 100，请确认是否调整订单数量",
+        "SAP 10001 的客户订单数量 90 不是整箱数量 24 的整数倍（余数 18），请确认装箱安排",
+    ]
     assert str(preview.lines[0]["confirmed_ex_factory_date"]) == "2026-09-15"
     assert preview.totals["signature_date"] == "2026-08-01"
 
@@ -592,6 +607,11 @@ def test_pf_emax_po_uses_screenshot_field_rules_for_preview_and_export(
     assert preview.lines[0]["description"] == "Customer PO description"
     assert preview.lines[0]["unit_price"] == "$12.00"
     assert preview.lines[0]["quantity"] == "90"
+    assert preview.lines[0]["_quantity_alerts"] == ["MOQ_NOT_MET", "FULL_CARTON_NOT_MET"]
+    assert preview.lines[0]["_quantity_alert_messages"] == [
+        "SAP 10001 的客户订单数量 90 低于 MOQ 100，请确认是否调整订单数量",
+        "SAP 10001 的客户订单数量 90 不是整箱数量 24 的整数倍（余数 18），请确认装箱安排",
+    ]
     assert str(preview.lines[0]["confirmed_ex_factory_date"]) == "2026-09-01"
     assert preview.totals["signature_date"] == "2026-08-01"
 
@@ -738,6 +758,11 @@ def test_pf_gs_po_uses_screenshot_field_rules_for_preview_and_export(
     assert preview.lines[0]["description"] == "Customer PO description"
     assert preview.lines[0]["unit_price"] == "$10.00"
     assert preview.lines[0]["quantity"] == "90"
+    assert preview.lines[0]["_quantity_alerts"] == ["MOQ_NOT_MET", "FULL_CARTON_NOT_MET"]
+    assert preview.lines[0]["_quantity_alert_messages"] == [
+        "SAP 10001 的客户订单数量 90 低于 MOQ 100，请确认是否调整订单数量",
+        "SAP 10001 的客户订单数量 90 不是整箱数量 24 的整数倍（余数 18），请确认装箱安排",
+    ]
     assert str(preview.lines[0]["confirmed_ex_factory_date"]) == "2026-09-01"
     assert preview.totals["signature_date"] == "2026-08-01"
 

@@ -66,6 +66,7 @@ def validate_customer_order_constraints(
                         sheet=customer_po_sheet,
                         row=source_rows.get(sap),
                         field=quantity_field,
+                        sap=sap,
                     )
                 )
 
@@ -86,9 +87,30 @@ def validate_customer_order_constraints(
                         sheet=customer_po_sheet,
                         row=source_rows.get(sap),
                         field=quantity_field,
+                        sap=sap,
                     )
                 )
     return tuple(messages)
+
+
+def constraint_alerts_by_sap(
+    messages: tuple[ValidationMessage, ...] | list[ValidationMessage],
+) -> dict[str, tuple[tuple[str, str], ...]]:
+    """按 SAP 归并 MOQ/整箱提醒 (code, message)，供 PI/PO 预览标红 Quantity。"""
+
+    grouped: dict[str, list[tuple[str, str]]] = {}
+    seen: dict[str, set[str]] = {}
+    for message in messages:
+        if message.sap is None:
+            continue
+        if message.code not in {CODE_MOQ_NOT_MET, CODE_FULL_CARTON_NOT_MET}:
+            continue
+        codes = seen.setdefault(message.sap, set())
+        if message.code in codes:
+            continue
+        codes.add(message.code)
+        grouped.setdefault(message.sap, []).append((message.code, message.message))
+    return {sap: tuple(items) for sap, items in grouped.items()}
 
 
 def _as_text(value: object) -> str | None:
@@ -130,5 +152,6 @@ __all__ = [
     "CHECK_MOQ",
     "CODE_FULL_CARTON_NOT_MET",
     "CODE_MOQ_NOT_MET",
+    "constraint_alerts_by_sap",
     "validate_customer_order_constraints",
 ]

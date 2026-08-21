@@ -243,7 +243,7 @@ PO record.SAP Number ↔ DATA BASE.SAP
 | `warning` | 可继续但需要复核，严重度为 high/low | 是 |
 | `missing_inputs` | 存在多个合法候选，需要选择 | 否，选择后重试 |
 
-结构校验覆盖当前 Profile 的三张 Sheet 和最小必需表头。行级校验覆盖 PO、SAP、客户订单数量、主体行、发票号和模板 mapping。PF 额外返回 `MOQ_NOT_MET`、`FULL_CARTON_NOT_MET` high warning；同一 PO 的相同 SAP 先聚合再检查。
+结构校验覆盖当前 Profile 的三张 Sheet 和最小必需表头。行级校验覆盖 PO、SAP、客户订单数量、主体行、发票号和模板 mapping。PF 额外返回 `MOQ_NOT_MET`、`FULL_CARTON_NOT_MET` high warning；同一 PO 的相同 SAP 先聚合再检查。PI/PO 预览把对应行的 Quantity 标红，点击数字后的感叹号查看报警原文；Invoice/PL 出货数量和 Excel 导出不加红。
 
 机器可识别的错误 code 属于接口契约，不能为了文案调整随意改名。
 

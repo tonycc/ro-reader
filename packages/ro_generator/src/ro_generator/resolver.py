@@ -13,14 +13,17 @@ base 表中的列名通过 base_schema.yaml 的 field_aliases 映射。
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Final, cast
 
 from ro_generator.line_rules import resolve_line_field_spec
 from ro_generator.models import OrderLine, Product, ValidationMessage
-from ro_generator.order_constraints import validate_customer_order_constraints
+from ro_generator.order_constraints import (
+    constraint_alerts_by_sap,
+    validate_customer_order_constraints,
+)
 from ro_generator.profiles.base import CustomerProfile
 from ro_generator.profiles.runtime import current_rules, current_schema, profile_scope
 from ro_generator.schema import CATEGORY_NAMES, SELLER_PRICE_COLUMNS, SELLER_TO_BUYER
@@ -199,15 +202,28 @@ def _resolve_po_rows(
         if line is not None:
             lines.append(line)
     if require_customer_po:
-        messages.extend(
-            validate_customer_order_constraints(
-                customer_po_rows,
-                products,
-                target_saps={line.sap for line in lines},
-                checks=current_rules().order_constraint_checks,
-                schema=current_schema(),
-            )
+        constraint_messages = validate_customer_order_constraints(
+            customer_po_rows,
+            products,
+            target_saps={line.sap for line in lines},
+            checks=current_rules().order_constraint_checks,
+            schema=current_schema(),
         )
+        messages.extend(constraint_messages)
+        alerts_by_sap = constraint_alerts_by_sap(constraint_messages)
+        if alerts_by_sap:
+            lines = [
+                replace(
+                    line,
+                    quantity_constraint_codes=tuple(
+                        code for code, _ in alerts_by_sap.get(line.sap, ())
+                    ),
+                    quantity_constraint_messages=tuple(
+                        text for _, text in alerts_by_sap.get(line.sap, ())
+                    ),
+                )
+                for line in lines
+            ]
     return ResolveResult(lines=tuple(lines), messages=tuple(messages))
 
 

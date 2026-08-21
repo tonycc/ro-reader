@@ -145,6 +145,8 @@ source_entries
 
 `column_labels` 已由核心包从当前 mapping 对应的 Excel 表头解析：YAML 键只决定列及顺序，实际文案来自 `table_header_row`。对于 mapping 声明 `merged_headers: true` 的模板，核心包还返回 `column_header_rows` 的 `rowspan/colspan` 结构，前端按 Excel 的合并关系渲染，并用 `colgroup` 给每个叶子列固定宽度（含装箱单 `carton_from` / `carton_to`），避免 `table-layout: fixed` 把未声明列挤成 0%。其他多行表头仍以换行符呈现，不维护主体或单据专属列名。
 
+PF 的 PI/PO 预览行若未满足 MOQ 或整箱，核心包在该行带上 `_quantity_alerts` 和完整中文 `_quantity_alert_messages`。前端把 Quantity 标红，并在数字后显示感叹号；点击感叹号弹出后端给出的报警原文，不重算门槛或余数。这两类提醒不再出现在单据预览顶部的黄色摘要条里；数据检查页的警告摘要仍保留。Invoice/PL 的出货数量不使用该标记。Excel 导出不加红。
+
 ### 6.4 来源信息
 
 点击可溯源字段时显示来源详情。来源类型包括：

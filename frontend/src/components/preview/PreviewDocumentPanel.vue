@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import LayoutTopZone from "./LayoutTopZone.vue";
 import type { PreviewFooterItem, PreviewHeaderCell, PreviewPayload } from "../../stores/api";
 
@@ -31,6 +31,81 @@ function emitFieldClick(fieldRef: string, event: MouseEvent) {
 function formatTermKey(key: string): string {
   return key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
+
+function quantityAlertMessages(line: Record<string, unknown>): string[] {
+  const messages = line._quantity_alert_messages;
+  if (!Array.isArray(messages)) return [];
+  return messages.filter((item): item is string => typeof item === "string" && item.trim() !== "");
+}
+
+function hasQuantityAlert(line: Record<string, unknown>): boolean {
+  if (quantityAlertMessages(line).length) return true;
+  const codes = line._quantity_alerts;
+  return Array.isArray(codes) && codes.length > 0;
+}
+
+const alertOpen = ref(false);
+const alertLineIndex = ref<number | null>(null);
+const alertMessages = ref<string[]>([]);
+const alertStyle = ref<Record<string, string>>({});
+
+function closeQuantityAlert() {
+  alertOpen.value = false;
+  alertLineIndex.value = null;
+  alertMessages.value = [];
+}
+
+function toggleQuantityAlert(event: MouseEvent, line: Record<string, unknown>, lineIndex: number) {
+  event.preventDefault();
+  event.stopPropagation();
+  const messages = quantityAlertMessages(line);
+  if (!messages.length) return;
+  if (alertOpen.value && alertLineIndex.value === lineIndex) {
+    closeQuantityAlert();
+    return;
+  }
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  const width = 320;
+  const left = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8));
+  alertLineIndex.value = lineIndex;
+  alertMessages.value = messages;
+  alertStyle.value = {
+    top: `${rect.bottom + 6}px`,
+    left: `${left}px`,
+    width: `${width}px`,
+  };
+  alertOpen.value = true;
+}
+
+function eventElement(event: Event): Element | null {
+  const target = event.target;
+  if (target instanceof Element) return target;
+  if (target instanceof Text) return target.parentElement;
+  return null;
+}
+
+function onDocumentClick(event: MouseEvent) {
+  if (!alertOpen.value) return;
+  const target = eventElement(event);
+  if (target?.closest(".qty-alert-btn") || target?.closest(".qty-alert-popover")) return;
+  closeQuantityAlert();
+}
+
+function onDocumentKeydown(event: KeyboardEvent) {
+  if (event.key === "Escape") closeQuantityAlert();
+}
+
+watch(() => props.pd, closeQuantityAlert);
+
+onMounted(() => {
+  document.addEventListener("click", onDocumentClick, true);
+  document.addEventListener("keydown", onDocumentKeydown);
+});
+
+onUnmounted(() => {
+  document.removeEventListener("click", onDocumentClick, true);
+  document.removeEventListener("keydown", onDocumentKeydown);
+});
 
 function isNumericCol(key: string) {
   return [
@@ -245,14 +320,38 @@ const columnHeaderRows = computed<PreviewHeaderCell[][]>(() => {
       <tbody>
         <tr v-for="(line, li) in pd.lines" :key="'l'+li">
           <td v-for="col in pd.column_labels" :key="col.key"
-            :class="{ num: isNumericCol(col.key), 'unit-col': col.key === 'unit_label' }"
+            :class="{
+              num: isNumericCol(col.key),
+              'unit-col': col.key === 'unit_label',
+              'qty-alert': col.key === 'quantity' && hasQuantityAlert(line),
+            }"
           >
             <span
-              v-if="line[col.key] !== '' && line[col.key] !== null && line[col.key] !== undefined"
-              class="clickable"
-              @click="emitFieldClick(`line[${li}].${col.key}`, $event)"
-            >{{ line[col.key] }}</span>
-            <template v-else>{{ line[col.key] }}</template>
+              v-if="col.key === 'quantity' && hasQuantityAlert(line)"
+              class="qty-alert-cell"
+            >
+              <span
+                v-if="line[col.key] !== '' && line[col.key] !== null && line[col.key] !== undefined"
+                class="clickable"
+                @click="emitFieldClick(`line[${li}].${col.key}`, $event)"
+              >{{ line[col.key] }}</span>
+              <template v-else>{{ line[col.key] }}</template>
+              <button
+                type="button"
+                class="qty-alert-btn"
+                aria-label="数量预警"
+                :aria-expanded="alertOpen && alertLineIndex === li"
+                @click="toggleQuantityAlert($event, line, li)"
+              >!</button>
+            </span>
+            <template v-else>
+              <span
+                v-if="line[col.key] !== '' && line[col.key] !== null && line[col.key] !== undefined"
+                class="clickable"
+                @click="emitFieldClick(`line[${li}].${col.key}`, $event)"
+              >{{ line[col.key] }}</span>
+              <template v-else>{{ line[col.key] }}</template>
+            </template>
           </td>
         </tr>
       </tbody>
@@ -307,6 +406,23 @@ const columnHeaderRows = computed<PreviewHeaderCell[][]>(() => {
       </div>
     </div>
   </div>
+  <Teleport to="body">
+    <div
+      v-if="alertOpen"
+      class="qty-alert-popover"
+      role="dialog"
+      aria-label="数量预警"
+      :style="alertStyle"
+    >
+      <div class="qty-alert-head">
+        <span>数量预警</span>
+        <button type="button" class="qty-alert-close" aria-label="关闭数量预警" @click="closeQuantityAlert">×</button>
+      </div>
+      <div class="qty-alert-list">
+        <p v-for="(message, index) in alertMessages" :key="'qty-alert-' + index">{{ message }}</p>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -368,6 +484,93 @@ const columnHeaderRows = computed<PreviewHeaderCell[][]>(() => {
 }
 .lines-table td { border-bottom: 1px solid var(--line); padding: 7px 8px; vertical-align: top; }
 .lines-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.lines-table td.qty-alert,
+.lines-table td.qty-alert .clickable {
+  color: var(--red);
+  font-weight: 700;
+}
+.lines-table td.qty-alert .clickable:hover { background: var(--red-weak); }
+.qty-alert-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  max-width: 100%;
+  white-space: nowrap;
+}
+.qty-alert-btn {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--red);
+  border-radius: 99px;
+  background: var(--red-weak);
+  color: var(--red);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+}
+.qty-alert-btn:hover,
+.qty-alert-btn:focus-visible {
+  background: var(--red);
+  color: #fff;
+  outline: none;
+}
+.qty-alert-popover {
+  position: fixed;
+  z-index: 80;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: white;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.16);
+  text-align: left;
+}
+.qty-alert-head {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #fecaca;
+  background: #fff5f5;
+  color: var(--red);
+  font-size: 12px;
+  font-weight: 800;
+}
+.qty-alert-close {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  background: white;
+  color: var(--red);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.qty-alert-list { padding: 8px 12px 10px; }
+.qty-alert-list p {
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+.qty-alert-list p + p {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
 .lines-table .unit-col { padding-left: 2px; white-space: nowrap; }
 .total-row td { font-weight: 900; border-top: 1px solid #223047; background: #fbfcfe; }
 .doc-footer-notes {

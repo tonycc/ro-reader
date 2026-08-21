@@ -8,6 +8,7 @@ from ro_generator.models import Product
 from ro_generator.order_constraints import (
     CODE_FULL_CARTON_NOT_MET,
     CODE_MOQ_NOT_MET,
+    constraint_alerts_by_sap,
     validate_customer_order_constraints,
 )
 from ro_generator.profiles import create_pf_profile
@@ -51,8 +52,21 @@ def test_below_moq_and_non_full_carton_are_non_blocking_high_warnings() -> None:
     assert all(message.severity == "high" for message in messages)
     assert messages[0].sheet == "new PO template"
     assert messages[0].row == 7
+    assert messages[0].sap == "10001"
     assert "低于 MOQ 100" in messages[0].message
     assert "余数 18" in messages[1].message
+    assert constraint_alerts_by_sap(messages) == {
+        "10001": (
+            (
+                CODE_MOQ_NOT_MET,
+                "SAP 10001 的客户订单数量 90 低于 MOQ 100，请确认是否调整订单数量",
+            ),
+            (
+                CODE_FULL_CARTON_NOT_MET,
+                "SAP 10001 的客户订单数量 90 不是整箱数量 24 的整数倍（余数 18），请确认装箱安排",
+            ),
+        ),
+    }
 
 
 def test_constraints_aggregate_same_spec_and_accept_compliant_quantity() -> None:

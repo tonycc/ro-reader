@@ -45,6 +45,7 @@ class ValidationMessage:
     row: int | None = None  # 1-based，对应 openpyxl 行号
     field: str | None = None
     severity: WarningSeverity | None = None
+    sap: str | None = None
 
 
 # —————————————————————————————————————
@@ -182,6 +183,9 @@ class OrderLine:
 
     # 双向溯源（产品方案 §4.4）
     source_row: int | None = None
+    # PF 客户订单 MOQ/整箱提醒；空表示该规格通过检查或当前 Profile 未启用。
+    quantity_constraint_codes: tuple[str, ...] = ()
+    quantity_constraint_messages: tuple[str, ...] = ()
 
 
 # —————————————————————————————————————

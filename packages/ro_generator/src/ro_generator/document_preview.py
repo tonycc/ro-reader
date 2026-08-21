@@ -479,6 +479,9 @@ def _build_lines(
                     row[col] = ""
         row["_index"] = i
         row["_source_row"] = dl.source_row
+        if dl.quantity_constraint_codes:
+            row["_quantity_alerts"] = list(dl.quantity_constraint_codes)
+            row["_quantity_alert_messages"] = list(dl.quantity_constraint_messages)
         result.append(row)
     return result
 
