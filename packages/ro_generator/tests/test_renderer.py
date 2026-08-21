@@ -15,6 +15,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font
 from openpyxl.utils import column_index_from_string
 from openpyxl.utils.cell import coordinate_from_string
+from openpyxl.worksheet.worksheet import Worksheet
 from ro_generator.document_model import (
     DocumentModel,
     build_invoice_model,
@@ -44,7 +45,7 @@ EMAX_PO_MAPPING = RO_TEMPLATES / "emax" / "mappings" / "po.yaml"
 EMAX_PL_MAPPING = RO_TEMPLATES / "emax" / "mappings" / "pl.yaml"
 
 
-def _print_area_end(ws) -> str:
+def _print_area_end(ws: Worksheet) -> str:
     raw = ws.print_area
     assert raw, "rendered sheet must declare a print area"
     end = str(raw).split("!")[-1].replace("$", "").split(":")[-1]
@@ -328,7 +329,9 @@ class TestRenderBasic:
         result = render_document(model, mapping, tmp_path / "out.xlsx")
         wb = load_workbook(result.output_path)
         ws = wb["INV"]
-        assert ws.sheet_properties.pageSetUpPr.fitToPage is True
+        page_setup_pr = ws.sheet_properties.pageSetUpPr
+        assert page_setup_pr is not None
+        assert page_setup_pr.fitToPage is True
         assert ws.page_setup.fitToWidth == 1
         assert ws.page_setup.fitToHeight == 1
         _letter, end_row = coordinate_from_string(_print_area_end(ws))

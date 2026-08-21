@@ -29,6 +29,7 @@ from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.cell import coordinate_from_string
 from openpyxl.workbook.workbook import Workbook
+from openpyxl.worksheet.properties import PageSetupProperties
 from openpyxl.worksheet.worksheet import Worksheet
 
 from ro_generator.document_model import DocumentLine, DocumentModel
@@ -804,7 +805,11 @@ def _apply_print_layout(ws: Worksheet) -> None:
 
     max_row, max_col = _content_extent(ws)
     ws.print_area = f"A1:{get_column_letter(max_col)}{max_row}"
-    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    page_setup_pr = ws.sheet_properties.pageSetUpPr
+    if page_setup_pr is None:
+        page_setup_pr = PageSetupProperties()
+        ws.sheet_properties.pageSetUpPr = page_setup_pr
+    page_setup_pr.fitToPage = True
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 1
     ws.page_setup.scale = None

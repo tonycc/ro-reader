@@ -15,6 +15,15 @@ from ro_generator.template_mapping import (
     load_template_mapping,
 )
 
+
+def _preview_info_left(mapping: TemplateMapping) -> object:
+    layout = mapping.preview_content.get("layout")
+    assert isinstance(layout, dict)
+    info = layout.get("info")
+    assert isinstance(info, dict)
+    return info.get("left")
+
+
 # ————————————————————————————————————————
 # 真实 GS Invoice mapping 加载
 # ————————————————————————————————————————
@@ -110,7 +119,7 @@ class TestRoInvoicePreviewHeaders:
         )
         assert mapping.header_fixed["bill_to_line3"] == "SINGAPORE 415875"
         assert mapping.header_fixed["shipped_per"] == "Shipped per ss/mv"
-        assert mapping.preview_content["layout"]["info"]["left"] == [
+        assert _preview_info_left(mapping) == [
             "bill_to",
             "bill_to_line2",
             "bill_to_line3",
@@ -144,7 +153,7 @@ class TestRoInvoicePreviewHeaders:
         )
         assert mapping.header_fixed["bill_to_line3"] == "SINGAPORE 417868"
         assert mapping.header_fixed["shipped_per"] == "Shipped per ss/mv"
-        assert mapping.preview_content["layout"]["info"]["left"] == [
+        assert _preview_info_left(mapping) == [
             "bill_to",
             "bill_to_line2",
             "bill_to_line3",
