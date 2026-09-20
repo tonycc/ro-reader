@@ -17,6 +17,7 @@ Phase 4.5–6 的多工作区基础已完成；Phase 7 已接入 PF Profile，�
 ## 开发
 
 - [`development/implementation-guide.md`](development/implementation-guide.md)：代码结构、数据流、修改流程、测试和发布。
+- [`development/document-domain-reference.md`](development/document-domain-reference.md)：输入数据、主体/单据、业务规则、票据组、模板、session 和 CLI 契约的领域实现参考。
 - [`development/ro-document-workbench-ui-design.md`](development/ro-document-workbench-ui-design.md)：当前 Vue UI、状态和交互边界。
 
 ## 字段与模板

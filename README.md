@@ -313,7 +313,7 @@ CI 生成的包内会额外放入面向用户的 `README.txt`。它由 workflow 
 - 用户通过工作台选择本地 `.xlsx` base 文件，业务文件不会被打进安装包。
 - 退出应用请使用系统托盘菜单中的“退出”。
 
-当前用户测试应以 spec 命令和 CI workflow 为准；`packages/ro_workbench_launcher/build-launcher.sh` 与 `installer.iss` 仍包含旧的 `RO Workbench` 文件名，暂不作为当前发布入口。
+当前用户测试以 spec 命令和 CI workflow 为准。
 
 发布版本唯一手写源为根目录 `VERSION`。修改版本后执行 `python3 scripts/release_version.py sync`，再执行 `uv lock` 更新锁文件；CI 会在构建前自动同步派生元数据并读取 `VERSION` 生成安装包文件名和用户说明。
 

@@ -62,11 +62,6 @@ def main() -> int:
             text("packages/ro_workbench_launcher/src/ro_workbench_launcher/__init__.py"),
             label="launcher __version__",
         ),
-        "installer": first(
-            r'#define MyAppVersion "([^"]+)"',
-            text("packages/ro_workbench_launcher/installer.iss"),
-            label="installer version",
-        ),
     }
 
     api_source = text("packages/ro_workbench_api/src/ro_workbench_api/app.py")

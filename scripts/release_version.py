@@ -60,13 +60,6 @@ def synchronize(version: str) -> None:
             label="Python runtime version",
         )
 
-    _replace_once(
-        ROOT / "packages/ro_workbench_launcher/installer.iss",
-        r'^#define MyAppVersion "[^"]+"$',
-        f'#define MyAppVersion "{version}"',
-        label="Windows installer metadata",
-    )
-
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
