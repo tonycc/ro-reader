@@ -134,7 +134,6 @@ class SessionManager:
         *,
         profile_registry: ProfileRegistry | None = None,
         snapshot_factory: SnapshotFactory | None = None,
-        snapshot_builder: SnapshotFactory | None = None,
         clock: Clock = time.time,
         temp_dir_factory: TempDirFactory | None = None,
         session_ttl_seconds: float = SESSION_TTL_SECONDS,
@@ -144,13 +143,11 @@ class SessionManager:
             raise ValueError("session_ttl_seconds 必须大于 0")
         if drain_grace_seconds <= 0:
             raise ValueError("drain_grace_seconds 必须大于 0")
-        if snapshot_factory is not None and snapshot_builder is not None:
-            raise ValueError("snapshot_factory 与 snapshot_builder 只能设置一个")
         self._store = store
         self._profile_registry = (
             profile_registry or store.profile_registry or default_profile_registry()
         )
-        self._snapshot_factory = snapshot_factory or snapshot_builder or _default_snapshot_factory
+        self._snapshot_factory = snapshot_factory or _default_snapshot_factory
         self._clock = clock
         self._temp_dir_factory = temp_dir_factory or self._default_temp_dir
         self._session_ttl = session_ttl_seconds
@@ -178,13 +175,9 @@ class SessionManager:
                 return None
             return self._sessions.get(self._active_session_id)
 
-    get_active_session = active_session
-
     def sessions(self) -> tuple[SessionInfo, ...]:
         with self._lock:
             return tuple(self._sessions.values())
-
-    list_sessions = sessions
 
     def get_session(
         self,
@@ -213,11 +206,6 @@ class SessionManager:
             session.touch(now)
             return session
 
-    get = get_session
-
-    def get_context(self, session_id: str, *, allow_draining: bool = False) -> GenerationContext:
-        return self.get_session(session_id, allow_draining=allow_draining).context
-
     def refresh_snapshot(self, session_id: str) -> WorkbookSnapshot:
         """重建并替换 active session 的快照。
 
@@ -245,27 +233,11 @@ class SessionManager:
                 current.touch(self._clock())
             return snapshot
 
-    refresh_session_snapshot = refresh_snapshot
-
-    def close(self, session_id: str) -> bool:
-        """关闭并删除一个 session 的临时目录，不修改持久化工作区。"""
-
-        with _ACTIVATION_LOCK, self._lock:
-            if session_id not in self._sessions:
-                return False
-            self._remove_session_locked(session_id)
-            return True
-
-    close_session = close
-
     def activate(self, workspace_id: str) -> SessionActivation:
         """执行一次阻塞式激活；并发调用按进入顺序串行提交。"""
 
         with _ACTIVATION_LOCK:
             return self._activate_locked(workspace_id)
-
-    activate_workspace = activate
-    switch = activate
 
     def try_activate(self, workspace_id: str) -> SessionActivation:
         """非阻塞激活入口，已有激活事务时返回稳定错误。"""
@@ -285,8 +257,6 @@ class SessionManager:
             return None
         return self.activate(settings.current_workspace_id)
 
-    restore = restore_current
-
     def cleanup(self, *, now: float | None = None) -> tuple[str, ...]:
         """清理超过 TTL 的 session 和 draining 宽限期已结束的 session。"""
 
@@ -302,8 +272,6 @@ class SessionManager:
                 self._remove_session_locked(session_id)
                 removed.append(session_id)
         return tuple(removed)
-
-    cleanup_expired = cleanup
 
     def _activate_locked(self, workspace_id: str) -> SessionActivation:
         settings_before = self._store.load()

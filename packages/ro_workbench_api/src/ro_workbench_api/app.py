@@ -321,10 +321,6 @@ class EditFieldResponse(BaseModel):
     message: str = ""
 
 
-class SessionCloseRequest(BaseModel):
-    session_id: str
-
-
 class WorkspaceInputRequest(BaseModel):
     display_name: str
     profile_id: str
@@ -1464,21 +1460,6 @@ def refresh_session(x_session_id: str = Header(..., alias="X-Session-Id")) -> di
         "po_list": _po_list_payload(snapshot.po_summary),
         "invoices": [asdict(item) for item in snapshot.invoice_summary],
     }
-
-
-@app.post("/api/session/close")
-def close_session(req: SessionCloseRequest) -> dict[str, str]:
-    """关闭 session 并清理临时目录。"""
-    with _lock:
-        info = _sessions.pop(req.session_id, None)
-    if info:
-        with suppress(Exception):
-            shutil.rmtree(info.temp_dir, ignore_errors=True)
-        return {"status": "closed"}
-    _store, manager = _workspace_runtime()
-    if manager.close(req.session_id):
-        return {"status": "closed"}
-    return {"status": "not_found"}
 
 
 # —————————————————————————————————————

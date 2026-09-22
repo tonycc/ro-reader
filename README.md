@@ -198,7 +198,7 @@ uv run ro-generate \
 | --- | --- |
 | 健康与文件 | `GET /api/health`、`POST /api/check-path` |
 | Profile/工作区 | `GET /api/profiles`、`GET /api/workspaces`、`POST /api/workspaces`、`PATCH /api/workspaces/{id}`、`DELETE /api/workspaces/{id}`、两种 validate、activate、`GET /api/bootstrap` |
-| Session | `POST /api/session/open`、`POST /api/session/refresh`、`POST /api/session/close` |
+| Session | `POST /api/session/open`、`POST /api/session/refresh` |
 | Invoice | 列表、inspection、preview、export、export-batch |
 | PO | 数据、issues、dry-run、preview、edit、export、export-batch |
 | Schema | issues、mappings、override |
