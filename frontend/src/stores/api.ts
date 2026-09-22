@@ -350,8 +350,6 @@ export const api = {
     request("GET", `/po/${po_no}?base_file=${encodeURIComponent(base_file)}`),
   getPoIssues: (base_file: string, po_no: string): Promise<PoIssuesResponse> =>
     request("GET", `/po/${po_no}/issues?base_file=${encodeURIComponent(base_file)}`),
-  dryRun: (req: DryRunRequest): Promise<DryRunResult> =>
-    request("POST", `/po/${req.po_no}/dry-run`, req),
   preview: (req: DryRunRequest): Promise<PreviewResponse> =>
     request("POST", `/po/${req.po_no}/preview`, req),
   editField: (po_no: string, req: Omit<EditRequest, "po_no">): Promise<{ ok: boolean; message: string }> =>

@@ -103,22 +103,6 @@ def test_close_session_removes_it() -> None:
 # --- Invalid session rejection ---
 
 
-def test_dry_run_rejects_invalid_session() -> None:
-    resp = client.post(
-        "/api/po/4500099999/dry-run",
-        json={
-            "base_file": str(FIXTURE),
-            "po_no": "4500099999",
-            "seller": "GS PTE",
-            "buyer": "EMAX PTE",
-            "document": "PI",
-        },
-        headers={"X-Session-Id": "nonexistent"},
-    )
-    assert resp.status_code == 400
-    assert "INVALID_SESSION" in str(resp.json()["detail"])
-
-
 def test_preview_rejects_invalid_session() -> None:
     resp = client.post(
         "/api/po/4500099999/preview",

@@ -1221,39 +1221,6 @@ def get_po_issues_endpoint(
     return get_po_issues(session.base_file, po_no, context=_session_context(session))
 
 
-@app.post("/api/po/{po_no}/dry-run")
-def dry_run(
-    po_no: str,
-    req: DryRunRequest,
-    x_session_id: str = Header(..., alias="X-Session-Id"),
-) -> dict[str, Any]:
-    """装配预览，返回数据摘要 + source_index。
-
-    generate() 的 summary 已包含 table_start_row / table_label_row / style，
-    无需再访问 mapping 私有函数。
-    """
-    session = _get_session(x_session_id)
-    if session is None:
-        raise HTTPException(
-            400,
-            detail={"code": "INVALID_SESSION", "message": f"session {x_session_id!r} 无效或已过期"},
-        )
-
-    request = _build_document_request(
-        req=req,
-        po_no=po_no,
-        documents=(_normalize_document(req.document),),
-        output_dir=session.temp_dir,
-        base_file=session.base_file,
-    )
-    result = _generate_for_session(request, session)
-    payload = _result_to_dict(result)
-    style = payload.get("summary", {}).pop("style", None)
-    if style:
-        payload["style"] = style
-    return payload
-
-
 @app.post("/api/po/{po_no}/preview")
 def preview_document(
     po_no: str,
