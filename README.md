@@ -240,7 +240,7 @@ pnpm run test:e2e
 pnpm run test:e2e:http
 ```
 
-截至 2026-08-21，Python 套件收集 642 个测试（其中 10 个历史 spike 跳过）；默认 Playwright 回归包含 29 个场景（含单据预览表头与 Excel 模板一致性、PF MOQ/整箱提醒及客户 PO 只读投影），另有 1 个隔离真实 HTTP 验收场景。CI 分别覆盖 Python、前端/E2E，以及 macOS/Windows 启动器构建。发布版本见根目录 `VERSION`，当前为 `1.2.0`。
+截至 2026-09-22，Python 套件收集 659 个测试（无跳过）；默认 Playwright 回归包含 29 个场景（含单据预览表头与 Excel 模板一致性、PF MOQ/整箱提醒及客户 PO 只读投影），另有 1 个隔离真实 HTTP 验收场景。CI 分别覆盖 Python、前端/E2E，以及 macOS/Windows 启动器构建。发布版本见根目录 `VERSION`，当前为 `1.3.0`。
 
 ## 桌面构建与用户测试
 
