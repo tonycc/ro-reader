@@ -1,9 +1,8 @@
-"""Packager 测试：文件名规则、冲突策略、zip 打包、版本目录。"""
+"""Packager 测试：文件名规则、冲突策略、zip 打包。"""
 
 from __future__ import annotations
 
 import zipfile
-from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -13,10 +12,8 @@ from ro_generator.packager import (
     build_invoice_group_document_filename,
     build_invoice_group_zip_filename,
     build_zip_filename,
-    copy_file,
     package_zip,
     resolve_output_path,
-    write_to_versioned_dir,
 )
 
 # ————————————————————————————————————————
@@ -225,54 +222,6 @@ class TestPackageZip:
                 zip_name="z.zip",
                 on_conflict="abort",
             )
-
-
-# ————————————————————————————————————————
-# 版本目录（产品方案 §12.2）
-# ————————————————————————————————————————
-
-
-class TestVersionedDir:
-    def test_creates_named_subdir(self, tmp_path: Path) -> None:
-        ts = datetime(2026, 6, 2, 14, 23, 45, tzinfo=UTC)
-        folder = write_to_versioned_dir(tmp_path, timestamp=ts)
-        assert folder.name == "20260602-142345"
-        assert folder.exists()
-        assert folder.is_dir()
-
-    def test_two_calls_with_different_timestamps_create_distinct_dirs(self, tmp_path: Path) -> None:
-        a = write_to_versioned_dir(
-            tmp_path,
-            timestamp=datetime(2026, 6, 2, 10, 0, 0, tzinfo=UTC),
-        )
-        b = write_to_versioned_dir(
-            tmp_path,
-            timestamp=datetime(2026, 6, 2, 10, 0, 1, tzinfo=UTC),
-        )
-        assert a != b
-        assert a.exists() and b.exists()
-
-
-# ————————————————————————————————————————
-# copy_file
-# ————————————————————————————————————————
-
-
-class TestCopyFile:
-    def test_copies_to_new_path(self, tmp_path: Path) -> None:
-        src = tmp_path / "a.xlsx"
-        src.write_bytes(b"x")
-        dest = tmp_path / "b.xlsx"
-        out = copy_file(src, dest)
-        assert out == dest.resolve()
-        assert out.read_bytes() == b"x"
-
-    def test_creates_parent_dirs(self, tmp_path: Path) -> None:
-        src = tmp_path / "a.xlsx"
-        src.write_bytes(b"x")
-        dest = tmp_path / "deep" / "path" / "b.xlsx"
-        out = copy_file(src, dest)
-        assert out.exists()
 
 
 def test_filenames_accept_pdf_extension():
