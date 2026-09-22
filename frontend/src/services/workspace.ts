@@ -93,10 +93,6 @@ export function baseFileName(path: string): string {
   return normalized.split("/").pop() || path;
 }
 
-export function profileName(profiles: ProfileSummary[], profileId: string): string {
-  return profiles.find((profile) => profile.id === profileId)?.display_name ?? profileId;
-}
-
 export function workspaceStatusLabel(status: WorkspaceStatus): string {
   const labels: Record<WorkspaceStatus, string> = {
     unchecked: "未检测",
