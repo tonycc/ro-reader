@@ -122,27 +122,6 @@ def get_po_data(
     }
 
 
-def get_customer_po_data(
-    base_file: str,
-    po_no: str,
-    *,
-    context: GenerationContext | None = None,
-) -> dict[str, object]:
-    """返回指定 PO 号对应的客户PO数据。优先复用缓存。
-
-    客户PO sheet 按 Purchasing Document 索引，PO record 的 PO NO. 列
-    就是客户PO 的 Purchasing Document。
-    """
-    cache = get_cache_manager()
-    snapshot = cache.get_snapshot(base_file, context=context)
-    rows = snapshot.customer_po_rows_for_po(po_no)
-    return {
-        "po_no": po_no,
-        "headers": list(snapshot.headers_customer_po),
-        "rows": [dict(r) for r in rows],
-    }
-
-
 def _message_to_dict(message: ValidationMessage) -> dict[str, object]:
     return {
         "kind": message.kind,
@@ -390,7 +369,6 @@ __all__ = [
     "WorkbookInspectionResult",
     "export_document_groups",
     "export_invoice_document_groups",
-    "get_customer_po_data",
     "get_po_data",
     "get_po_issues",
     "inspect_file_path",
