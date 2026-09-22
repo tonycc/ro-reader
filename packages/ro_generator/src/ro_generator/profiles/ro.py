@@ -30,8 +30,6 @@ from ro_generator.schema import (
 )
 
 RO_PROFILE_ID = "ro"
-RO_PROFILE_DISPLAY_NAME = "Rather Outdoors"
-RO_PROFILE_VERSION = "ro_v1"
 
 
 @dataclass(frozen=True)
