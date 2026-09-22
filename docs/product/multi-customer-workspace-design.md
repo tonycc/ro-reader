@@ -394,7 +394,6 @@ class SessionInfo:
 - 旧 session 进入 `draining` 后只允许 `/api/download`。
 - draining 宽限期建议 5 分钟，之后删除临时目录。
 - 普通 active session 继续使用当前一小时无活动 TTL。
-- `/api/session/close` 关闭 active session 时不删除 workspace 配置。
 
 业务端点从 session 获取 `profile_id` 和 `base_file`，不再信任请求体或 query 中重复传入的路径。
 
