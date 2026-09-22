@@ -887,15 +887,6 @@ def _require_int(raw: dict[object, object], key: str, yaml_path: Path, ctx: str)
     return v
 
 
-def _optional_positive_int(raw: dict[str, object], key: str, yaml_path: Path) -> int | None:
-    value = raw.get(key)
-    if value is None:
-        return None
-    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
-        raise MappingError(f"{key} 必须为正整数（如有）：{yaml_path}")
-    return value
-
-
 def _parse_table_header_rows(raw: dict[str, object], key: str, yaml_path: Path) -> list[int]:
     """解析 table_header_row，支持单行 int、多行 list[int] 或省略（返回空列表）。"""
     value = raw.get(key)
