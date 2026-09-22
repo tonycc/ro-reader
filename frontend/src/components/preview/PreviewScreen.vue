@@ -76,6 +76,15 @@ const previewDocs = computed(() => {
   }];
 });
 const hasData = computed(() => previewDocs.value.some((doc) => doc.preview?.lines?.length));
+const sourceGroups = computed(() =>
+  previewDocs.value
+    .filter((doc) => doc.preview?.source_entries?.length)
+    .map((doc) => ({
+      id: doc.id,
+      label: doc.label,
+      entries: doc.preview?.source_entries ?? [],
+    })),
+);
 const errors = computed(() => wb.blockingErrors as { code?: string; message?: string }[]);
 const currentDocLabel = computed(() => (
   docTypeLabelMap[wb.previewDocType] || wb.previewDocType || "当前单据"
@@ -378,7 +387,7 @@ onUnmounted(() => {
             <span class="panel-subtitle">点击字段查看来源 popover，此处为完整列表</span>
           </div>
           <div class="panel-body">
-            <table class="source-table" v-if="wb.previewSourceEntries.length">
+            <table class="source-table" v-if="sourceGroups.length">
               <thead>
                 <tr>
                   <th>单据字段</th>
@@ -387,10 +396,13 @@ onUnmounted(() => {
                   <th>规则</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody v-for="group in sourceGroups" :key="group.id">
+                <tr :key="group.id + '-head'" class="source-group-row">
+                  <td colspan="4">{{ group.label }}</td>
+                </tr>
                 <tr
-                  v-for="(entry, ei) in wb.previewSourceEntries"
-                  :key="'se'+ei"
+                  v-for="(entry, ei) in group.entries"
+                  :key="group.id + '-se' + ei"
                   :class="{
                     'row-template': entry.source_type === 'template_content',
                     'row-computed': entry.source_type === 'computed',
@@ -614,7 +626,9 @@ onUnmounted(() => {
 .source-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .source-table th, .source-table td { border-bottom: 1px solid var(--line); padding: 9px 8px; text-align: left; vertical-align: top; }
 .source-table th { color: var(--muted); background: #f9fafb; font-size: 11px; font-weight: 900; }
-.source-table tr:last-child td { border-bottom: 0; }
+.source-group-row td { background: #f5f7fa; font-size: 11px; font-weight: 900; color: var(--subtle); }
+.source-table tbody + tbody .source-group-row td { border-top: 1px solid var(--line); }
+.source-table tbody:last-child tr:last-child td { border-bottom: 0; }
 .source-table td.mono { font-family: var(--mono); white-space: nowrap; }
 .source-table td.rule { color: var(--muted); font-size: 11px; }
 .row-template td { color: var(--subtle); }

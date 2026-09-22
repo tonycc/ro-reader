@@ -147,6 +147,34 @@ class WorkbookReader:
             max_data_col=max_data_col,
         )
 
+    def read_group_labels(
+        self,
+        sheet_name: str,
+        group_row: int | None = None,
+    ) -> dict[int, str]:
+        """读取分组标签行（如 PF DATA BASE 行1 的价格组标签）。
+
+        返回 `{1-based 列号: 归一化标签}`，只含非空单元格；sheet 未配置
+        `group_header_row` 时返回空 dict。标签界定列组范围：某标签列到下一
+        个标签列之间的列属于同一组。
+        """
+        if sheet_name not in self._wb.sheetnames:
+            raise WorkbookOpenError(f"workbook 中找不到 sheet：{sheet_name!r}")
+        config = self._sheet_config(sheet_name)
+        row_no = group_row if group_row is not None else config.group_header_row
+        if row_no is None:
+            return {}
+        ws: Worksheet = self._wb[sheet_name]
+        labels: dict[int, str] = {}
+        for cur_row, row in enumerate(ws.iter_rows(), start=1):
+            if cur_row == row_no:
+                for col_idx, cell in enumerate(row, start=1):
+                    text = normalize_header(_cell_value(cell))
+                    if text:
+                        labels[col_idx] = text
+                break
+        return labels
+
     def read_sheet(
         self,
         sheet_name: str,

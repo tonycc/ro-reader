@@ -264,6 +264,10 @@ export interface SchemaFieldIssue {
   expected_header: string
   available_headers: string[]
   column_letters?: Record<string, string>
+  /** false 表示该问题不能靠列重映射修复，只能改 workbook（如 options 版本表） */
+  remappable?: boolean
+  /** remappable=false 时给业务的修正说明 */
+  repair_hint?: string
 }
 
 export interface SchemaSheetIssue {

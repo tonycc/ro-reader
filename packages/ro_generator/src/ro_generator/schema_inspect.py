@@ -17,20 +17,27 @@ from dataclasses import dataclass
 from openpyxl.utils import get_column_letter
 
 from ro_generator.base_schema import BaseSchema
-from ro_generator.schema import required_headers_for, required_sheets_for
+from ro_generator.schema import required_headers_for
 from ro_generator.workbook_reader import SheetHeaders, WorkbookReader
 
-# 三张逻辑 sheet → schema 字段属性名 + 用户可读标签。
+# 逻辑 sheet → schema 字段属性名 + 用户可读标签。
 _SHEET_META: dict[str, tuple[str, str]] = {
     "DATA BASE": ("data_base_fields", "产品主数据"),
     "PO record": ("po_record_fields", "PO/出货记录"),
     "客户PO": ("customer_po_fields", "客户订单"),
+    "options": ("options", "价格选项"),
 }
 
 
 @dataclass(frozen=True)
 class SchemaFieldIssue:
-    """一条可修复的表头映射问题。"""
+    """一条表头映射问题。
+
+    `remappable=False` 表示该问题无法通过修复向导的列重映射解决，只能修正
+    workbook 本身。options 价格版本表属于此类：它的"表头"是业务约定的键
+    （如 `SK/YM-PI`）和其右侧取值列，不走 field_aliases override 通道，
+    给用户下拉选择只会产生"保存后问题依旧"的假修复。
+    """
 
     logical_sheet: str  # 逻辑 sheet key（"DATA BASE"/"PO record"/"客户PO"）
     sheet_label: str  # 用户可读 sheet 名
@@ -39,6 +46,8 @@ class SchemaFieldIssue:
     expected_header: str  # 当前生效 schema 期望的表头
     available_headers: tuple[str, ...]  # 该 sheet 现有可选列
     column_letters: dict[str, str]  # 表头 → Excel 列号（A、B、…），供下拉显示
+    remappable: bool = True  # False 时修复向导不提供列映射，只提示修正 workbook
+    repair_hint: str = ""  # remappable=False 时给业务的修正说明
 
 
 @dataclass(frozen=True)
@@ -75,16 +84,16 @@ def inspect_schema(
     DATA BASE 的性能优化），但 sheet 存在性始终检查。
     """
 
-    required_sheets = required_sheets_for(schema)
-    db_req, po_req, cp_req = required_headers_for(schema)
-    required_by_sheet = dict(zip(required_sheets, (db_req, po_req, cp_req), strict=True))
+    required_by_sheet = required_headers_for(schema)
+    options_sheet_key = schema.price_options.sheet if schema.price_options is not None else None
 
     sheet_issues: list[SchemaSheetIssue] = []
     field_issues: list[SchemaFieldIssue] = []
     price_issues: list[SchemaFieldIssue] = []
 
-    for logical_sheet, actual_sheet in zip(_SHEET_META, required_sheets, strict=True):
-        sheet_label = _SHEET_META[logical_sheet][1]
+    for logical_sheet, sheet_cfg in schema.sheets.items():
+        actual_sheet = sheet_cfg.name
+        sheet_label = _SHEET_META.get(logical_sheet, ("", logical_sheet))[1]
         if not reader.has_sheet(actual_sheet):
             sheet_issues.append(
                 SchemaSheetIssue(
@@ -100,8 +109,9 @@ def inspect_schema(
 
         available, letters = sheet_header_candidates(reader, schema, logical_sheet, actual_sheet)
         present = set(available)
+        is_options = logical_sheet == options_sheet_key
 
-        for expected in required_by_sheet[actual_sheet]:
+        for expected in required_by_sheet.get(logical_sheet, ()):
             if expected in present:
                 continue
             internal_key = _internal_key_for(schema, logical_sheet, expected)
@@ -113,6 +123,28 @@ def inspect_schema(
                     internal_key=internal_key or expected,
                     expected_header=expected,
                     available_headers=available,
+                    column_letters=letters,
+                    remappable=not is_options,
+                    repair_hint=(
+                        f"请在 {actual_sheet!r} sheet 中把该价格版本键列的表头改回 {expected!r}"
+                        if is_options
+                        else ""
+                    ),
+                )
+            )
+
+        # options 的取值列靠位置约定（键列右邻一列）而非表头名定位；右邻缺表头时
+        # 版本标签读不到，必须在结构校验阶段阻断，不能留到行级静默取不到价。
+        if is_options:
+            field_issues.extend(
+                _detect_options_value_column_issues(
+                    reader,
+                    schema,
+                    actual_sheet=actual_sheet,
+                    sheet_label=sheet_label,
+                    logical_sheet=logical_sheet,
+                    present=present,
+                    available=available,
                     column_letters=letters,
                 )
             )
@@ -129,6 +161,55 @@ def inspect_schema(
         field_issues=tuple(field_issues),
         price_issues=tuple(price_issues),
     )
+
+
+def _detect_options_value_column_issues(
+    reader: WorkbookReader,
+    schema: BaseSchema,
+    *,
+    actual_sheet: str,
+    sheet_label: str,
+    logical_sheet: str,
+    present: set[str],
+    available: tuple[str, ...],
+    column_letters: dict[str, str],
+) -> list[SchemaFieldIssue]:
+    """检测 options 每个键列右邻的取值列表头是否存在。
+
+    options 的一对列是「断点日期键列 + 紧邻右侧的版本标签列」，取值列的表头
+    命名在真实文件里并不统一（`GS-INV取值字段` 等），因此按位置而非名称配对。
+    右邻列没有表头时该键的版本标签全部读不到，等同于价格规则失效。
+    """
+
+    config = schema.price_options
+    if config is None:
+        return []
+    headers = reader.read_headers(actual_sheet)
+    columns = headers.header_columns
+    occupied = set(columns.values())
+    issues: list[SchemaFieldIssue] = []
+    for key in config.required_keys:
+        if key not in present:
+            continue  # 键列本身缺失已单独报过，不重复报右邻列
+        index = columns.get(key)
+        if index is not None and index + 1 in occupied:
+            continue
+        issues.append(
+            SchemaFieldIssue(
+                logical_sheet=logical_sheet,
+                sheet_label=sheet_label,
+                actual_sheet=actual_sheet,
+                internal_key=f"{key}/value",
+                expected_header=f"{key} 右侧的版本标签取值列",
+                available_headers=available,
+                column_letters=column_letters,
+                remappable=False,
+                repair_hint=(
+                    f"请在 {actual_sheet!r} sheet 的 {key!r} 列右侧补上带表头的版本标签列"
+                ),
+            )
+        )
+    return issues
 
 
 def _detect_price_issues(

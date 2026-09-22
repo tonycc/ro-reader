@@ -4,6 +4,7 @@ from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Final, TypedDict
 
+from ro_generator.models import ResolvedPrice
 from ro_generator.profiles.runtime import current_rules, current_schema, current_source_location
 from ro_generator.schema import (
     CATEGORY_NAMES,
@@ -83,7 +84,7 @@ LINE_FIELD_SPECS: Final[dict[str, LineFieldSpec]] = {
         display_prefix="$",
     ),
     "quantity": LineFieldSpec(
-        rule="PI/PO 使用客户PO 的 Order Quantity；Invoice/PL 使用 PO record 的 SHIP QTY",
+        rule="PI/PO 使用客户PO 的 Order Quantity（Material 多行时按 Item 对位）；Invoice/PL 使用 PO record 的 SHIP QTY",
         source_sheet=SHEET_CUSTOMER_PO,
         source_field="order_quantity",
         zero_placeholder="需填: 数量",
@@ -393,8 +394,13 @@ def _resolve_unit_price_spec(
     document_type: str,
     seller: str,
     category: int | None,
+    price_source: ResolvedPrice | None = None,
 ) -> LineFieldSpec:
-    """unit_price 按 seller × category 叉积查列名，结果无法预先声明，单独处理。"""
+    """unit_price 按 seller × category 叉积查列名，结果无法预先声明，单独处理。
+
+    `price_source` 为行级价格解析记录（PF options 版本规则）：命中时
+    来源摘要显示实际命中的版本标签与列；缺失时展示失败原因。
+    """
     if current_rules().uses_po_record_unit_price(document_type):
         column = current_rules().po_price_columns.get(seller)
         if column:
@@ -404,6 +410,37 @@ def _resolve_unit_price_spec(
                 source_sheet=current_schema().sheet("PO record").name,
                 source_field=column,
             )
+    data_base_sheet = current_schema().sheet("DATA BASE").name
+    if price_source is not None and price_source.kind == "options":
+        date_text = price_source.line_date.isoformat() if price_source.line_date else "缺失"
+        bp_text = (
+            f"断点 {price_source.breakpoint.isoformat()}" if price_source.breakpoint else "最早版本"
+        )
+        return replace(
+            spec,
+            rule=(
+                f"options {price_source.option_key}：{price_source.date_field} "
+                f"{date_text} → {bp_text} → {price_source.version_label}"
+            ),
+            source_sheet=data_base_sheet,
+            source_field=price_source.column,
+        )
+    if price_source is not None and price_source.kind == "missing":
+        if not price_source.option_key:
+            detail = "options 表无此卖方/单据族的版本映射"
+        elif not price_source.version_label:
+            detail = f"options 表 {price_source.option_key} 无断点数据"
+        else:
+            detail = (
+                f"options {price_source.option_key} 选中的"
+                f"「{price_source.version_label}」未匹配 DATA BASE 分组或其 COMBO 列"
+            )
+        return replace(
+            spec,
+            rule=f"单价版本解析失败：{detail}",
+            source_sheet=None,
+            source_field=price_source.option_key or price_source.version_label,
+        )
     category_name = CATEGORY_NAMES.get(category or -1, "")
     buyer = current_rules().buyer_for(seller) or ""
     price_seller = current_rules().price_segment(document_type, seller, buyer)[0]
@@ -414,11 +451,14 @@ def _resolve_unit_price_spec(
     if column:
         rule = f"DATA BASE 的 {column} 列"
         if current_rules().profile_id == "pf":
-            rule_prefix = (
-                "DATA BASE Invoice 当前生效价格列"
-                if document_type in {"INVOICE", "PL"}
-                else "DATA BASE 当前生效价格列"
-            )
+            if price_source is not None and price_source.kind == "fixed":
+                rule_prefix = "BALANCE QTY=0 已发货完成，沿用固定价格列"
+            else:
+                rule_prefix = (
+                    "DATA BASE Invoice 当前生效价格列"
+                    if document_type in {"INVOICE", "PL"}
+                    else "DATA BASE 当前生效价格列"
+                )
             rule = f"{rule_prefix}（Profile 配置：{column}）"
         return replace(
             spec,
@@ -436,6 +476,7 @@ def resolve_line_field_spec(
     document_type: str,
     seller: str,
     category: int | None = None,
+    price_source: ResolvedPrice | None = None,
 ) -> LineFieldSpec:
     # 1. 按单据族叠加覆盖（INVOICE/PL 使用出货数据；PI/PO 沿用默认）
     doc_kwargs = _DOC_FAMILY_OVERRIDES.get(document_type, {}).get(field_name)
@@ -467,6 +508,7 @@ def resolve_line_field_spec(
             document_type=document_type,
             seller=seller,
             category=category,
+            price_source=price_source,
         )
 
     if field_name == "confirmed_ex_factory_date":

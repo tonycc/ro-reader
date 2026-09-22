@@ -28,6 +28,8 @@ class SheetConfig:
     name: str
     header_row: int
     first_data_row: int
+    # 分组标签行（如 PF DATA BASE 行1 的价格组标签）；None 表示该 sheet 无分组行。
+    group_header_row: int | None = None
 
 
 @dataclass(frozen=True)
@@ -60,6 +62,37 @@ class SchemaOverride:
             and not any(alias for alias in self.field_aliases.values())
             and not any(cols for cols in self.price_columns.values())
         )
+
+
+@dataclass(frozen=True)
+class PriceOptionConfig:
+    """options sheet 的键约定：`{seller_key}-{doc_key}` 对应一对（断点日期, 版本标签）列。
+
+    options sheet 是 PF base 文件内的价格版本路由表：每个键是一组
+    "断点日期 → DATA BASE 行1价格组标签" 的升序列表，行级取值时按
+    单据族 + 卖方 + 行日期 floor 匹配断点。RO 不声明此配置。
+    """
+
+    seller_keys: Mapping[str, str] = field(default_factory=dict)
+    doc_keys: Mapping[str, str] = field(default_factory=dict)
+    # options 表所在的逻辑 sheet key（对应 sheets 段中的 key）。
+    sheet: str = "options"
+
+    @property
+    def required_keys(self) -> tuple[str, ...]:
+        """seller_keys × doc_keys 笛卡尔积去重后的全部合法键。"""
+        return tuple(
+            f"{prefix}-{suffix}"
+            for prefix in dict.fromkeys(self.seller_keys.values())
+            for suffix in dict.fromkeys(self.doc_keys.values())
+        )
+
+    def key_for(self, document_type: str, seller: str) -> str | None:
+        prefix = self.seller_keys.get(seller)
+        suffix = self.doc_keys.get(document_type)
+        if prefix is None or suffix is None:
+            return None
+        return f"{prefix}-{suffix}"
 
 
 @dataclass(frozen=True)
@@ -131,6 +164,8 @@ class BaseSchema:
     invoice_data_base_price_columns: dict[str, str] = field(default_factory=dict)
     data_base_component_price_columns: dict[str, str] = field(default_factory=dict)
     invoice_amount_columns: dict[str, str] = field(default_factory=dict)
+    # options sheet 价格版本规则（仅 PF 声明）；None 表示该 Profile 无此机制。
+    price_options: PriceOptionConfig | None = None
 
     def sheet(self, name: str) -> SheetConfig:
         return self.sheets[name]
@@ -278,10 +313,12 @@ def load_base_schema(path: str | Path | None = None) -> BaseSchema:
                 actual_name = cfg.get("name", name)
                 if not isinstance(actual_name, str) or not actual_name.strip():
                     actual_name = name
+                group_row = cfg.get("group_header_row")
                 sheets[name] = SheetConfig(
                     name=actual_name.strip(),
                     header_row=int(cfg.get("header_row", 4)),
                     first_data_row=int(cfg.get("first_data_row", 5)),
+                    group_header_row=int(group_row) if group_row is not None else None,
                 )
 
     # field aliases (three sheets)
@@ -329,6 +366,16 @@ def load_base_schema(path: str | Path | None = None) -> BaseSchema:
             if isinstance(key, str) and isinstance(col, str):
                 inv_amount_columns[key] = col.strip()
 
+    # options sheet 价格版本规则（仅 PF 声明）
+    price_options: PriceOptionConfig | None = None
+    po_raw = raw.get("price_options")
+    if isinstance(po_raw, dict) and po_raw:
+        price_options = PriceOptionConfig(
+            seller_keys=_str_mapping(po_raw.get("seller_keys")),
+            doc_keys=_str_mapping(po_raw.get("doc_keys")),
+            sheet=str(po_raw.get("sheet", "options")).strip() or "options",
+        )
+
     return BaseSchema(
         sheets=sheets,
         data_base_fields=data_base_fields,
@@ -339,7 +386,18 @@ def load_base_schema(path: str | Path | None = None) -> BaseSchema:
         invoice_data_base_price_columns=invoice_price_columns,
         data_base_component_price_columns=component_price_columns,
         invoice_amount_columns=inv_amount_columns,
+        price_options=price_options,
     )
+
+
+def _str_mapping(raw: object) -> dict[str, str]:
+    """解析 YAML 中的 str→str 映射段，忽略非字符串项。"""
+    out: dict[str, str] = {}
+    if isinstance(raw, dict):
+        for key, value in raw.items():
+            if isinstance(key, str) and isinstance(value, str):
+                out[key.strip()] = value.strip()
+    return out
 
 
 def _parse_field_aliases(raw: dict[str, object], sheet: str) -> FieldAliases:

@@ -792,6 +792,7 @@ def _build_line_source_entries(
                     document_type=model.document_type,
                     seller=model.seller,
                     category=dl.category,
+                    price_source=dl.price_source,
                 )
                 source_type = line_spec.source_type
                 sheet = line_spec.source_sheet

@@ -157,6 +157,16 @@ class RoRules:
             return line.po_record_prices.get(segment)
         return line.prices.get(segment)
 
+    def missing_cost_breakdown_components(
+        self,
+        line: OrderLine,
+        document_type: str,
+        seller: str,
+    ) -> tuple[str, ...]:
+        """RO 单据没有 Combo 成本拆分区。"""
+        del line, document_type, seller
+        return ()
+
     def pi_no_for_lines(
         self,
         lines: tuple[OrderLine, ...],

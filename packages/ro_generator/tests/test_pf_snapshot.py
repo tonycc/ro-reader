@@ -27,7 +27,9 @@ def _make_pf_base(tmp_path: Path, *, category: str = "Single Rod") -> Path:
     data_base = workbook.active
     assert data_base is not None
     data_base.title = "DATA BASE TEMPLATE"
-    data_base.append([])
+    # 行1 为价格组标签（options 版本标签字面匹配这里）；EMAX-GS 组放在最后，
+    # 使测试后续追加的 ROD/REEL 组件列落在该组范围内。
+    data_base.append([None, None, None, None, None, "厂家价格6", "DDP价格6", "中间商价格6/7"])
     data_base.append(
         [
             "SAP",
@@ -36,11 +38,11 @@ def _make_pf_base(tmp_path: Path, *, category: str = "Single Rod") -> Path:
             "round value",
             "MOQ",
             "GS-SK/YM COMBO FOB 20260612-NEW PO",
-            "EMAX-GS COMBO FOB 20260612-NEW PO 留下3%",
             "PF-EMAX COMBO DDP 2026 EFFECTIVE AS OF JUN/12/26-NEW PO",
+            "EMAX-GS COMBO FOB 20260612-NEW PO 留下3%",
         ]
     )
-    data_base.append(["10001", "PF test item", category, 24, 100, 10, 11, 12])
+    data_base.append(["10001", "PF test item", category, 24, 100, 10, 12, 11])
 
     po_record = workbook.create_sheet("PO RECORD 26")
     po_record.append(
@@ -60,6 +62,41 @@ def _make_pf_base(tmp_path: Path, *, category: str = "Single Rod") -> Path:
         ]
     )
     customer_po.append(["2026-08-01", "4500000001", 10, "10001", "PF test item", "2026-09-01", 90])
+
+    # options 价格版本表：键列存断点日期，紧邻右列存 DATA BASE 行1组标签。
+    options = workbook.create_sheet("options")
+    options.append(
+        [
+            "EMAX-PI",
+            "EMAX-PI取值",
+            "GS-PI",
+            "GS-PI取值",
+            "SK/YM-PI",
+            "SK/YM-PI取值",
+            "EMAX-INV",
+            "EMAX-INV取值",
+            "GS-INV",
+            "GS-INV取值",
+            "SK/YM-INV",
+            "SK/YM-INV取值",
+        ]
+    )
+    options.append(
+        [
+            20260612,
+            "DDP价格6",
+            20260612,
+            "中间商价格6/7",
+            20260612,
+            "厂家价格6",
+            20260612,
+            "DDP价格6",
+            20260612,
+            "中间商价格6/7",
+            20260612,
+            "厂家价格6",
+        ]
+    )
 
     path = tmp_path / "pf-base.xlsx"
     workbook.save(path)
@@ -87,6 +124,7 @@ def test_pf_snapshot_includes_customer_po_before_po_record_and_surfaces_constrai
         po_no="4500000001",
         customer_po_rows=snapshot.customer_po_rows_for_po("4500000001"),
         profile=profile,
+        price_book=snapshot.price_book,
     )
     warning_codes = [message.code for message in result.messages if message.kind == "warning"]
     assert warning_codes == [CODE_MOQ_NOT_MET, CODE_FULL_CARTON_NOT_MET]

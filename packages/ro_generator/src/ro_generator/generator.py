@@ -322,6 +322,7 @@ def _preview_from_snapshot(
         snapshot.product_index,
         po_no=request.po_no,
         customer_po_rows=snapshot.customer_po_rows_for_po(request.po_no),
+        price_book=snapshot.price_book,
     )
     blocking = tuple(m for m in resolve_result.messages if m.kind == "blocking_error")
     warnings_resolver = tuple(m for m in resolve_result.messages if m.kind == "warning")
@@ -735,6 +736,7 @@ def _generate(request: DocumentRequest, *, context: GenerationContext) -> Genera
                 snapshot.product_index,
                 po_no=request.po_no,
                 customer_po_rows=snapshot.customer_po_rows_for_po(request.po_no),
+                price_book=snapshot.price_book,
             )
         else:
             resolve_result = resolve_po_lines(

@@ -175,6 +175,7 @@ def get_po_issues(
         po_no=po_no,
         customer_po_rows=customer_rows,
         profile=context.profile if context is not None else None,
+        price_book=snapshot.price_book,
     )
     blocking = [m for m in result.messages if m.kind == "blocking_error"]
     warnings = [m for m in result.messages if m.kind == "warning"]

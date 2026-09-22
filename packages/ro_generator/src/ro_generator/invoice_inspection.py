@@ -122,6 +122,7 @@ def _resolve_invoice_group_from_snapshot(
             po_no=po_no,
             customer_po_rows=snapshot.customer_po_rows_for_po(po_no),
             require_customer_po=False,
+            price_book=snapshot.price_book,
         )
         lines.extend(
             line for line in resolved.lines if line.ship_qty is not None and line.ship_qty > 0

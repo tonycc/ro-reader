@@ -192,6 +192,14 @@ class CustomerRules(Protocol):
     ) -> tuple[CostBreakdownItem, ...]:
         """返回当前单据需要展示的 Combo 组件价格。"""
 
+    def missing_cost_breakdown_components(
+        self,
+        line: OrderLine,
+        document_type: str,
+        seller: str,
+    ) -> tuple[str, ...]:
+        """返回本应拆分但取不到价格的组件名；无需拆分或全部取到时返回空。"""
+
 
 @dataclass(frozen=True)
 class ProfileCapabilities:

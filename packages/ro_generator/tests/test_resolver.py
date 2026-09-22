@@ -14,6 +14,7 @@ from ro_generator.resolver import (
     CODE_NO_PRICES,
     CODE_PO_NOT_FOUND,
     CODE_QTY_INVALID,
+    CODE_QTY_ITEM_MISMATCH,
     CODE_QTY_MISSING,
     CODE_SAP_MISSING,
     CODE_SAP_NOT_IN_DATA_BASE,
@@ -21,6 +22,7 @@ from ro_generator.resolver import (
     ResolveResult,
     build_product_index_from_rows,
     resolve_po_lines,
+    resolve_po_rows,
 )
 from ro_generator.schema import (
     ENTITY_EMAX_PTE,
@@ -80,7 +82,13 @@ PO_RECORD_HEADER: list[Any] = [
     "外箱(最终出口装箱率)",
 ]
 
-CUSTOMER_PO_HEADER: list[Any] = ["Purchasing Document", "Material", "ship to", "Order Quantity"]
+CUSTOMER_PO_HEADER: list[Any] = [
+    "Purchasing Document",
+    "Item",
+    "Material",
+    "ship to",
+    "Order Quantity",
+]
 
 
 def make_base_file(
@@ -515,6 +523,185 @@ class TestQty:
         assert msg.row == 2
         assert "客户PO row 2" in msg.message
         assert "Material 21-44640" in msg.message
+
+
+class TestCustomerPoItemMatching:
+    """客户PO 同一 Material 多行时，按 PO record ITEM LINE# 与 Item 对位。"""
+
+    def _customer_po_row(
+        self,
+        *,
+        item: object,
+        quantity: object,
+        material: str = "21-44640",
+    ) -> dict[str, Any]:
+        return {
+            "Purchasing Document": "4500030844",
+            "Item": item,
+            "Material": material,
+            "ship to": "Customer PO Ship To",
+            "Order Quantity": quantity,
+        }
+
+    def test_item_match_selects_each_rows_own_quantity(self, tmp_path: Path) -> None:
+        """同一 Material 两行：ITEM LINE# '10'/'60' 分别对位 '00010'/'00060'。"""
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[
+                basic_po_row(**{"ITEM LINE#": "10", "FINALQTY": 100}),
+                basic_po_row(**{"ITEM LINE#": "60", "FINALQTY": 200}),
+            ],
+            customer_po_rows=[
+                self._customer_po_row(item="00010", quantity=500),
+                self._customer_po_row(item="00060", quantity=300),
+            ],
+        )
+        with WorkbookReader(path) as reader:
+            result = resolve_po_lines(reader, "4500030844")
+
+        assert len(result.lines) == 2
+        assert result.lines[0].quantity == Decimal("500")
+        assert result.lines[0].cp_item == "00010"
+        assert result.lines[1].quantity == Decimal("300")
+        assert result.lines[1].cp_item == "00060"
+
+    def test_item_key_normalizes_zero_padding_and_numeric_types(self, tmp_path: Path) -> None:
+        """'10'、'00010'、10、10.0 视为同一行号。"""
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[
+                basic_po_row(**{"ITEM LINE#": "10", "FINALQTY": 100}),
+                basic_po_row(**{"ITEM LINE#": 20, "FINALQTY": 200}),
+            ],
+            customer_po_rows=[
+                self._customer_po_row(item=10, quantity=500),
+                self._customer_po_row(item="00020", quantity=300),
+            ],
+        )
+        with WorkbookReader(path) as reader:
+            result = resolve_po_lines(reader, "4500030844")
+
+        assert result.lines[0].quantity == Decimal("500")
+        assert result.lines[1].quantity == Decimal("300")
+
+    def test_multiple_material_rows_without_item_match_blocks(self, tmp_path: Path) -> None:
+        """Material 多行但 Item 无命中 → 阻断，不静默取第一行。"""
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[basic_po_row(**{"ITEM LINE#": "30", "FINALQTY": 100})],
+            customer_po_rows=[
+                self._customer_po_row(item="00010", quantity=500),
+                self._customer_po_row(item="00060", quantity=300),
+            ],
+        )
+        with WorkbookReader(path) as reader:
+            result = resolve_po_lines(reader, "4500030844")
+
+        assert result.lines == ()
+        msg = next(m for m in result.messages if m.code == CODE_QTY_ITEM_MISMATCH)
+        assert msg.kind == "blocking_error"
+        assert msg.field == "Item"
+        assert "2 行 Material = 21-44640" in msg.message
+        assert "Item = 30" in msg.message
+        assert "无法唯一确定" in msg.message
+
+    def test_multiple_material_rows_without_item_line_blocks(self, tmp_path: Path) -> None:
+        """Material 多行且 PO record ITEM LINE# 为空 → 阻断。"""
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[basic_po_row(**{"ITEM LINE#": None, "FINALQTY": 100})],
+            customer_po_rows=[
+                self._customer_po_row(item="00010", quantity=500),
+                self._customer_po_row(item="00060", quantity=300),
+            ],
+        )
+        with WorkbookReader(path) as reader:
+            result = resolve_po_lines(reader, "4500030844")
+
+        assert result.lines == ()
+        msg = next(m for m in result.messages if m.code == CODE_QTY_ITEM_MISMATCH)
+        assert msg.kind == "blocking_error"
+        assert msg.field == "ITEM LINE#"
+        assert "ITEM LINE# 为空" in msg.message
+        assert "无法唯一确定" in msg.message
+
+    def test_single_material_row_ignores_item_mismatch(self, tmp_path: Path) -> None:
+        """Material 只有一行时保持现状：Item 不对应也直接沿用。"""
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[basic_po_row(**{"ITEM LINE#": "99", "FINALQTY": 100})],
+            customer_po_rows=[self._customer_po_row(item="00010", quantity=240)],
+        )
+        with WorkbookReader(path) as reader:
+            result = resolve_po_lines(reader, "4500030844")
+
+        assert len(result.lines) == 1
+        assert result.lines[0].quantity == Decimal("240")
+
+    def test_multiple_material_rows_same_item_uses_first_quantity(self, tmp_path: Path) -> None:
+        """同一 Material + Item 重复行：取首个非空数量（无法进一步区分）。"""
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[basic_po_row(**{"ITEM LINE#": "10", "FINALQTY": 100})],
+            customer_po_rows=[
+                self._customer_po_row(item="00010", quantity=None),
+                self._customer_po_row(item="00010", quantity=300),
+            ],
+        )
+        with WorkbookReader(path) as reader:
+            result = resolve_po_lines(reader, "4500030844")
+
+        assert len(result.lines) == 1
+        assert result.lines[0].quantity == Decimal("300")
+
+    def test_item_special_decimal_values_do_not_crash(self, tmp_path: Path) -> None:
+        """客户PO Item 出现 NaN/Infinity 等 Decimal 特殊值时不崩溃，按文本处理。"""
+        path = make_base_file(
+            tmp_path,
+            data_base_rows=[COMBO_PRODUCT],
+            po_record_rows=[basic_po_row(**{"ITEM LINE#": "60", "FINALQTY": 100})],
+            customer_po_rows=[
+                self._customer_po_row(item="NaN", quantity=500),
+                self._customer_po_row(item="Infinity", quantity=400),
+                self._customer_po_row(item="00060", quantity=300),
+            ],
+        )
+        with WorkbookReader(path) as reader:
+            result = resolve_po_lines(reader, "4500030844")
+
+        assert len(result.lines) == 1
+        assert result.lines[0].quantity == Decimal("300")
+        assert result.lines[0].cp_item == "00060"
+
+    def test_cp_item_empty_when_item_unmatched_and_customer_po_not_required(
+        self,
+    ) -> None:
+        """require_customer_po=False 时歧义行降级为 warning，cp_item 置空而不是错配。"""
+        products = build_product_index_from_rows((COMBO_PRODUCT,))
+        po_row = basic_po_row(**{"ITEM LINE#": "30", "FINALQTY": 100})
+        customer_po_rows = (
+            self._customer_po_row(item="00010", quantity=500),
+            self._customer_po_row(item="00060", quantity=300),
+        )
+        result = resolve_po_rows(
+            (po_row,),
+            products,
+            "4500030844",
+            customer_po_rows=customer_po_rows,
+            require_customer_po=False,
+        )
+
+        assert len(result.lines) == 1
+        assert result.lines[0].quantity == Decimal("0")
+        assert result.lines[0].cp_item == ""
+        msg = next(m for m in result.messages if m.code == CODE_QTY_ITEM_MISMATCH)
+        assert msg.kind == "warning"
 
 
 # ————————————————————————————————————————

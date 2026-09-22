@@ -5,6 +5,9 @@ sheets:
     name: DATA BASE TEMPLATE
     header_row: 2
     first_data_row: 3
+    # 行1为价格组标签（如 厂家价格5 / DDP价格6），界定 options 版本标签
+    # 对应的列块范围；组内列按行2表头中的 COMBO/ROD/REEL 定位。
+    group_header_row: 1
   PO record:
     name: PO RECORD 26
     header_row: 1
@@ -13,6 +16,28 @@ sheets:
     name: new PO template
     header_row: 1
     first_data_row: 2
+  # PI/Invoice 单价的版本路由表：{seller}-{doc} 键列存断点日期，
+  # 紧邻右列存 DATA BASE 行1价格组标签。缺失时结构校验阻断。
+  options:
+    name: options
+    header_row: 1
+    first_data_row: 2
+
+# PI/Invoice USD Unit Price 的版本规则：
+# - PI 行按客户PO "PO Creation Date" 在 {seller}-PI 键内 floor 匹配断点；
+#   BALANCE QTY=0 的已发货完成行不做版本选价，沿用 data_base_price_columns。
+# - Invoice 行按 PO record "ACTUAL EX FACTORY" 在 {seller}-INV 键内匹配。
+# - 命中的版本标签与 DATA BASE 行1组标签严格字面匹配，组内取 COMBO 列。
+price_options:
+  sheet: options
+  seller_keys:
+    EMAX PTE: EMAX
+    GS PTE: GS
+    SK: SK/YM
+    YM: SK/YM
+  doc_keys:
+    PI: PI
+    INVOICE: INV
 
 field_aliases:
   DATA BASE:
@@ -87,7 +112,8 @@ price_columns:
   GS PTE: EMAX-GS FOB 2025
   EMAX PTE: PF-EMAX DDP 2025
 
-# PF 当前订单采用 2026-06-12 NEW PO 价格版本。
+# PO 单据的固定价格列；PI/Invoice 由 options 版本规则选列（见 price_options）。
+# PI 中 BALANCE QTY=0 的已发货完成行也沿用此固定列。
 data_base_price_columns:
   SK/combo: GS-SK/YM COMBO FOB 20260612-NEW PO
   YM/combo: GS-SK/YM COMBO FOB 20260612-NEW PO
@@ -103,23 +129,8 @@ data_base_price_columns:
   EMAX PTE/rod: PF-EMAX COMBO DDP 2026 EFFECTIVE AS OF JUN/12/26-NEW PO
   EMAX PTE/reel: PF-EMAX COMBO DDP 2026 EFFECTIVE AS OF JUN/12/26-NEW PO
 
-# PF Invoice/PL 主单价与 PI 相同：Single Rod / Single Reel 的卖价写在 COMBO 列，
-# ROD/REEL 列只给 Combo 成本拆分用，见 data_base_component_price_columns。
-invoice_data_base_price_columns:
-  SK/combo: GS-SK/YM COMBO FOB 20260612-NEW PO
-  SK/rod: GS-SK/YM COMBO FOB 20260612-NEW PO
-  SK/reel: GS-SK/YM COMBO FOB 20260612-NEW PO
-  YM/combo: GS-SK/YM COMBO FOB 20260612-NEW PO
-  YM/rod: GS-SK/YM COMBO FOB 20260612-NEW PO
-  YM/reel: GS-SK/YM COMBO FOB 20260612-NEW PO
-  GS PTE/combo: EMAX-GS COMBO FOB 20260612-NEW PO 留下3%
-  GS PTE/rod: EMAX-GS COMBO FOB 20260612-NEW PO 留下3%
-  GS PTE/reel: EMAX-GS COMBO FOB 20260612-NEW PO 留下3%
-  EMAX PTE/combo: PF-EMAX COMBO DDP 2026 EFFECTIVE AS OF JUN/12/26-NEW PO
-  EMAX PTE/rod: PF-EMAX COMBO DDP 2026 EFFECTIVE AS OF JUN/12/26-NEW PO
-  EMAX PTE/reel: PF-EMAX COMBO DDP 2026 EFFECTIVE AS OF JUN/12/26-NEW PO
-
-# GS PTE Invoice Combo 成本拆分。组件价格仍按表头名称配置，避免在 Python 中固定列坐标。
+# GS PTE Invoice Combo 成本拆分的兜底列。options 版本规则命中时组件列
+# 跟随所选价格组（组内 ROD/REEL 列）；此静态配置只兜底无版本解析的路径。
 data_base_component_price_columns:
   GS PTE/rod: EMAX-GS ROD FOB 20260612-NEW PO 留下3%
   GS PTE/reel: EMAX-GS REEL FOB 20260612-NEW PO 留下3%

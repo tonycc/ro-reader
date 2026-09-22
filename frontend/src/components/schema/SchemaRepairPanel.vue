@@ -101,7 +101,7 @@ function onSelectPrice(priceKey: string, event: Event) {
           <tr
             v-for="issue in repair.fieldIssues"
             :key="issue.internal_key"
-            :class="{ resolved: isResolved(issue, false) }"
+            :class="{ resolved: isResolved(issue, false), 'non-remappable': issue.remappable === false }"
           >
             <td class="col-field">
               <span class="status" :class="{ ok: isResolved(issue, false) }">{{ isResolved(issue, false) ? "✓" : "✗" }}</span>
@@ -110,7 +110,11 @@ function onSelectPrice(priceKey: string, event: Event) {
             <td class="col-sheet" :title="issue.sheet_label">{{ sheetName(issue) }}</td>
             <td class="col-old">{{ issue.expected_header }}</td>
             <td class="col-new">
+              <span v-if="issue.remappable === false" class="repair-hint">
+                {{ issue.repair_hint || "无法通过列映射修复，请修正 base 文件" }}
+              </span>
               <select
+                v-else
                 class="pick-select"
                 :value="selectedHeader(issue, false)"
                 :aria-label="`为 ${dataFieldName(issue, false)} 选择对应列`"
@@ -263,6 +267,14 @@ function onSelectPrice(priceKey: string, event: Event) {
 }
 .price-row td { background: #fffdf7; }
 .price-row.resolved td { background: #f4faf6; }
+.non-remappable td { background: #fef9f9; }
+.repair-hint {
+  display: inline-block;
+  color: var(--red);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: normal;
+}
 .pick-select {
   width: 100%;
   height: 32px;

@@ -442,6 +442,7 @@ def _write_data_row(
             document_type=document_type,
             seller=seller,
             category=doc_line.category,
+            price_source=doc_line.price_source,
         )
         addr = f"{col_letter}{row}"
 

@@ -18,7 +18,14 @@ from typing import Final
 
 from ro_generator.header_rules import resolve_header_field_spec
 from ro_generator.line_rules import resolve_line_field_spec
-from ro_generator.models import CostBreakdownItem, DocumentType, OrderLine, ValidationMessage
+from ro_generator.models import (
+    CostBreakdownItem,
+    DocumentType,
+    OrderLine,
+    ResolvedPrice,
+    ValidationMessage,
+    price_source_document,
+)
 from ro_generator.profiles.runtime import current_rules, current_schema
 
 # —————————————————————————————————————
@@ -29,10 +36,45 @@ CODE_LINE_NOT_PRICED: Final = "LINE_NOT_PRICED_FOR_SEGMENT"
 CODE_INVOICE_NO_MISSING: Final = "INVOICE_NO_MISSING"
 CODE_NO_SHIPMENT_FOR_INVOICE: Final = "NO_SHIPMENT_FOR_INVOICE"
 CODE_PACKING_DATA_MISSING: Final = "PACKING_DATA_MISSING"
+# options 版本规则下，本单据本卖方的单价版本没解析出可用列。
+CODE_PRICE_VERSION_UNRESOLVED: Final = "PRICE_VERSION_UNRESOLVED"
+# Combo 成本拆分所需的组件价缺失。
+CODE_COMPONENT_PRICE_MISSING: Final = "COMPONENT_PRICE_MISSING"
 
 
 def _po_record_sheet() -> str:
     return current_schema().sheet("PO record").name
+
+
+def _data_base_sheet() -> str:
+    return current_schema().sheet("DATA BASE").name
+
+
+def _price_version_message(
+    document_type: str,
+    resolved: ResolvedPrice,
+) -> ValidationMessage:
+    """把行级版本解析失败翻译成面向业务的告警。"""
+
+    doc_label = {"PI": "PI", "INVOICE": "Invoice", "PL": "Packing List"}.get(
+        document_type, document_type
+    )
+    if resolved.option_key is None:
+        detail = "options 表无此卖方/单据族的版本映射"
+    elif not resolved.version_label:
+        detail = f"options 表 {resolved.option_key} 无断点数据"
+    else:
+        detail = (
+            f"options {resolved.option_key} 选中的「{resolved.version_label}」"
+            "未匹配到 DATA BASE 分组或其 COMBO 列"
+        )
+    return ValidationMessage(
+        kind="warning",
+        code=CODE_PRICE_VERSION_UNRESOLVED,
+        message=f"{doc_label} 单价版本解析失败：{detail}",
+        field="unit_price",
+        severity="high",
+    )
 
 
 # —————————————————————————————————————
@@ -81,6 +123,9 @@ class DocumentLine:
     item_number: str = ""  # PO 模板 Item Number，实际来源由 line mapping 规则决定
     cp_item: str = ""  # 客户PO "Item" 列值，SK/YM PI 模板 PO item Line Number 来源
     cost_breakdown: tuple[CostBreakdownItem, ...] = ()
+    # 本单据类型下 unit_price 的取值解析记录（PF options 版本规则）；None 表示
+    # 未启用版本规则，来源摘要回退到 Profile 静态列描述。
+    price_source: ResolvedPrice | None = None
 
 
 @dataclass(frozen=True)
@@ -218,6 +263,9 @@ def _assemble_lines(
     `use_po_record_description=True` 时，优先使用 PO record 的 DESCRIPTION。
     """
     messages: list[ValidationMessage] = []
+    # 同一 options 键 + 版本标签会在本单据多行重复命中，按标签去重一次告警。
+    reported_price_versions: set[tuple[str, str]] = set()
+    reported_missing_components: set[str] = set()
 
     sliced = _slice_by_invoice(lines, invoice_no, document_type=document_type, seller=seller)
     if invoice_no is not None and not sliced:
@@ -233,6 +281,17 @@ def _assemble_lines(
 
     doc_lines: list[DocumentLine] = []
     for original_line, line_quantity in sliced:
+        # 只检查本单据 + 本卖方的版本解析结果；resolver 会为所有链段解析，
+        # 在此按上下文过滤，避免把 EMAX 的问题报到 GS 的单据上。
+        price_source = original_line.price_sources.get(
+            (price_source_document(document_type), seller)
+        )
+        if price_source is not None and price_source.kind == "missing":
+            dedupe_key = (price_source.option_key or "", price_source.version_label or "")
+            if dedupe_key not in reported_price_versions:
+                reported_price_versions.add(dedupe_key)
+                messages.append(_price_version_message(document_type, price_source))
+
         unit_price = current_rules().unit_price_for_line(original_line, document_type, segment)
         if unit_price is None:
             messages.append(
@@ -379,8 +438,33 @@ def _assemble_lines(
                     document_type,
                     seller,
                 ),
+                price_source=price_source,
             )
         )
+
+        missing_components = current_rules().missing_cost_breakdown_components(
+            original_line,
+            document_type,
+            seller,
+        )
+        for component in missing_components:
+            if component in reported_missing_components:
+                continue
+            reported_missing_components.add(component)
+            messages.append(
+                ValidationMessage(
+                    kind="warning",
+                    code=CODE_COMPONENT_PRICE_MISSING,
+                    severity="high",
+                    message=(
+                        f"Combo 成本拆分缺少 {component} 组件价："
+                        "所选价格组没有该组件列或该产品行组件价为空，成本拆分区将不完整"
+                    ),
+                    sheet=_data_base_sheet(),
+                    field="component_price",
+                    sap=original_line.sap,
+                )
+            )
 
     if packing:
         doc_lines = _assign_carton_ranges(doc_lines)
@@ -854,10 +938,12 @@ def _first_non_empty(values: object) -> str | None:
 
 
 __all__ = [
+    "CODE_COMPONENT_PRICE_MISSING",
     "CODE_INVOICE_NO_MISSING",
     "CODE_LINE_NOT_PRICED",
     "CODE_NO_SHIPMENT_FOR_INVOICE",
     "CODE_PACKING_DATA_MISSING",
+    "CODE_PRICE_VERSION_UNRESOLVED",
     "BuildResult",
     "DocumentCostBreakdownLine",
     "DocumentLine",

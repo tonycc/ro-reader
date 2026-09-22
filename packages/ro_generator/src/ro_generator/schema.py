@@ -121,39 +121,40 @@ CUSTOMER_PO_REQUIRED_HEADERS: Final[tuple[str, ...]] = (
 
 
 def required_sheets_for(schema: BaseSchema | None = None) -> tuple[str, ...]:
-    """返回指定 Profile schema 的必需 sheet 名。"""
+    """返回指定 Profile schema 的必需 sheet 名（声明即必需，按声明顺序）。"""
 
     active = schema or _default_schema()
-    return (
-        active.sheet("DATA BASE").name,
-        active.sheet("PO record").name,
-        active.sheet("客户PO").name,
-    )
+    return tuple(cfg.name for cfg in active.sheets.values())
 
 
 def required_headers_for(
     schema: BaseSchema | None = None,
-) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
-    """返回指定 Profile schema 的三张必需表头。"""
+) -> dict[str, tuple[str, ...]]:
+    """返回指定 Profile schema 各逻辑 sheet 的必需表头（按逻辑 key 索引）。"""
 
     active = schema or _default_schema()
-    return (
-        (
+    headers: dict[str, tuple[str, ...]] = {
+        "DATA BASE": (
             active.field("DATA BASE", "sap"),
             active.field("DATA BASE", "description"),
             active.field("DATA BASE", "category"),
         ),
-        (
+        "PO record": (
             active.field("PO record", "po_no"),
             active.field("PO record", "item_line"),
             active.field("PO record", "sap"),
         ),
-        (
+        "客户PO": (
             active.field("客户PO", "purchasing_document"),
             active.field("客户PO", "material"),
             active.field("客户PO", "order_quantity"),
         ),
-    )
+    }
+    # options 价格版本表：必需表头为全部 "{卖方前缀}-{单据后缀}" 键列。
+    options_key = active.price_options.sheet if active.price_options is not None else None
+    if options_key and options_key in active.sheets and active.price_options is not None:
+        headers[options_key] = active.price_options.required_keys
+    return headers
 
 
 # —————————————————————————————————————

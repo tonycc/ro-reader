@@ -11,7 +11,12 @@ from types import MappingProxyType
 
 from ro_generator.base_schema import BaseSchema, load_base_schema
 from ro_generator.errors import InvalidProfileError
-from ro_generator.models import CostBreakdownItem, DocumentType, OrderLine
+from ro_generator.models import (
+    CostBreakdownItem,
+    DocumentType,
+    OrderLine,
+    price_source_document,
+)
 from ro_generator.profiles.base import CustomerProfile, ProfileAssets, ProfileCapabilities
 from ro_generator.profiles.manifest import (
     load_profile_assets,
@@ -19,7 +24,7 @@ from ro_generator.profiles.manifest import (
     manifest_string,
 )
 from ro_generator.resources import profile_root
-from ro_generator.schema import CATEGORY_NAMES, SELLER_TO_BUYER, SELLERS
+from ro_generator.schema import SELLER_TO_BUYER, SELLERS
 
 PF_PROFILE_ID = "pf"
 PF_PROFILE_DISPLAY_NAME = "PF"
@@ -196,9 +201,31 @@ class PfRules:
         document_type: str,
         segment: tuple[str, str],
     ) -> Decimal | None:
-        if document_type in {"INVOICE", "PL"} and self.invoice_data_base_price_columns:
-            category_name = CATEGORY_NAMES.get(line.category, "")
-            return line.product.invoice_prices.get(f"{segment[0]}/{category_name}")
+        # PI/Invoice 走 options 版本规则时读各自的行级价格字典；PO 以及未启用
+        # 版本规则的路径读 line.prices（Profile 静态价格列）。三者不能混用：
+        # PI 与 PO 共用 (seller, buyer) 段键，把版本价写回 line.prices 会让
+        # PO 取到 PI 的价格。
+        source = line.price_sources.get((price_source_document(document_type), segment[0]))
+        if source is None:
+            return self._static_unit_price(line, document_type, segment)
+        if source.kind == "fixed":
+            # BALANCE QTY=0 的已发货完成 PI 行：明确沿用静态价格列。
+            return self._static_unit_price(line, document_type, segment)
+        if source.kind != "options":
+            # 版本解析失败：不回退静态列旧价，由装配层按缺价告警处理。
+            return None
+        row_prices = line.invoice_prices if document_type in {"INVOICE", "PL"} else line.pi_prices
+        # 选中列在该产品行为空时同样返回 None，避免"来源显示 options 列、
+        # 实际值来自静态列"的不一致。
+        return row_prices.get(segment)
+
+    def _static_unit_price(
+        self,
+        line: OrderLine,
+        document_type: str,
+        segment: tuple[str, str],
+    ) -> Decimal | None:
+        del document_type
         return line.prices.get(segment)
 
     def pi_no_for_lines(
@@ -294,21 +321,58 @@ class PfRules:
     ) -> tuple[CostBreakdownItem, ...]:
         """PF GS PTE Invoice 的 Combo 组件价格拆分。"""
 
+        items, _missing = self._cost_breakdown_parts(line, document_type, seller)
+        return items
+
+    def missing_cost_breakdown_components(
+        self,
+        line: OrderLine,
+        document_type: str,
+        seller: str,
+    ) -> tuple[str, ...]:
+        """返回本应拆分但取不到价格的组件名。
+
+        Combo Invoice 必须同时给出 RODS 和 REELS；所选价格组缺列或组件价为空时
+        不静默丢弃，由装配层告警，避免导出缺少成本拆分区的不完整 Invoice。
+        """
+        _items, missing = self._cost_breakdown_parts(line, document_type, seller)
+        return missing
+
+    def _cost_breakdown_parts(
+        self,
+        line: OrderLine,
+        document_type: str,
+        seller: str,
+    ) -> tuple[tuple[CostBreakdownItem, ...], tuple[str, ...]]:
         if document_type != "INVOICE" or seller != "GS PTE":
-            return ()
+            return (), ()
         # Invoice 截图的业务规则以 PO RECORD CATEGORY 识别 Combo；部分旧行没有
         # 该列时再回退到 DATA BASE 品类，避免把非 Combo 行错误拆分。
         category = line.po_record_category or line.category
         if category != 1:
-            return ()
+            return (), ()
+        # options 版本规则启用时（INVOICE 有 price_source 记录），组件列跟随
+        # 所选价格组；无版本解析记录的路径（如旧数据兜底）沿用静态配置列。
+        price_source = line.price_sources.get(("INVOICE", seller))
         items: list[CostBreakdownItem] = []
+        missing: list[str] = []
         for component in ("rod", "reel"):
             key = f"{seller}/{component}"
-            source_field = self.data_base_component_price_columns.get(key)
-            if not source_field:
+            if not self.data_base_component_price_columns.get(key):
+                # Profile 未声明该组件列 → 业务上本就不拆分，不算缺失。
                 continue
-            price = line.product.component_prices.get(key)
-            if price is None:
+            if price_source is not None:
+                source_field = (
+                    getattr(price_source.group, component, None)
+                    if price_source.group is not None
+                    else None
+                )
+                price = line.resolved_component_prices.get(key)
+            else:
+                source_field = self.data_base_component_price_columns.get(key)
+                price = line.product.component_prices.get(key)
+            if not source_field or price is None:
+                missing.append(component.upper() + "S")
                 continue
             items.append(
                 CostBreakdownItem(
@@ -317,7 +381,7 @@ class PfRules:
                     source_field=source_field,
                 )
             )
-        return tuple(items)
+        return tuple(items), tuple(missing)
 
 
 def _dimension_cbm(line: OrderLine) -> Decimal | None:

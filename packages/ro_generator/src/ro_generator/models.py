@@ -93,6 +93,51 @@ class Product:
     # Combo 成本拆分价格（key 由 Profile 配置定义，例如 "GS PTE/rod"）。
     # 只有声明了对应来源列且单元格有值时才会填充；缺失时不推断。
     component_prices: dict[str, Decimal] = field(default_factory=dict)
+    # DATA BASE 价格组内全部列的值（normalized 行2表头 → 值）。
+    # 供 options 价格版本规则按选中组的列名取数；无价格组的 Profile 恒为空。
+    data_base_prices: dict[str, Decimal] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class PriceGroup:
+    """DATA BASE 行1分组标签对应的一组价格列。
+
+    `combo`/`rod`/`reel` 为行2规范化表头名；None 表示组内没有该列。
+    """
+
+    label: str
+    combo: str | None = None
+    rod: str | None = None
+    reel: str | None = None
+
+
+@dataclass(frozen=True)
+class ResolvedPrice:
+    """单行单价的取值解析记录（PF options 价格版本规则）。
+
+    kind:
+    - "options"：按 options sheet 断点命中版本组，`column` 为组内 COMBO 列。
+    - "fixed"：沿用 Profile 固定价格列（如 PI 行 BALANCE QTY=0 已发货完成）。
+    - "missing"：断点表/版本标签/组列任一缺失，未取到价。
+    """
+
+    kind: str
+    option_key: str | None = None
+    line_date: date | None = None
+    date_field: str | None = None
+    breakpoint: date | None = None
+    version_label: str | None = None
+    group: PriceGroup | None = None
+    column: str | None = None
+
+
+def price_source_document(document_type: str) -> str:
+    """把单据类型归一到 `OrderLine.price_sources` 使用的单据族键。
+
+    PL 与 Invoice 共用同一份版本解析记录（同一张发票的同一批价格），
+    因此两者都映射到 `"INVOICE"`。
+    """
+    return "INVOICE" if document_type in {"INVOICE", "PL"} else document_type
 
 
 @dataclass(frozen=True)
@@ -172,9 +217,21 @@ class OrderLine:
     po_net_weight: Decimal | None = None
     po_gross_weight: Decimal | None = None
 
-    # 单价快照（按 (seller, buyer) 建索引，已选定本行 category 对应的列）
+    # 单价快照（按 (seller, buyer) 建索引，已选定本行 category 对应的列）。
+    # 这是 Profile 静态价格列的取值，PO 单据始终读它；PI/Invoice 若启用了
+    # options 版本规则，必须读下面的行级 dict，不得回写污染本字段。
     prices: dict[tuple[str, str], Decimal] = field(default_factory=dict)
     subtotals: dict[tuple[str, str], Decimal] = field(default_factory=dict)
+    # PI 单据的行级单价（PF options 规则按 PO Creation Date 逐行解析）
+    pi_prices: dict[tuple[str, str], Decimal] = field(default_factory=dict)
+    # Invoice 单据的行级单价（PF options 规则按 ACTUAL EX FACTORY 逐行解析）
+    invoice_prices: dict[tuple[str, str], Decimal] = field(default_factory=dict)
+    # 各单据族单价的取值解析记录，键为 (单据族, seller)：
+    # {("PI", "GS PTE"): ResolvedPrice, ("INVOICE", "EMAX PTE"): ...}
+    price_sources: dict[tuple[str, str], ResolvedPrice] = field(default_factory=dict)
+    # Invoice 组件拆分价（PF options 规则按所选版本组逐行解析；
+    # 键同 data_base_component_price_columns，如 "GS PTE/rod"）
+    resolved_component_prices: dict[str, Decimal] = field(default_factory=dict)
     # PO record 按主体聚合的单价（不按 Category）；RO Invoice 使用当前出货行上的值
     po_record_prices: dict[tuple[str, str], Decimal] = field(default_factory=dict)
 

@@ -54,7 +54,12 @@ def validate_workbook_structure(
         ValidationMessage(
             kind="blocking_error",
             code=CODE_HEADER_MISSING,
-            message=f"sheet {issue.actual_sheet!r} 缺少必需表头：{issue.expected_header!r}",
+            message=(
+                f"sheet {issue.actual_sheet!r} 缺少必需表头：{issue.expected_header!r}"
+                # 不可重映射的问题必须直接告诉业务怎么改 workbook，
+                # 否则用户只会在修复向导里反复尝试无效的列映射。
+                + (f"。{issue.repair_hint}" if issue.repair_hint else "")
+            ),
             sheet=issue.actual_sheet,
             field=issue.expected_header,
         )

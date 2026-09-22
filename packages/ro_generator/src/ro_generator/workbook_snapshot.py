@@ -25,8 +25,14 @@ from ro_generator.invoice_groups import (
     build_invoice_groups,
 )
 from ro_generator.models import OrderLine, Product
+from ro_generator.price_options import PriceBook, build_price_book
 from ro_generator.profiles import CustomerProfile, GenerationContext, default_profile_registry
-from ro_generator.profiles.runtime import current_profile, current_rules, profile_scope
+from ro_generator.profiles.runtime import (
+    current_profile,
+    current_rules,
+    current_schema,
+    profile_scope,
+)
 from ro_generator.resolver import (
     CUSTOMER_PO_ONLY_ROW_KEY,
     build_product_index_from_rows,
@@ -35,7 +41,7 @@ from ro_generator.resolver import (
 from ro_generator.schema import SELLERS
 from ro_generator.seller_filter import factory_seller_for_line, has_factory_categories, int_or_none
 from ro_generator.validator import validate_workbook_structure
-from ro_generator.workbook_reader import ROW_NUMBER_KEY, WorkbookReader
+from ro_generator.workbook_reader import ROW_NUMBER_KEY, SheetData, WorkbookReader
 
 # —————————————————————————————————————
 # PO 状态模型（原在 workbench_service，移到此处避免循环导入）
@@ -119,6 +125,8 @@ class WorkbookSnapshot:
     invoice_header_context: dict[str, InvoiceHeaderContext] = field(default_factory=dict)
     customer_po_rows: tuple[dict[str, object], ...] = ()
     customer_po_index: dict[str, tuple[int, ...]] = field(default_factory=dict)
+    # PF options 价格版本表；未声明 options 的 Profile 恒为 None
+    price_book: PriceBook | None = None
     created_at: float = field(default_factory=time.time)
 
     def po_rows_for_po(self, po_no: str) -> tuple[dict[str, object], ...]:
@@ -192,8 +200,15 @@ def _build_workbook_snapshot(context: GenerationContext) -> WorkbookSnapshot:
         headers_po = po_sheet.headers
         headers_cp = cp_sheet.headers
 
+        # options 价格版本表（PF 声明且 sheet 存在时才构建；
+        # options 是必需 sheet，缺失已在结构校验中阻断）
+        price_book = _load_price_book(reader, db_sheet)
+
         # 构建 product_index
-        product_index = build_product_index_from_rows(db_sheet.rows)
+        product_index = build_product_index_from_rows(
+            db_sheet.rows,
+            extra_price_columns=(price_book.collect_columns() if price_book is not None else ()),
+        )
 
         # 构建 po_rows 和 po_index
         po_field_name = context.schema.field("PO record", "po_no")
@@ -248,6 +263,7 @@ def _build_workbook_snapshot(context: GenerationContext) -> WorkbookSnapshot:
             product_index,
             cp_rows,
             cp_index,
+            price_book=price_book,
         )
         invoice_groups = _build_invoice_group_snapshot(
             po_index,
@@ -255,6 +271,7 @@ def _build_workbook_snapshot(context: GenerationContext) -> WorkbookSnapshot:
             product_index,
             cp_rows,
             cp_index,
+            price_book=price_book,
         )
 
         return WorkbookSnapshot(
@@ -272,9 +289,35 @@ def _build_workbook_snapshot(context: GenerationContext) -> WorkbookSnapshot:
             invoice_header_context=invoice_groups.header_context,
             customer_po_rows=cp_rows,
             customer_po_index=cp_index,
+            price_book=price_book,
         )
     finally:
         reader.close()
+
+
+def _load_price_book(reader: WorkbookReader, db_sheet: SheetData) -> PriceBook | None:
+    """从已打开的 reader 构建 options 价格版本表。
+
+    Profile 未声明 price_options 或 options sheet 缺失时返回 None；
+    缺失的阻断由上游结构校验负责（options 在 PF schema 中是必需 sheet）。
+    """
+    schema = current_schema()
+    config = schema.price_options
+    if config is None:
+        return None
+    options_cfg = schema.sheets.get(config.sheet)
+    if options_cfg is None or not reader.has_sheet(options_cfg.name):
+        return None
+    options_sheet = reader.read_sheet(options_cfg.name)
+    db_cfg = schema.sheet("DATA BASE")
+    group_labels = reader.read_group_labels(db_cfg.name)
+    return build_price_book(
+        options_sheet,
+        group_labels,
+        db_sheet.header_columns,
+        config,
+        schema,
+    )
 
 
 def _append_customer_po_only_rows(
@@ -337,6 +380,8 @@ def _build_po_summary(
     products: dict[str, Product],
     customer_po_rows: tuple[dict[str, object], ...],
     customer_po_index: dict[str, tuple[int, ...]],
+    *,
+    price_book: PriceBook | None = None,
 ) -> tuple[PoInspection, ...]:
     """基于索引和行数据构建所有 PO 的状态摘要。"""
     summaries: list[PoInspection] = []
@@ -348,6 +393,7 @@ def _build_po_summary(
             products,
             po_no=po_no,
             customer_po_rows=customer_rows,
+            price_book=price_book,
         )
         blocking = [m for m in resolve_result.messages if m.kind == "blocking_error"]
 
@@ -389,6 +435,8 @@ def _build_invoice_group_snapshot(
     products: dict[str, Product],
     customer_po_rows: tuple[dict[str, object], ...],
     customer_po_index: dict[str, tuple[int, ...]],
+    *,
+    price_book: PriceBook | None = None,
 ) -> InvoiceGroupBuild:
     row_index_by_source_row: dict[int, int] = {}
     for index, row in enumerate(po_rows):
@@ -405,6 +453,7 @@ def _build_invoice_group_snapshot(
             po_no=po_no,
             customer_po_rows=customer_rows,
             require_customer_po=False,
+            price_book=price_book,
         )
         for line in resolved.lines:
             if line.source_row is None:

@@ -862,7 +862,7 @@ packages/ro_workbench_api/src/ro_workbench_api/
 - `packages/ro_workbench_api/src/ro_workbench_api/app.py`
 - `frontend/package.json`
 - `frontend/src/components/layout/TopBar.vue`
-- `packages/ro_workbench_launcher/installer.iss`
+- `packages/ro_workbench_launcher/installer.iss`（该文件已在后续清理中随旧发布入口删除）
 - `scripts/verify_release_metadata.py`
 - `.github/workflows/build-launcher.yml`
 

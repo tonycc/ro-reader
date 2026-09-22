@@ -67,13 +67,16 @@ export const useSchemaRepair = defineStore("schemaRepair", () => {
   }
 
   const allResolved = computed(() => {
-    const fieldsDone = fieldIssues.value.every((issue) =>
+    // 不可重映射的问题（如 options 版本表）无法用列映射消除，不计入保存条件；
+    // 只剩这类问题时不给可点的"保存"——用户必须改 workbook 本身。
+    const remappableFields = fieldIssues.value.filter((i) => i.remappable !== false);
+    const fieldsDone = remappableFields.every((issue) =>
       selections.value.has(issue.internal_key),
     );
     const pricesDone = priceIssues.value.every((issue) =>
       priceSelections.value.has(issue.internal_key),
     );
-    const total = fieldIssues.value.length + priceIssues.value.length;
+    const total = remappableFields.length + priceIssues.value.length;
     return total > 0 && fieldsDone && pricesDone;
   });
 
@@ -268,6 +271,7 @@ export const useSchemaRepair = defineStore("schemaRepair", () => {
     try {
       const fieldAliases: Record<string, Record<string, string>> = {};
       for (const issue of fieldIssues.value) {
+        if (issue.remappable === false) continue;
         const header = selections.value.get(issue.internal_key);
         if (!header) continue;
         (fieldAliases[issue.logical_sheet] ??= {})[issue.internal_key] = header;
