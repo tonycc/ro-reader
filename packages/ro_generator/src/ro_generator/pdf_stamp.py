@@ -58,25 +58,6 @@ def stamp_box_pt(
     return x, y, width, height
 
 
-def seller_stamp_box_pt(
-    page_width_pt: float,
-    page_height_pt: float,
-    catalog: StampCatalog,
-    seller: str,
-) -> tuple[float, float, float, float] | None:
-    stamp = catalog.sellers.get(seller)
-    if stamp is None:
-        return None
-    return stamp_box_pt(
-        page_width_pt=page_width_pt,
-        page_height_pt=page_height_pt,
-        width_cm=stamp.width_cm,
-        height_cm=stamp.height_cm,
-        margin_right_cm=catalog.margin_right_cm,
-        margin_bottom_cm=catalog.margin_bottom_cm,
-    )
-
-
 def load_stamp_spec(stamps_root: Path | None = None) -> StampCatalog | None:
     root = stamps_root if stamps_root is not None else default_stamps_root()
     yaml_path = root / "stamps.yaml"
