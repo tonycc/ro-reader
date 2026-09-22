@@ -17,7 +17,6 @@ zip 命名: RO-<PO>-<INVOICE_NO>.zip（无发票号则省略 -<INVOICE_NO>）
 from __future__ import annotations
 
 import re
-import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -147,30 +146,6 @@ def package_zip(
     return target.resolve()
 
 
-def write_to_versioned_dir(
-    base_output_dir: str | Path,
-    *,
-    timestamp: datetime | None = None,
-) -> Path:
-    """在 base_output_dir 下创建一个 YYYYMMDD-HHMMSS 子目录（产品方案 §12.2 工作台默认行为）。
-
-    返回创建的子目录绝对路径。
-    """
-    ts = timestamp or datetime.now(UTC)
-    folder = Path(base_output_dir) / ts.strftime("%Y%m%d-%H%M%S")
-    folder.mkdir(parents=True, exist_ok=True)
-    return folder.resolve()
-
-
-def copy_file(src: str | Path, dest: str | Path) -> Path:
-    """简单文件拷贝助手，便于把渲染产物搬到不同目录。"""
-    src_path = Path(src)
-    dest_path = Path(dest)
-    dest_path.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src_path, dest_path)
-    return dest_path.resolve()
-
-
 # —————————————————————————————————————
 # Helpers
 # —————————————————————————————————————
@@ -191,8 +166,6 @@ __all__ = [
     "build_invoice_group_zip_filename",
     "build_invoice_pl_filename",
     "build_zip_filename",
-    "copy_file",
     "package_zip",
     "resolve_output_path",
-    "write_to_versioned_dir",
 ]
