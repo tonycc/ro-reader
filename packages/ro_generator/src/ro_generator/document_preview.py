@@ -39,18 +39,6 @@ from ro_generator.totals_rules import (
 
 
 @dataclass
-class PreviewSourceEntry:
-    preview_field: str
-    label: str
-    source_type: str  # base_field | computed | template_content | system_generated | manual_input
-    sheet: str | None = None
-    row: int | None = None
-    field: str | None = None
-    value: str = ""
-    rule: str = ""
-
-
-@dataclass
 class DocumentPreview:
     document_type: str
     title: str
@@ -977,6 +965,5 @@ def _error_preview(build: BuildDocumentResult) -> DocumentPreview:
 
 __all__ = [
     "DocumentPreview",
-    "PreviewSourceEntry",
     "build_preview",
 ]
