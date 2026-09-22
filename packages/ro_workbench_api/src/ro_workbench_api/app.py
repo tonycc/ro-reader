@@ -270,13 +270,6 @@ class OpenSessionRequest(BaseModel):
     base_file: str
 
 
-class OpenSessionResponse(BaseModel):
-    ok: bool
-    session_id: str = ""
-    po_list: list[dict[str, object]] = []
-    errors: list[dict[str, object]] | None = None
-
-
 class DryRunRequest(BaseModel):
     base_file: str
     po_no: str
