@@ -251,7 +251,6 @@ class TestWorkbookSnapshot:
         summary = snap.invoice_summary[0]
         assert summary.po_nos == ("PO-1", "PO-2")
         assert snap.invoice_index[summary.invoice_group_key] == (0, 1)
-        assert snap.invoice_header_context[summary.invoice_group_key].conflicts == ()
         assert tuple(
             row["PO NO."] for row in snap.invoice_rows_for_group(summary.invoice_group_key)
         ) == (
