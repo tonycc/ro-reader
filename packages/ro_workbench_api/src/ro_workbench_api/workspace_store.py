@@ -182,9 +182,6 @@ class WorkspaceStore:
         with self._lock:
             return self._read_locked()
 
-    # ``get_settings`` 是给调用方的语义化别名，避免 API 层依赖文件名细节。
-    get_settings = load
-
     def save(self, settings: WorkspaceSettings) -> WorkspaceSettings:
         """校验并原子保存配置，成功后返回同一份不可变对象。"""
 
@@ -196,11 +193,6 @@ class WorkspaceStore:
     def list_workspaces(self) -> tuple[CustomerWorkspace, ...]:
         return self.load().workspaces
 
-    def list(self) -> tuple[CustomerWorkspace, ...]:
-        """兼容简短调用名。"""
-
-        return self.list_workspaces()
-
     def get(self, workspace_id: str) -> CustomerWorkspace:
         settings = self.load()
         return self._find(settings, workspace_id)
@@ -210,8 +202,6 @@ class WorkspaceStore:
         if settings.current_workspace_id is None:
             return None
         return self._find(settings, settings.current_workspace_id)
-
-    get_current_workspace = get_current
 
     def create(
         self,
@@ -297,9 +287,6 @@ class WorkspaceStore:
             updated = replace(settings, current_workspace_id=normalized_id)
             self._write_locked(updated)
             return updated
-
-    def clear_current_workspace(self) -> WorkspaceSettings:
-        return self.set_current_workspace(None)
 
     def mark_opened(self, workspace_id: str, *, opened_at: str | None = None) -> CustomerWorkspace:
         """记录成功打开时间；不改变当前指针，事务提交由 SessionManager 负责。"""
