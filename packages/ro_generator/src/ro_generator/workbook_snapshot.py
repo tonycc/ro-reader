@@ -20,7 +20,6 @@ from ro_generator.document_model import invoice_no_for_line
 from ro_generator.errors import WorkbookOpenError
 from ro_generator.invoice_groups import (
     InvoiceGroupBuild,
-    InvoiceHeaderContext,
     InvoiceInspection,
     build_invoice_groups,
 )
@@ -122,7 +121,6 @@ class WorkbookSnapshot:
     po_summary: tuple[PoInspection, ...] = ()
     invoice_summary: tuple[InvoiceInspection, ...] = ()
     invoice_index: dict[str, tuple[int, ...]] = field(default_factory=dict)
-    invoice_header_context: dict[str, InvoiceHeaderContext] = field(default_factory=dict)
     customer_po_rows: tuple[dict[str, object], ...] = ()
     customer_po_index: dict[str, tuple[int, ...]] = field(default_factory=dict)
     # PF options 价格版本表；未声明 options 的 Profile 恒为 None
@@ -286,7 +284,6 @@ def _build_workbook_snapshot(context: GenerationContext) -> WorkbookSnapshot:
             po_summary=po_summary,
             invoice_summary=invoice_groups.summaries,
             invoice_index=invoice_groups.index,
-            invoice_header_context=invoice_groups.header_context,
             customer_po_rows=cp_rows,
             customer_po_index=cp_index,
             price_book=price_book,

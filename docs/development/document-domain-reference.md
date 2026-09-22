@@ -48,7 +48,7 @@ SK → YM → GS PTE → EMAX PTE → PF
 
 ## Invoice 票据组
 
-工作台只把 `SHIP QTY > 0` 且有发票标识的行纳入票据组。分组、跨 PO 聚合、header 冲突和主体发票号选择都属于核心包职责，入口位于：
+工作台只把 `SHIP QTY > 0` 且有发票标识的行纳入票据组。分组、跨 PO 聚合和主体发票号选择都属于核心包职责，入口位于：
 
 - `invoice_groups.py`
 - `invoice_inspection.py`

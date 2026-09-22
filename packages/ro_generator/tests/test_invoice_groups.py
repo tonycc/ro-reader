@@ -127,7 +127,7 @@ def test_pf_invoice_numbers_do_not_inherit_ro_suffix_or_factory_sellers() -> Non
     }
 
 
-def test_header_context_no_conflicts_when_no_attributes_checked() -> None:
+def test_invoice_group_summary_is_ready() -> None:
     result = build_invoice_groups(
         (
             (4, _line(po_no="PO-1", invoice_no="INV-001", ship_to="Kansas City")),
@@ -136,8 +136,6 @@ def test_header_context_no_conflicts_when_no_attributes_checked() -> None:
     )
 
     summary = result.summaries[0]
-    context = result.header_context[summary.invoice_group_key]
     assert summary.status == "ready"
     assert summary.blocking_count == 0
     assert summary.conflict_count == 0
-    assert context.conflicts == ()

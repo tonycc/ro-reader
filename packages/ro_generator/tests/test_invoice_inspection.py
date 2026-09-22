@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from decimal import Decimal
 
-from ro_generator.invoice_groups import InvoiceHeaderContext, InvoiceInspection
+from ro_generator.invoice_groups import InvoiceInspection
 from ro_generator.invoice_inspection import (
-    CODE_INVOICE_GROUP_HEADER_CONFLICT,
     dedupe_messages,
     inspect_invoice_group_from_snapshot,
 )
@@ -204,39 +202,3 @@ def test_dedupe_messages_preserves_first_seen_order() -> None:
     other = ValidationMessage(kind="warning", code="OTHER", message="Other")
 
     assert dedupe_messages((duplicate, other, duplicate)) == (duplicate, other)
-
-
-def test_each_header_conflict_is_reported_as_blocking() -> None:
-    snapshot = _snapshot()
-    summary = replace(
-        snapshot.invoice_summary[0], status="blocked", blocking_count=2, conflict_count=2
-    )
-    context = InvoiceHeaderContext(
-        values={
-            "ship_to": ("Chicago", "Kansas City"),
-            "final_destination": ("MO", "TX"),
-            "manufacturer_address": (),
-        },
-        conflicts=("ship_to", "final_destination"),
-        source_rows={
-            "ship_to": (6, 12),
-            "final_destination": (6, 12),
-            "manufacturer_address": (),
-        },
-    )
-    snapshot = replace(
-        snapshot,
-        invoice_summary=(summary,),
-        invoice_header_context={GROUP_KEY: context},
-    )
-
-    result = inspect_invoice_group_from_snapshot(snapshot, GROUP_KEY)
-
-    conflicts = [
-        message
-        for message in result.blocking_errors
-        if message.code == CODE_INVOICE_GROUP_HEADER_CONFLICT
-    ]
-    assert [message.field for message in conflicts] == ["ship_to", "final_destination"]
-    assert all("PO-1, PO-2" in message.message for message in conflicts)
-    assert all("6, 12" in message.message for message in conflicts)

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import TYPE_CHECKING, Final
 
-from ro_generator.invoice_groups import InvoiceHeaderContext, InvoiceInspection
+from ro_generator.invoice_groups import InvoiceInspection
 from ro_generator.models import OrderLine, ValidationMessage
 from ro_generator.profiles import GenerationContext
 from ro_generator.profiles.runtime import current_profile, current_schema, profile_scope
@@ -21,7 +21,6 @@ if TYPE_CHECKING:
 
 
 CODE_INVOICE_GROUP_NOT_FOUND: Final = "INVOICE_GROUP_NOT_FOUND"
-CODE_INVOICE_GROUP_HEADER_CONFLICT: Final = "INVOICE_GROUP_HEADER_CONFLICT"
 
 
 @dataclass(frozen=True)
@@ -132,8 +131,6 @@ def _resolve_invoice_group_from_snapshot(
         )
         warnings.extend(message for message in resolved.messages if message.kind == "warning")
 
-    context = snapshot.invoice_header_context.get(invoice_group_key)
-    blocking_errors.extend(_header_conflict_messages(context, summary.po_nos, tuple(lines)))
     return InvoiceGroupResolution(
         summary=summary,
         lines=tuple(lines),
@@ -185,49 +182,6 @@ def _inspect_invoice_group_from_snapshot(
     )
 
 
-# source sheet and column for header fields checked in invoice group cross-PO consistency
-_HEADER_FIELD_SOURCE: dict[str, tuple[str, str]] = {
-    "ship_to": ("客户PO", "ship to"),
-    "final_destination": ("客户PO", "final destination"),
-    "manufacturer_address": ("客户PO", "manufacturer"),
-}
-
-
-def _header_conflict_messages(
-    context: InvoiceHeaderContext | None,
-    po_nos: tuple[str, ...],
-    lines: tuple[OrderLine, ...],
-) -> tuple[ValidationMessage, ...]:
-    if context is None:
-        return ()
-    messages: list[ValidationMessage] = []
-    for field_name in context.conflicts:
-        source_rows = sorted(
-            {
-                line.source_row
-                for line in lines
-                if line.source_row is not None
-                and (value := getattr(line, field_name)) is not None
-                and str(value).strip()
-            }
-        )
-        sheet, column = _HEADER_FIELD_SOURCE.get(field_name, ("?", field_name))
-        messages.append(
-            ValidationMessage(
-                kind="blocking_error",
-                code=CODE_INVOICE_GROUP_HEADER_CONFLICT,
-                message=(
-                    f"票据组跨 PO 的”{sheet}”sheet”{column}”列不一致；"
-                    f"涉及 PO：{', '.join(po_nos)}；"
-                    f"源行：{', '.join(str(row) for row in source_rows)}"
-                ),
-                sheet=sheet,
-                field=field_name,
-            )
-        )
-    return tuple(messages)
-
-
 def _project_line(line: OrderLine) -> InvoiceInspectionRow:
     assert line.source_row is not None
     assert line.ship_qty is not None
@@ -257,7 +211,6 @@ def _sellers_for_line(line: OrderLine) -> tuple[str, ...]:
 
 
 __all__ = [
-    "CODE_INVOICE_GROUP_HEADER_CONFLICT",
     "CODE_INVOICE_GROUP_NOT_FOUND",
     "InvoiceGroupInspection",
     "InvoiceGroupResolution",
