@@ -54,10 +54,6 @@ CUSTOMER_PO_ONLY_ROW_KEY: Final = "__customer_po_only__"
 # —————————————————————————————————————
 
 
-def _db(key: str) -> str:
-    return current_schema().field("DATA BASE", key)
-
-
 def _po(key: str) -> str:
     return current_schema().field("PO record", key)
 
