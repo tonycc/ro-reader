@@ -89,17 +89,6 @@ def test_open_session_creates_new_for_different_base(tmp_path: Path) -> None:
         other.unlink(missing_ok=True)
 
 
-def test_close_session_removes_it() -> None:
-    resp = client.post("/api/session/open", json={"base_file": str(FIXTURE)})
-    sid = resp.json()["session_id"]
-    resp2 = client.post("/api/session/close", json={"session_id": sid})
-    assert resp2.status_code == 200
-    assert resp2.json()["status"] == "closed"
-    # Double close is safe
-    resp3 = client.post("/api/session/close", json={"session_id": sid})
-    assert resp3.json()["status"] == "not_found"
-
-
 # --- Invalid session rejection ---
 
 

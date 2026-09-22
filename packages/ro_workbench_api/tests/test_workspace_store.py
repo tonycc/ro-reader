@@ -49,7 +49,7 @@ def test_restart_round_trip_and_current_workspace_pointer(tmp_path: Path) -> Non
     restarted = WorkspaceStore(config_dir=config_dir, clock=lambda: "2026-08-07T11:00:00+08:00")
     assert restarted.list_workspaces() == (first, second)
     assert restarted.get_current() == first
-    assert restarted.clear_current_workspace().current_workspace_id is None
+    assert restarted.set_current_workspace(None).current_workspace_id is None
     assert restarted.get_current() is None
 
 

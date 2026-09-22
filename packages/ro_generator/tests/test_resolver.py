@@ -779,9 +779,9 @@ class TestPrices:
 
     def test_price_columns_constant_covers_all_legal_segments(self) -> None:
         """常量表必须覆盖所有合法链段，否则会有段被静默跳过。"""
-        from ro_generator.schema import LEGAL_CHAIN_SEGMENTS
+        from ro_generator.schema import SELLER_TO_BUYER
 
-        for seg in LEGAL_CHAIN_SEGMENTS:
+        for seg in SELLER_TO_BUYER.items():
             assert seg in PO_PRICE_COLUMNS
 
 

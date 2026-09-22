@@ -60,7 +60,6 @@ from ro_generator.workbench_service import (
     ExportDocumentGroup,
     export_document_groups,
     export_invoice_document_groups,
-    get_customer_po_data,
     get_po_data,
     get_po_issues,
     inspect_file_path,
@@ -270,13 +269,6 @@ class OpenSessionRequest(BaseModel):
     base_file: str
 
 
-class OpenSessionResponse(BaseModel):
-    ok: bool
-    session_id: str = ""
-    po_list: list[dict[str, object]] = []
-    errors: list[dict[str, object]] | None = None
-
-
 class DryRunRequest(BaseModel):
     base_file: str
     po_no: str
@@ -327,10 +319,6 @@ class EditFieldRequest(BaseModel):
 class EditFieldResponse(BaseModel):
     ok: bool
     message: str = ""
-
-
-class SessionCloseRequest(BaseModel):
-    session_id: str
 
 
 class WorkspaceInputRequest(BaseModel):
@@ -1176,35 +1164,6 @@ def get_po_data_endpoint(
     return get_po_data(base_file, po_no)
 
 
-@app.get("/api/po/{po_no}/customer-po")
-def get_customer_po_endpoint(
-    po_no: str,
-    base_file: str | None = Query(None),
-    x_session_id: str | None = Header(None, alias="X-Session-Id"),
-) -> dict[str, Any]:
-    """返回指定 PO 号在客户PO sheet 中的对应行数据。"""
-    if x_session_id is not None:
-        session = _get_session(x_session_id)
-        if session is None:
-            raise HTTPException(
-                400,
-                detail={
-                    "code": "INVALID_SESSION",
-                    "message": f"session {x_session_id!r} 无效或已过期",
-                },
-            )
-        return get_customer_po_data(
-            session.base_file,
-            po_no,
-            context=_session_context(session),
-        )
-    if base_file is None:
-        raise HTTPException(
-            400, detail={"code": "INVALID_SESSION", "message": "缺少 session_id 或 base_file"}
-        )
-    return get_customer_po_data(base_file, po_no)
-
-
 @app.get("/api/po/{po_no}/issues")
 def get_po_issues_endpoint(
     po_no: str,
@@ -1468,21 +1427,6 @@ def refresh_session(x_session_id: str = Header(..., alias="X-Session-Id")) -> di
         "po_list": _po_list_payload(snapshot.po_summary),
         "invoices": [asdict(item) for item in snapshot.invoice_summary],
     }
-
-
-@app.post("/api/session/close")
-def close_session(req: SessionCloseRequest) -> dict[str, str]:
-    """关闭 session 并清理临时目录。"""
-    with _lock:
-        info = _sessions.pop(req.session_id, None)
-    if info:
-        with suppress(Exception):
-            shutil.rmtree(info.temp_dir, ignore_errors=True)
-        return {"status": "closed"}
-    _store, manager = _workspace_runtime()
-    if manager.close(req.session_id):
-        return {"status": "closed"}
-    return {"status": "not_found"}
 
 
 # —————————————————————————————————————

@@ -27,17 +27,6 @@ SHEET_DATA_BASE: Final = _default_schema().sheet("DATA BASE").name
 SHEET_PO_RECORD: Final = _default_schema().sheet("PO record").name
 SHEET_CUSTOMER_PO: Final = _default_schema().sheet("客户PO").name
 
-REQUIRED_SHEETS: Final[tuple[str, ...]] = (SHEET_DATA_BASE, SHEET_PO_RECORD, SHEET_CUSTOMER_PO)
-
-
-# —————————————————————————————————————
-# 表头位置约定
-# —————————————————————————————————————
-#
-# 表头行和数据起始行由 base_schema.yaml 定义，默认第 4/5 行。
-HEADER_ROW: Final = _default_schema().sheet("PO record").header_row
-FIRST_DATA_ROW: Final = _default_schema().sheet("PO record").first_data_row
-
 
 # —————————————————————————————————————
 # 类别（产品方案 §10.1）
@@ -63,14 +52,6 @@ ENTITY_GS_PTE: Final = "GS PTE"
 ENTITY_EMAX_PTE: Final = "EMAX PTE"
 ENTITY_PF: Final = "PF"
 
-# 合法 (seller, buyer) 组合，按链路从工厂到最终客户排序。
-LEGAL_CHAIN_SEGMENTS: Final[tuple[tuple[str, str], ...]] = (
-    (ENTITY_SK, ENTITY_YM),
-    (ENTITY_YM, ENTITY_GS_PTE),
-    (ENTITY_GS_PTE, ENTITY_EMAX_PTE),
-    (ENTITY_EMAX_PTE, ENTITY_PF),
-)
-
 # 卖方主体列表（按贸易链顺序）
 SELLERS: Final[tuple[str, ...]] = (ENTITY_SK, ENTITY_YM, ENTITY_GS_PTE, ENTITY_EMAX_PTE)
 
@@ -88,9 +69,6 @@ SELLER_PRICE_COLUMNS: Final[dict[str, str]] = dict(_default_schema().price_colum
 # DATA BASE 中按 (卖方, 品类) 的价格列
 DATA_BASE_PRICE_COLUMNS: Final[dict[str, str]] = dict(_default_schema().data_base_price_columns)
 
-# PO record 中各链段发票金额列
-INVOICE_AMOUNT_COLUMNS: Final[dict[str, str]] = dict(_default_schema().invoice_amount_columns)
-
 
 # —————————————————————————————————————
 # 必需表头
@@ -100,31 +78,6 @@ INVOICE_AMOUNT_COLUMNS: Final[dict[str, str]] = dict(_default_schema().invoice_a
 # 里走"缺失只产生 low warning"路径。
 #
 # 表头名以**规范化后的形式**给出（去除换行 / 多余空格），匹配时双方都先 normalize。
-
-DATA_BASE_REQUIRED_HEADERS: Final[tuple[str, ...]] = (
-    _default_schema().field("DATA BASE", "sap"),
-    _default_schema().field("DATA BASE", "description"),
-    _default_schema().field("DATA BASE", "category"),
-)
-
-PO_RECORD_REQUIRED_HEADERS: Final[tuple[str, ...]] = (
-    _default_schema().field("PO record", "po_no"),
-    _default_schema().field("PO record", "item_line"),
-    _default_schema().field("PO record", "sap"),
-)
-
-CUSTOMER_PO_REQUIRED_HEADERS: Final[tuple[str, ...]] = (
-    _default_schema().field("客户PO", "purchasing_document"),
-    _default_schema().field("客户PO", "material"),
-    _default_schema().field("客户PO", "order_quantity"),
-)
-
-
-def required_sheets_for(schema: BaseSchema | None = None) -> tuple[str, ...]:
-    """返回指定 Profile schema 的必需 sheet 名（声明即必需，按声明顺序）。"""
-
-    active = schema or _default_schema()
-    return tuple(cfg.name for cfg in active.sheets.values())
 
 
 def required_headers_for(
@@ -181,8 +134,3 @@ def normalize_header(raw: object) -> str:
     # 把全角空格也并入空白处理
     cleaned = raw.replace("　", " ")
     return _WHITESPACE_RE.sub(" ", cleaned).strip()
-
-
-def normalize_headers(raw_headers: list[object]) -> list[str]:
-    """对一行表头批量规范化。"""
-    return [normalize_header(h) for h in raw_headers]

@@ -27,8 +27,6 @@ from ro_generator.resources import profile_root
 from ro_generator.schema import SELLER_TO_BUYER, SELLERS
 
 PF_PROFILE_ID = "pf"
-PF_PROFILE_DISPLAY_NAME = "PF"
-PF_PROFILE_VERSION = "pf_v1"
 _MONTH_COLUMNS = tuple(f"26{month:02d}" for month in range(1, 13))
 _INVOICE_MONTH_RE = re.compile(r"(?<!\d)(\d{4})")
 _CATEGORY_ALIASES = MappingProxyType(

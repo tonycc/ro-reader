@@ -616,16 +616,6 @@ def build_header_resolved_values(
     return resolved_values
 
 
-def header_source_sheet(field_name: str) -> str:
-    spec = HEADER_FIELD_SPECS.get(field_name)
-    return spec.source_sheet if spec and spec.source_sheet else SHEET_PO_RECORD
-
-
-def header_source_field(field_name: str) -> str:
-    spec = HEADER_FIELD_SPECS.get(field_name)
-    return spec.source_field if spec and spec.source_field else field_name
-
-
 def is_system_generated_header_field(
     field_name: str,
     *,

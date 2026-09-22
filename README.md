@@ -192,15 +192,15 @@ uv run ro-generate \
 
 ## API
 
-工作台后端当前提供 31 个 `/api` 端点：
+工作台后端当前提供 29 个 `/api` 端点：
 
 | 分组 | 端点 |
 | --- | --- |
 | 健康与文件 | `GET /api/health`、`POST /api/check-path` |
 | Profile/工作区 | `GET /api/profiles`、`GET /api/workspaces`、`POST /api/workspaces`、`PATCH /api/workspaces/{id}`、`DELETE /api/workspaces/{id}`、两种 validate、activate、`GET /api/bootstrap` |
-| Session | `POST /api/session/open`、`POST /api/session/refresh`、`POST /api/session/close` |
+| Session | `POST /api/session/open`、`POST /api/session/refresh` |
 | Invoice | 列表、inspection、preview、export、export-batch |
-| PO | 数据、customer-po、issues、preview、edit、export、export-batch |
+| PO | 数据、issues、preview、edit、export、export-batch |
 | Schema | issues、mappings、override |
 | 下载 | `GET /api/download` |
 

@@ -130,17 +130,6 @@ def build_preview_totals(
     return totals
 
 
-def iter_present_preview_totals(
-    model: DocumentModel,
-) -> tuple[tuple[TotalFieldSpec, str], ...]:
-    entries: list[tuple[TotalFieldSpec, str]] = []
-    for spec in preview_total_specs(model.document_type):
-        value = getattr(model, spec.model_attr, None)
-        if value is not None:
-            entries.append((spec, str(value)))
-    return tuple(entries)
-
-
 def _format_total_preview_value(preview_key: str, value: Decimal) -> str:
     if preview_key == "total_amount":
         normalized = value.quantize(Decimal("0.01"))
@@ -154,7 +143,6 @@ __all__ = [
     "TOTAL_FIELD_SPECS",
     "TotalFieldSpec",
     "build_preview_totals",
-    "iter_present_preview_totals",
     "preview_total_specs",
     "total_spec_for_mapping_key",
     "total_value_for_mapping_key",

@@ -114,11 +114,6 @@ export interface BatchExportRequest {
   output_formats?: ExportFileFormat[]
 }
 
-export interface InvoiceBatchExportRequest {
-  groups: BatchExportGroup[]
-  output_formats?: ExportFileFormat[]
-}
-
 export interface DryRunResult {
   status: string; summary: Record<string, unknown>; files: string[]
   output_file: string | null; errors: ValidationIssue[]; warnings: ValidationIssue[]
