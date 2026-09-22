@@ -147,7 +147,7 @@ def test_apply_stamp_covers_every_invoice_page(tmp_path: Path) -> None:
 
 
 def test_bundled_seller_sizes_match_spec(tmp_path: Path) -> None:
-    from ro_generator.pdf_stamp import load_stamp_spec, seller_stamp_box_pt
+    from ro_generator.pdf_stamp import load_stamp_spec
 
     pdf = _blank_pdf(tmp_path / "pl.pdf", pages=1)
     apply_seller_stamp(pdf, seller="YM", document_types=("PL",))
@@ -156,16 +156,10 @@ def test_bundled_seller_sizes_match_spec(tmp_path: Path) -> None:
 
     spec = load_stamp_spec()
     assert spec is not None
-    gs = seller_stamp_box_pt(A4_WIDTH_PT, A4_HEIGHT_PT, spec, "GS PTE")
-    sk = seller_stamp_box_pt(A4_WIDTH_PT, A4_HEIGHT_PT, spec, "SK")
-    ym = seller_stamp_box_pt(A4_WIDTH_PT, A4_HEIGHT_PT, spec, "YM")
-    assert gs is not None
-    assert sk is not None
-    assert ym is not None
-    assert gs[2] == pytest.approx(3 * POINTS_PER_CM)
-    assert sk[2] == pytest.approx(4 * POINTS_PER_CM)
-    assert ym[2] == pytest.approx(6 * POINTS_PER_CM)
-    assert ym[3] == pytest.approx(2.5 * POINTS_PER_CM)
+    assert spec.sellers["GS PTE"].width_cm == pytest.approx(3)
+    assert spec.sellers["SK"].width_cm == pytest.approx(4)
+    assert spec.sellers["YM"].width_cm == pytest.approx(6)
+    assert spec.sellers["YM"].height_cm == pytest.approx(2.5)
 
 
 def test_stamp_preserves_catalog_structure_and_metadata(tmp_path: Path) -> None:
