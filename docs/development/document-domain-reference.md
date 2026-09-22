@@ -17,7 +17,7 @@ base workbook 有三张逻辑 Sheet，实际名称由当前 Profile schema 决�
 
 ## 主体和单据
 
-当前合法链段由 `schema.LEGAL_CHAIN_SEGMENTS` 定义：
+当前合法链段由 `schema.SELLER_TO_BUYER` 定义：
 
 ```text
 SK → YM → GS PTE → EMAX PTE → PF

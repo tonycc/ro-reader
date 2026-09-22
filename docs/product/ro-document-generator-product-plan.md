@@ -34,7 +34,7 @@ RO 单据工作台是支持 Customer Profile 的本地单据装配工具，当�
 
 ### 3.2 当前链段
 
-合法链段由核心包 `schema.LEGAL_CHAIN_SEGMENTS` 定义：
+合法链段由核心包 `schema.SELLER_TO_BUYER` 定义：
 
 ```text
 SK → YM → GS PTE → EMAX PTE → PF
