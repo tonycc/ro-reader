@@ -5,7 +5,9 @@ PF base 文件的 `options` sheet 按「卖方-单据族」键（如 `SK/YM-PI`�
 行级单价按单据族对应的日期字段 floor 匹配断点，命中的版本标签
 **字面完全相等**地匹配 DATA BASE 行1分组标签，组内取 COMBO 列。
 
-- PI：键 `{卖方前缀}-PI`，日期 = 客户PO "PO Creation Date"
+- PI：键 `{卖方前缀}-PI`，日期 = 客户PO "PO Creation Date"；
+  已发货且 INV# 非空的行改用 `{卖方前缀}-INV` 键 + 本行
+  "ACTUAL EX FACTORY"（沿用上次发货的发票价）
 - INVOICE：键 `{卖方前缀}-INV`，日期 = PO record "ACTUAL EX FACTORY"
 
 键约定（卖方前缀、单据后缀）由 Profile schema 的 `price_options`

@@ -24,8 +24,10 @@ sheets:
     first_data_row: 2
 
 # PI/Invoice USD Unit Price 的版本规则：
-# - PI 行按客户PO "PO Creation Date" 在 {seller}-PI 键内 floor 匹配断点；
-#   BALANCE QTY=0 的已发货完成行不做版本选价，沿用 data_base_price_columns。
+# - PI 行已发货且已签收（BALANCE QTY 有值、小于客户PO Order Quantity 且
+#   INV# 非空）→ 沿用上次发货发票价：{seller}-INV 键 + ACTUAL EX FACTORY；
+#   其余行（未发货/在途）按客户PO "PO Creation Date" 在 {seller}-PI 键内
+#   floor 匹配断点。
 # - Invoice 行按 PO record "ACTUAL EX FACTORY" 在 {seller}-INV 键内匹配。
 # - 命中的版本标签与 DATA BASE 行1组标签严格字面匹配，组内取 COMBO 列。
 price_options:
@@ -113,7 +115,6 @@ price_columns:
   EMAX PTE: PF-EMAX DDP 2025
 
 # PO 单据的固定价格列；PI/Invoice 由 options 版本规则选列（见 price_options）。
-# PI 中 BALANCE QTY=0 的已发货完成行也沿用此固定列。
 data_base_price_columns:
   SK/combo: GS-SK/YM COMBO FOB 20260612-NEW PO
   YM/combo: GS-SK/YM COMBO FOB 20260612-NEW PO

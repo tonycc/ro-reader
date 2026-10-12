@@ -18,7 +18,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Final, cast
 
-from ro_generator.models import OrderLine, Product, ResolvedPrice, ValidationMessage
+from ro_generator.models import OrderLine, Product, ValidationMessage
 from ro_generator.order_constraints import (
     constraint_alerts_by_sap,
     validate_customer_order_constraints,
@@ -1041,8 +1041,11 @@ def _apply_price_book(
 ) -> list[OrderLine]:
     """按 options 版本规则逐行解析 PI / Invoice 的 DATA BASE 单价。
 
-    - PI：BALANCE QTY = 0 的已发货完成行不做版本选价（沿用固定列配置）；
-      其余行按客户 PO 的 PO Creation Date 匹配生效断点。
+    - PI：`BALANCE QTY` 有值且小于客户PO `Order Quantity` 且 `INV#` 非空
+      （已发货已签收）的行沿用上次发货的发票价，按 `{卖方}-INV` 键 +
+      本行 `ACTUAL EX FACTORY` 匹配断点；其余行（BALANCE QTY 空、等于
+      订单量、或已发货但 INV# 空的在途行）按 `{卖方}-PI` 键 + 客户 PO
+      的 `PO Creation Date` 匹配生效断点。
     - Invoice：按 PO record 的 ACTUAL EX FACTORY 匹配生效断点。
     - 命中的版本标签字面匹配 DATA BASE 行 1 分组标签，取组内 COMBO 列。
     - PO / PL 不在此处理，仍由 profile 静态列配置驱动。
@@ -1064,16 +1067,23 @@ def _apply_price_book(
             segment = (seller, buyer)
 
             if price_book.key_for("PI", seller) is not None:
-                if line.balance_qty == 0:
-                    # 已发货完成的行不做版本选价，沿用固定列配置
-                    sources[("PI", seller)] = ResolvedPrice(kind="fixed")
-                else:
-                    pi = price_book.resolve("PI", seller, line.customer_po_document_date)
-                    sources[("PI", seller)] = pi
-                    if pi.column is not None:
-                        value = line.product.data_base_prices.get(pi.column)
-                        if value is not None:
-                            pi_prices[segment] = value
+                invoiced_shipment = (
+                    line.balance_qty is not None
+                    and line.balance_qty < line.quantity
+                    and bool(line.invoice_no)
+                )
+                pi = price_book.resolve(
+                    "INVOICE" if invoiced_shipment else "PI",
+                    seller,
+                    line.actual_ex_factory_date
+                    if invoiced_shipment
+                    else line.customer_po_document_date,
+                )
+                sources[("PI", seller)] = pi
+                if pi.column is not None:
+                    value = line.product.data_base_prices.get(pi.column)
+                    if value is not None:
+                        pi_prices[segment] = value
 
             if price_book.key_for("INVOICE", seller) is None:
                 continue

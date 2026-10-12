@@ -206,9 +206,6 @@ class PfRules:
         source = line.price_sources.get((price_source_document(document_type), segment[0]))
         if source is None:
             return self._static_unit_price(line, document_type, segment)
-        if source.kind == "fixed":
-            # BALANCE QTY=0 的已发货完成 PI 行：明确沿用静态价格列。
-            return self._static_unit_price(line, document_type, segment)
         if source.kind != "options":
             # 版本解析失败：不回退静态列旧价，由装配层按缺价告警处理。
             return None

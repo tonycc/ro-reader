@@ -451,14 +451,11 @@ def _resolve_unit_price_spec(
     if column:
         rule = f"DATA BASE 的 {column} 列"
         if current_rules().profile_id == "pf":
-            if price_source is not None and price_source.kind == "fixed":
-                rule_prefix = "BALANCE QTY=0 已发货完成，沿用固定价格列"
-            else:
-                rule_prefix = (
-                    "DATA BASE Invoice 当前生效价格列"
-                    if document_type in {"INVOICE", "PL"}
-                    else "DATA BASE 当前生效价格列"
-                )
+            rule_prefix = (
+                "DATA BASE Invoice 当前生效价格列"
+                if document_type in {"INVOICE", "PL"}
+                else "DATA BASE 当前生效价格列"
+            )
             rule = f"{rule_prefix}（Profile 配置：{column}）"
         return replace(
             spec,

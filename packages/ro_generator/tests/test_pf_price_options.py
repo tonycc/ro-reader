@@ -1,8 +1,11 @@
 """PF options sheet 价格版本规则的行级选价测试。
 
 规则基准（与真实 PF base 文件一致）：
-- PI 用客户PO "PO Creation Date" 在 {seller}-PI 键内 floor 匹配断点；
-  BALANCE QTY=0 的已发货完成行不做版本选价，沿用 data_base_price_columns。
+- PI 行已发货且已签收（BALANCE QTY 有值、小于客户PO "Order Quantity"
+  且 INV# 非空）→ 沿用上次发货的发票价：{seller}-INV 键 + 本行
+  "ACTUAL EX FACTORY" floor 匹配断点。
+- 其余 PI 行（BALANCE QTY 空、等于订单量、或已发货但 INV# 空的在途行）
+  → {seller}-PI 键 + 客户PO "PO Creation Date" 匹配。
 - Invoice 用 PO record "ACTUAL EX FACTORY" 在 {seller}-INV 键内匹配。
 - 早于首断点/日期缺失 → 最早版本；晚于末断点 → 末版本。
 - 版本标签与 DATA BASE 行1组标签严格字面匹配；组内取 COMBO 列。
@@ -47,7 +50,7 @@ from ro_generator.workbook_snapshot import (
 # - J：中间商价格4（单列 COMBO，无 ROD/REEL，用于验证组件价缺失告警）
 # - K..M：中间商价格5（COMBO + ROD + REEL，供组件拆分跟随组验证）
 # - N/O：中间商价格6/7、厂家价格6/7（NEW PO 版 COMBO，即 data_base_price_columns
-#        的固定列，用于验证 PO 取价和 BALANCE QTY=0 的 PI 行不受 options 影响）
+#        的固定列，用于验证 PO 取价不受 options 影响）
 _DB_GROUP_LABELS = [
     None,
     None,
@@ -156,6 +159,7 @@ def _make_pf_base(
     po_creation_date: str = "2026-08-01",
     actual_ex_factory: str | None = "2026-09-15",
     balance_qty: object = None,
+    inv_no: object = "G26010101",
     options_rows: list[list[object]] | None = None,
     include_options: bool = True,
     blank_price_columns: tuple[str, ...] = (),
@@ -178,7 +182,7 @@ def _make_pf_base(
     if actual_ex_factory is not None or balance_qty is not None:
         headers += ["ACTUAL EX FACTORY", "BALANCE QTY"]
     po_record.append(headers)
-    row: list[object] = ["4500000001", 10, "10001", "G26010101", 90]
+    row: list[object] = ["4500000001", 10, "10001", inv_no, 90]
     if actual_ex_factory is not None or balance_qty is not None:
         row += [actual_ex_factory, balance_qty]
     po_record.append(row)
@@ -400,25 +404,74 @@ def test_invoice_before_first_breakpoint_uses_earliest(tmp_path: Path) -> None:
     assert line.invoice_prices[("EMAX PTE", "PF")] == Decimal("51")
 
 
-def test_pi_balance_qty_zero_keeps_fixed_column(tmp_path: Path) -> None:
-    """BALANCE QTY=0 的已发货完成行不做版本选价，沿用固定 NEW PO 列。"""
-    snapshot, context = _snapshot(_make_pf_base(tmp_path, balance_qty=0))
+def test_pi_fully_shipped_row_uses_invoice_price(tmp_path: Path) -> None:
+    """BALANCE QTY=0 已发完且 INV# 非空：沿用 -INV 键 + ACTUAL EX FACTORY。
+
+    PO Creation Date 2026-01-01（若走 -PI 键会命中最早版本 中间商价格4=61），
+    ACTUAL EX FACTORY 2026-09-15 → GS-INV 命中 0728 断点 → 中间商价格5=62。
+    """
+    snapshot, context = _snapshot(
+        _make_pf_base(tmp_path, balance_qty=0, po_creation_date="2026-01-01")
+    )
     line = _resolve(snapshot, context).lines[0]
-    assert line.price_sources[("PI", "GS PTE")].kind == "fixed"
-    # 固定列 = data_base_price_columns 指向的 NEW PO 列（col N，值 63）
+    resolved = line.price_sources[("PI", "GS PTE")]
+    assert resolved.kind == "options"
+    assert resolved.option_key == "GS-INV"
+    assert resolved.line_date == date(2026, 9, 15)
+    assert resolved.version_label == "中间商价格5"
+    assert line.pi_prices[("GS PTE", "EMAX PTE")] == Decimal("62")
+    # 静态固定列值留在 prices 供 PO，不受 PI 版本价影响
     assert line.prices[("GS PTE", "EMAX PTE")] == Decimal("63")
-    # kind="fixed" 不做版本选价，pi_prices 不写入版本价
-    assert ("GS PTE", "EMAX PTE") not in line.pi_prices
-    # Invoice 不受 balance_qty 影响
+    # Invoice 取价与 PI 分支无关
     assert line.invoice_prices[("GS PTE", "EMAX PTE")] == Decimal("62")
 
     preview = _preview(snapshot, context, "GS PTE", ("PI",))
     assert preview.status == "success", preview.errors
     assert preview.preview is not None
-    assert preview.preview.lines[0]["unit_price"] == "$63.00"
+    assert preview.preview.lines[0]["unit_price"] == "$62.00"
     source = {e["preview_field"]: e for e in preview.preview.source_entries}["line[0].unit_price"]
-    assert source["field"] == "EMAX-GS COMBO FOB 20260612-NEW PO 留下3%"
-    assert "BALANCE QTY" in str(source["rule"])
+    assert source["field"] == "EMAX-GS COMBO FOB 20260612-OPO 留下3%"
+    assert "GS-INV" in str(source["rule"])
+
+
+def test_pi_partial_shipment_with_invoice_uses_inv_key(tmp_path: Path) -> None:
+    """BALANCE QTY < Order Quantity 且 INV# 非空（部分发货已签收）→ -INV 键。"""
+    snapshot, context = _snapshot(
+        _make_pf_base(tmp_path, balance_qty=30, po_creation_date="2026-01-01")
+    )
+    line = _resolve(snapshot, context).lines[0]
+    resolved = line.price_sources[("PI", "GS PTE")]
+    assert resolved.kind == "options"
+    assert resolved.option_key == "GS-INV"
+    assert resolved.version_label == "中间商价格5"
+    assert line.pi_prices[("GS PTE", "EMAX PTE")] == Decimal("62")
+
+
+def test_pi_partial_shipment_in_transit_uses_pi_key(tmp_path: Path) -> None:
+    """BALANCE QTY < Order Quantity 但 INV# 为空（在途未签收）→ -PI 键。"""
+    snapshot, context = _snapshot(
+        _make_pf_base(tmp_path, balance_qty=30, inv_no=None, po_creation_date="2026-01-01")
+    )
+    line = _resolve(snapshot, context).lines[0]
+    resolved = line.price_sources[("PI", "GS PTE")]
+    assert resolved.kind == "options"
+    assert resolved.option_key == "GS-PI"
+    assert resolved.line_date == date(2026, 1, 1)
+    assert resolved.version_label == "中间商价格4"
+    assert line.pi_prices[("GS PTE", "EMAX PTE")] == Decimal("61")
+
+
+def test_pi_unshipped_balance_equals_order_qty_uses_pi_key(tmp_path: Path) -> None:
+    """BALANCE QTY = 客户PO Order Quantity（未发货）→ -PI 键。"""
+    snapshot, context = _snapshot(
+        _make_pf_base(tmp_path, balance_qty=90, po_creation_date="2026-01-01")
+    )
+    line = _resolve(snapshot, context).lines[0]
+    resolved = line.price_sources[("PI", "GS PTE")]
+    assert resolved.kind == "options"
+    assert resolved.option_key == "GS-PI"
+    assert resolved.version_label == "中间商价格4"
+    assert line.pi_prices[("GS PTE", "EMAX PTE")] == Decimal("61")
 
 
 def test_missing_version_group_warns_and_price_empty(tmp_path: Path) -> None:

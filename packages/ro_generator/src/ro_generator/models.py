@@ -117,7 +117,6 @@ class ResolvedPrice:
 
     kind:
     - "options"：按 options sheet 断点命中版本组，`column` 为组内 COMBO 列。
-    - "fixed"：沿用 Profile 固定价格列（如 PI 行 BALANCE QTY=0 已发货完成）。
     - "missing"：断点表/版本标签/组列任一缺失，未取到价。
     """
 
