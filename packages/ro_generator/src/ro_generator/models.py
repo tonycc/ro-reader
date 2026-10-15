@@ -58,7 +58,7 @@ class Product:
     """`DATA BASE` 一行解析结果。
 
     `prices` 的 key 形如 `"GS PTE/combo"`，由 `(seller_or_chain, category_name)` 拼成，
-    具体规则在 resolver 里集中处理。值缺失或为 0 时不放入字典。
+    具体规则在 resolver 里集中处理。值缺失时不放入字典，真实零价保留。
     """
 
     sap: str
@@ -182,6 +182,7 @@ class OrderLine:
     cp_item: str = ""  # 客户PO "Item" 列，SK/YM PI 模板"PO item Line Number"来源
     customer_po_no: str | None = None  # 客户PO "PO#" 列
     customer_po_material: str | None = None  # 客户PO "Material" 列
+    customer_po_source_row: int | None = None  # 实际匹配的客户PO行，标识完整订单数量来源
     ship_to: str | None = None
     manufacturer_address: str | None = None  # 客户PO "manufacturer" 列
     final_destination: str | None = None  # 客户PO "final destination" 列
@@ -242,6 +243,15 @@ class OrderLine:
     # PF 客户订单 MOQ/整箱提醒；空表示该规格通过检查或当前 Profile 未启用。
     quantity_constraint_codes: tuple[str, ...] = ()
     quantity_constraint_messages: tuple[str, ...] = ()
+
+    @property
+    def has_invoiced_shipment(self) -> bool:
+        """PF 已发货且有发票号的判定，供 PI 选行与价格路由共同使用。"""
+        return (
+            self.balance_qty is not None
+            and self.balance_qty < self.quantity
+            and bool(self.invoice_no)
+        )
 
 
 # —————————————————————————————————————

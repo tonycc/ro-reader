@@ -33,10 +33,12 @@ SK → YM → GS PTE → EMAX PTE → PF
 ## 业务规则
 
 - PI/PO 数量：当前 Profile 的客户订单 `Order Quantity`。按 `Material` 匹配客户PO行；命中单行直接沿用（不校验 Item 对应关系），命中多行时再用 PO record `ITEM LINE#` 与客户PO `Item` 对位（`00010` 与 `10` 等价），无法唯一对位时以 `QTY_ITEM_MISMATCH` 阻断，不静默取第一行。
+- PF PI 装配前由 Profile 按匹配的客户PO行归并拆分出货记录，每个订单行只计一次完整数量。代表行优先取最近已开票出货（`BALANCE QTY < Order Quantity` 且有 `INV#`），按实际出厂日期、源行号排序，缺日期排前；价格与溯源都沿用代表行。没有客户PO行身份时不猜测归并，Invoice/PL 不归并。
 - RO 票据数量：`PO record.SHIP QTY`；PF 票据数量：按 `INV#` 的 YYMM 读取 `2601`–`2612` 月度列。
 - RO SK/YM 发票号：`SK/YM INVOICE NO.`；GS PTE：`INV#`；EMAX PTE：`INV#` 加 `-P`。
 - PF GS/EMAX 发票号保持 `INV#` 原值。
 - `amount = quantity × unit_price`。
+- 缺单价时 `unit_price`、`amount` 为 `None`，任一行缺金额则 `total_amount` 为 `None`，预览和 Excel 均留空并保留高严重度缺价告警；真实零单价与缺价严格区分。
 - `CTNS = quantity / 外箱`。
 - `TOTAL CBM = L × W × H / 1,000,000 × CTNS`。
 - PF 对同一 PO、同一 SAP 的客户订单数量聚合后检查 `MOQ` 和 `round value`，返回 `MOQ_NOT_MET` / `FULL_CARTON_NOT_MET` high warning，不阻断导出。

@@ -21,7 +21,9 @@ import pytest
 from openpyxl import Workbook, load_workbook
 from ro_generator.document_model import (
     CODE_COMPONENT_PRICE_MISSING,
+    CODE_LINE_NOT_PRICED,
     CODE_PRICE_VERSION_UNRESOLVED,
+    build_pi_model,
 )
 from ro_generator.generator import PreviewResult, preview_from_snapshot
 from ro_generator.models import DocumentRequest, DocumentType
@@ -30,9 +32,11 @@ from ro_generator.price_options import (
     build_price_book,
     build_price_groups,
 )
-from ro_generator.profiles import GenerationContext, create_pf_profile
+from ro_generator.profiles import GenerationContext, create_pf_profile, profile_scope
+from ro_generator.renderer import render_document
 from ro_generator.resolver import ResolveResult, resolve_po_rows
 from ro_generator.schema_inspect import inspect_schema
+from ro_generator.template_mapping import load_template_mapping
 from ro_generator.workbook_reader import SheetData, WorkbookReader
 from ro_generator.workbook_snapshot import (
     BuildSnapshotError,
@@ -250,6 +254,203 @@ def _preview(
         output_dir=str(context.base_path.parent / "output"),
     )
     return preview_from_snapshot(snapshot, request, context=context)
+
+
+# —————————————————————————————————————
+# PI 订单行去重与缺价显示回归（仅合成 workbook）
+# —————————————————————————————————————
+
+
+def _make_split_pf_base(
+    tmp_path: Path,
+    *,
+    completed: bool,
+    category: str = "Single Rod",
+) -> Path:
+    path = _make_pf_base(tmp_path, category=category, po_creation_date="2026-01-01", balance_qty=50)
+    workbook = load_workbook(path)
+    po_record = workbook["PO RECORD 26"]
+    po_record.delete_rows(2, po_record.max_row - 1)
+    po_record.append(["4500000001", "00010", "10001", "G26010101", 40, "2026-07-01", 50])
+    po_record.append(["4500000001", 10, "10001", "G26010102", 30, "2026-08-01", 20])
+    if completed:
+        po_record.append(["4500000001", 10, "10001", "G26010102", 20, "2026-09-15", 0])
+    workbook.save(path)
+    workbook.close()
+    return path
+
+
+@pytest.mark.parametrize("completed", [False, True], ids=["partial", "completed"])
+@pytest.mark.parametrize(
+    ("seller", "category", "price"),
+    [
+        ("GS PTE", "Single Rod", "62"),
+        ("EMAX PTE", "Single Rod", "51"),
+        ("YM", "Single Rod", "42"),
+        ("SK", "Single Reel", "42"),
+    ],
+)
+def test_pi_counts_split_customer_order_once(
+    tmp_path: Path, completed: bool, seller: str, category: str, price: str
+) -> None:
+    snapshot, context = _snapshot(
+        _make_split_pf_base(tmp_path, completed=completed, category=category)
+    )
+    resolved = _resolve(snapshot, context)
+    assert len(resolved.lines) == (3 if completed else 2)  # 出货明细仍完整保留
+    with profile_scope(context.profile):
+        result = build_pi_model(
+            resolved.lines,
+            seller=seller,
+            buyer=context.profile.rules.buyer_for(seller) or "",
+            po_no="4500000001",
+        )
+    assert result.model is not None
+    assert len(result.model.lines) == 1
+    line = result.model.lines[0]
+    assert line.quantity == result.model.total_quantity == Decimal("90")
+    assert line.unit_price == Decimal(price)
+    assert result.model.total_amount == Decimal(price) * 90
+    assert line.source_row == (4 if completed else 3)
+    assert line.price_source is not None
+    assert line.price_source.option_key is not None
+    assert line.price_source.option_key.endswith("-INV")
+    preview = _preview(snapshot, context, seller, ("PI",))
+    assert preview.preview is not None, preview.errors
+    assert len(preview.preview.lines) == 1
+    assert preview.preview.totals["total_quantity"] == "90"
+
+
+def test_pi_does_not_merge_distinct_customer_items_with_same_sap(tmp_path: Path) -> None:
+    path = _make_split_pf_base(tmp_path, completed=True)
+    workbook = load_workbook(path)
+    workbook["new PO template"].append(
+        ["2026-01-01", "4500000001", 20, "10001", "Second item", "2026-09-01", 30]
+    )
+    workbook["PO RECORD 26"].append(["4500000001", "00020", "10001", None, None, None, 30])
+    workbook.save(path)
+    workbook.close()
+    snapshot, context = _snapshot(path)
+    preview = _preview(snapshot, context, "GS PTE", ("PI",))
+    assert preview.preview is not None, preview.errors
+    assert [line["quantity"] for line in preview.preview.lines] == ["90", "30"]
+    assert [line["unit_price"] for line in preview.preview.lines] == ["$62.00", "$61.00"]
+    assert preview.preview.totals["total_quantity"] == "120"
+    assert preview.preview.totals["total_amount"] == "$7,410.00"
+
+
+def test_pi_uses_latest_invoiced_shipment_not_last_physical_row(tmp_path: Path) -> None:
+    path = _make_split_pf_base(tmp_path, completed=False)
+    workbook = load_workbook(path)
+    po_record = workbook["PO RECORD 26"]
+    # 最新已开票行在上方；表尾另有更晚但未开票的在途行。
+    first, second = list(po_record.values)[1:]
+    for row_index, values in enumerate((second, first), start=2):
+        for column_index, value in enumerate(values, start=1):
+            po_record.cell(row_index, column_index).value = value
+    po_record.append(["4500000001", 10, "10001", None, 20, "2026-09-15", 0])
+    workbook.save(path)
+    workbook.close()
+    snapshot, context = _snapshot(path)
+    with profile_scope(context.profile):
+        result = build_pi_model(
+            _resolve(snapshot, context).lines,
+            seller="GS PTE",
+            buyer="EMAX PTE",
+            po_no="4500000001",
+        )
+    assert result.model is not None
+    assert len(result.model.lines) == 1
+    line = result.model.lines[0]
+    assert line.source_row == 2
+    assert line.unit_price == Decimal("62")
+    assert line.price_source is not None
+    assert line.price_source.line_date == date(2026, 8, 1)
+    assert line.price_source.option_key == "GS-INV"
+
+
+@pytest.mark.parametrize("document", ["INVOICE", "PL"])
+def test_pi_grouping_does_not_collapse_invoice_shipments(
+    tmp_path: Path, document: DocumentType
+) -> None:
+    snapshot, context = _snapshot(_make_split_pf_base(tmp_path, completed=True))
+    request = DocumentRequest(
+        base_file=str(context.base_path),
+        po_no="4500000001",
+        documents=(document,),
+        seller="GS PTE",
+        invoice_no="G26010102",
+        output_dir=str(tmp_path / "output"),
+    )
+    result = preview_from_snapshot(snapshot, request, context=context)
+    assert result.preview is not None, result.errors
+    assert [line["quantity"] for line in result.preview.lines] == ["30", "20"]
+    assert result.preview.totals["total_quantity"] == "50"
+
+
+def test_pi_missing_one_price_does_not_show_partial_amount_as_total(tmp_path: Path) -> None:
+    path = _make_pf_base(
+        tmp_path,
+        po_creation_date="2026-01-01",
+        balance_qty=90,
+        blank_price_columns=(_DB_HEADERS[10],),
+    )
+    workbook = load_workbook(path)
+    workbook["new PO template"].append(
+        ["2026-08-01", "4500000001", 20, "10001", "Unpriced item", "2026-09-01", 30]
+    )
+    workbook["PO RECORD 26"].append(["4500000001", 20, "10001", None, None, None, 30])
+    workbook.save(path)
+    workbook.close()
+    snapshot, context = _snapshot(path)
+    preview = _preview(snapshot, context, "GS PTE", ("PI",))
+    assert preview.preview is not None, preview.errors
+    assert [line["unit_price"] for line in preview.preview.lines] == ["$61.00", ""]
+    assert [line["amount"] for line in preview.preview.lines] == ["$5,490.00", ""]
+    assert preview.preview.totals["total_amount"] == ""
+    assert preview.preview.totals["total_quantity"] == "120"
+    assert any(m.code == CODE_LINE_NOT_PRICED and m.severity == "high" for m in preview.warnings)
+
+
+@pytest.mark.parametrize("price", [None, 0], ids=["missing", "real-zero"])
+def test_pi_missing_and_zero_price_remain_distinct_in_preview_and_excel(
+    tmp_path: Path, price: int | None
+) -> None:
+    path = _make_pf_base(tmp_path)
+    workbook = load_workbook(path)
+    workbook["DATA BASE TEMPLATE"]["K3"] = price
+    workbook.save(path)
+    workbook.close()
+    snapshot, context = _snapshot(path)
+    preview = _preview(snapshot, context, "GS PTE", ("PI",))
+    assert preview.preview is not None, preview.errors
+    display = "" if price is None else "$0.00"
+    assert preview.preview.lines[0]["unit_price"] == display
+    assert preview.preview.lines[0]["amount"] == display
+    assert preview.preview.totals["total_amount"] == display
+    assert any(m.code == CODE_LINE_NOT_PRICED for m in preview.warnings) == (price is None)
+    with profile_scope(context.profile):
+        result = build_pi_model(
+            _resolve(snapshot, context).lines,
+            seller="GS PTE",
+            buyer="EMAX PTE",
+            po_no="4500000001",
+        )
+        assert result.model is not None
+        mapping_path = context.profile.assets.mapping_path("GS PTE", "PI")
+        assert mapping_path is not None
+        mapping = load_template_mapping(mapping_path)
+        rendered = render_document(result.model, mapping, tmp_path / "pi.xlsx")
+    output = load_workbook(rendered.output_path)
+    try:
+        sheet = output[mapping.sheet]
+        for key in ("unit_price", "amount"):
+            cell = f"{getattr(mapping.lines.columns, key)}{mapping.lines.start_row}"
+            assert sheet[cell].value == price
+        for key in ("subtotal", "amount"):
+            assert sheet[mapping.totals[key].cell].value == price
+    finally:
+        output.close()
 
 
 # —————————————————————————————————————
@@ -492,8 +693,10 @@ def test_missing_version_group_warns_and_price_empty(tmp_path: Path) -> None:
     preview = _preview(snapshot, context, "EMAX PTE", ("PI",))
     assert preview.status == "success", preview.errors
     assert preview.preview is not None
-    # 版本解析失败的行不沿用静态列旧值：单价置 0 并产生两类告警
-    assert preview.preview.lines[0]["unit_price"] == "$0.00"
+    # 缺价不能伪装成零价，也不能给出完整金额。
+    assert preview.preview.lines[0]["unit_price"] == ""
+    assert preview.preview.lines[0]["amount"] == ""
+    assert preview.preview.totals["total_amount"] == ""
     warning_codes = {m.code for m in preview.warnings}
     assert "LINE_NOT_PRICED_FOR_SEGMENT" in warning_codes
     assert CODE_PRICE_VERSION_UNRESOLVED in warning_codes
@@ -592,7 +795,9 @@ def test_blank_selected_version_cell_does_not_fall_back(tmp_path: Path) -> None:
     preview = _preview(snapshot, context, "GS PTE", ("PI",))
     assert preview.status == "success", preview.errors
     assert preview.preview is not None
-    assert preview.preview.lines[0]["unit_price"] == "$0.00"
+    assert preview.preview.lines[0]["unit_price"] == ""
+    assert preview.preview.lines[0]["amount"] == ""
+    assert preview.preview.totals["total_amount"] == ""
     assert "LINE_NOT_PRICED_FOR_SEGMENT" in {m.code for m in preview.warnings}
 
 

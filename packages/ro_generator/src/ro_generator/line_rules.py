@@ -79,7 +79,6 @@ LINE_FIELD_SPECS: Final[dict[str, LineFieldSpec]] = {
         rule="DATA BASE 中按主体 + Category 选择对应 FOB 单价列",
         source_sheet=SHEET_DATA_BASE,
         source_field="unit_price",
-        zero_placeholder="需填: 单价",
         display_decimal_places=2,
         display_prefix="$",
     ),

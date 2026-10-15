@@ -206,11 +206,12 @@ PO record.SAP Number ↔ DATA BASE.SAP
 - PI/PO/PL 以及 PF 票据：价格按单据上下文、seller 和 Category 从 `DATA BASE` 价格矩阵读取。
 - RO Invoice：从当前发票对应的 PO record 出货行读取 `price_columns`（SK/YM 共用 `GS-SK/YM USD FOB`，GS PTE 用 `EMAX-GS PTE FOB`，EMAX PTE 用 `EMAX PTE`），不按 Category 拆列。
 - 价格列配置位于 `base_schema.yaml`；字段来源展示由 `line_rules.py` 生成。
-- 缺价格时核心包以高严重度 warning 标记，并使用 0 继续构建供用户复核。
+- 缺价格时核心包以高严重度 warning 标记，继续构建供用户复核，但单价与该行金额留空；任一行缺价时总金额也留空，不把已定价部分当作完整总额。预览与 Excel 导出一致，真实零单价仍显示为 0。
 
 ### 10.2 数量
 
 - PI/PO：`客户PO.Order Quantity`。
+- PF PI：同一客户订单行拆成多条出货记录时只计一次完整订单量，不合并同 SAP 的不同订单行；取最近已开票出货行作为价格与溯源依据，按 `ACTUAL EX FACTORY` 排序，日期相同或均缺失时取 PO RECORD 后行。无已开票出货时仍走原 PI 价格规则，Invoice/PL 保留逐次出货明细。
 - RO INVOICE/PL/CI/RO_PL：`PO record.SHIP QTY`。
 - PF INVOICE/PL：根据 `INV#` 中的 YYMM 读取 `PO RECORD 26` 的 `2601`–`2612` 月度数量列。
 - 票据组只纳入当前 Profile 出货数量大于 0 的行。

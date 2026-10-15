@@ -131,6 +131,9 @@ class CustomerRules(Protocol):
     ) -> Decimal | None:
         """返回当前单据行应使用的单价；缺失时返回 None。"""
 
+    def pi_order_lines(self, lines: tuple[OrderLine, ...]) -> tuple[OrderLine, ...]:
+        """选择 PI 的完整订单行；不改变 Invoice/PL 所需的出货明细。"""
+
     def pi_no_for_lines(
         self,
         lines: tuple[OrderLine, ...],

@@ -588,6 +588,7 @@ def _resolve_row(
         description=product.description,
         category=product.category,
         quantity=quantity,
+        customer_po_source_row=_row_number(qty_row),
         po_record_category=current_rules().category_for_value(row.get(_po("category"))),
         po_record_item_line_no=_str_or_empty(row.get(_po("item_line"))),
         product=product,
@@ -1067,11 +1068,7 @@ def _apply_price_book(
             segment = (seller, buyer)
 
             if price_book.key_for("PI", seller) is not None:
-                invoiced_shipment = (
-                    line.balance_qty is not None
-                    and line.balance_qty < line.quantity
-                    and bool(line.invoice_no)
-                )
+                invoiced_shipment = line.has_invoiced_shipment
                 pi = price_book.resolve(
                     "INVOICE" if invoiced_shipment else "PI",
                     seller,

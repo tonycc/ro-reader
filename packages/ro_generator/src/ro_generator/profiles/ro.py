@@ -165,6 +165,9 @@ class RoRules:
         del line, document_type, seller
         return ()
 
+    def pi_order_lines(self, lines: tuple[OrderLine, ...]) -> tuple[OrderLine, ...]:
+        return lines
+
     def pi_no_for_lines(
         self,
         lines: tuple[OrderLine, ...],

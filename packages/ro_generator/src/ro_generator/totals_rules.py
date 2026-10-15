@@ -119,7 +119,7 @@ def build_preview_totals(
     if "total_quantity" not in totals:
         totals["total_quantity"] = "0"
     if model.document_type not in ("PL", "RO_PL"):
-        totals.setdefault("total_amount", "$0.00")
+        totals.setdefault("total_amount", "")
         totals["currency"] = "USD"
 
     totals["_labels"] = {

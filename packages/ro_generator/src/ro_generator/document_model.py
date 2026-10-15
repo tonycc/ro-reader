@@ -97,8 +97,8 @@ class DocumentLine:
     category: int
     gs_model: str | None
     quantity: Decimal
-    unit_price: Decimal
-    amount: Decimal
+    unit_price: Decimal | None
+    amount: Decimal | None
     source_row: int | None = None
     carton_count: Decimal | None = None
     carton_from: int | None = None
@@ -152,7 +152,7 @@ class DocumentModel:
     po_no: str
     lines: tuple[DocumentLine, ...]
     total_quantity: Decimal
-    total_amount: Decimal
+    total_amount: Decimal | None
     cost_breakdown: tuple[DocumentCostBreakdownLine, ...] = ()
     pi_no: str | None = None  # PI 编号：SK 用 E10 PO，YM 用 YM PO，GS/EMAX 用客户 PO
     invoice_no: str | None = None
@@ -303,6 +303,8 @@ def _assemble_lines(
                         f"行（SAP {original_line.sap}）在链段 {segment[0]}→{segment[1]} 下无单价"
                     ),
                     sheet=_po_record_sheet(),
+                    row=original_line.source_row,
+                    sap=original_line.sap,
                     field=(
                         current_rules().po_price_columns.get(seller)
                         if current_rules().uses_po_record_unit_price(document_type)
@@ -310,8 +312,11 @@ def _assemble_lines(
                     ),
                 )
             )
-            unit_price = Decimal("0")
-        amount = (unit_price * line_quantity).quantize(Decimal("0.01"))
+        amount = (
+            (unit_price * line_quantity).quantize(Decimal("0.01"))
+            if unit_price is not None
+            else None
+        )
 
         packing_values = (
             current_rules().packing_values_for_line(original_line, line_quantity)
@@ -570,6 +575,16 @@ def _resolve_model_header_values(
 # —————————————————————————————————————
 
 
+def _total_amount(lines: list[DocumentLine]) -> Decimal | None:
+    """有任意缺价行就没有完整总额，不把已定价部分伪装成总额。"""
+    total = Decimal(0)
+    for line in lines:
+        if line.amount is None:
+            return None
+        total += line.amount
+    return total
+
+
 def build_pi_model(
     lines: tuple[OrderLine, ...],
     *,
@@ -579,6 +594,7 @@ def build_pi_model(
     pi_no: str | None = None,
 ) -> BuildResult:
     """PI：使用完整 PO 数量。pi_no 由上游按 seller 规则解析后传入。"""
+    lines = current_rules().pi_order_lines(lines)
     doc_lines, messages = _assemble_lines(
         lines,
         _price_segment("PI", seller, buyer),
@@ -591,7 +607,7 @@ def build_pi_model(
         return BuildResult(model=None, messages=tuple(messages))
 
     total_qty = sum((dl.quantity for dl in doc_lines), Decimal(0))
-    total_amt = sum((dl.amount for dl in doc_lines), Decimal(0))
+    total_amt = _total_amount(doc_lines)
     ship_to = _first_non_empty(line.ship_to for line in lines)
     manufacturer_address = _first_non_empty(line.manufacturer_address for line in lines)
     final_destination = _first_non_empty(line.final_destination for line in lines)
@@ -648,7 +664,7 @@ def build_po_model(
         return BuildResult(model=None, messages=tuple(messages))
 
     total_qty = sum((dl.quantity for dl in doc_lines), Decimal(0))
-    total_amt = sum((dl.amount for dl in doc_lines), Decimal(0))
+    total_amt = _total_amount(doc_lines)
     ship_to = _first_non_empty(line.ship_to for line in lines)
     manufacturer_address = _first_non_empty(line.manufacturer_address for line in lines)
     final_destination = _first_non_empty(line.final_destination for line in lines)
@@ -731,7 +747,7 @@ def build_invoice_model(
         )
 
     total_qty = sum((dl.quantity for dl in doc_lines), Decimal(0))
-    total_amt = sum((dl.amount for dl in doc_lines), Decimal(0))
+    total_amt = _total_amount(doc_lines)
     cost_breakdown = _build_cost_breakdown_lines(tuple(doc_lines))
     invoice_source_lines = tuple(
         original_line
@@ -830,7 +846,7 @@ def build_pl_model(
         )
 
     total_qty = sum((dl.quantity for dl in doc_lines), Decimal(0))
-    total_amt = sum((dl.amount for dl in doc_lines), Decimal(0))
+    total_amt = _total_amount(doc_lines)
     total_carton = sum(
         (dl.carton_count for dl in doc_lines if dl.carton_count is not None), Decimal(0)
     )

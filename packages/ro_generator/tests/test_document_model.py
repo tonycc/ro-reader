@@ -14,6 +14,7 @@ from ro_generator.document_model import (
     build_invoice_model,
     build_pi_model,
     build_pl_model,
+    build_po_model,
 )
 from ro_generator.document_preview import build_preview
 from ro_generator.generator import BuildDocumentResult
@@ -101,6 +102,27 @@ class TestPI:
         result = build_pi_model((line,), seller="GS PTE", buyer="EMAX PTE", po_no="4500030844")
         assert result.model is not None
         assert any(m.code == CODE_LINE_NOT_PRICED for m in result.messages)
+        assert result.model.lines[0].unit_price is None
+        assert result.model.lines[0].amount is None
+        assert result.model.total_amount is None
+
+
+@pytest.mark.parametrize(
+    "builder", [build_pi_model, build_po_model, build_invoice_model, build_pl_model]
+)
+def test_missing_price_invalidates_total_without_discarding_priced_rows(builder):
+    priced = make_order_line(
+        prices={("GS PTE", "EMAX PTE"): Decimal("2"), ("YM", "GS PTE"): Decimal("2")},
+        po_record_prices={("GS PTE", "EMAX PTE"): Decimal("2")},
+    )
+    unpriced = make_order_line(item_line_no="20", prices={}, po_record_prices={})
+    result = builder((priced, unpriced), seller="GS PTE", buyer="EMAX PTE", po_no="P")
+    assert result.model is not None
+    assert result.model.lines[0].amount == Decimal("200.00")
+    assert result.model.lines[1].unit_price is None
+    assert result.model.lines[1].amount is None
+    assert result.model.total_amount is None
+    assert result.model.total_quantity == Decimal("200")
 
 
 class TestInvoice:
@@ -236,7 +258,9 @@ class TestInvoice:
             (line,), seller="GS PTE", buyer="EMAX PTE", po_no="P", invoice_no="INV-001"
         )
         assert result.model is not None
-        assert result.model.lines[0].unit_price == Decimal("0")
+        assert result.model.lines[0].unit_price is None
+        assert result.model.lines[0].amount is None
+        assert result.model.total_amount is None
         assert any(m.code == CODE_LINE_NOT_PRICED for m in result.messages)
 
 

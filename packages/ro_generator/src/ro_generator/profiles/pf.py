@@ -51,6 +51,14 @@ _EMAX_MANUFACTURER = (
 )
 
 
+def _pi_shipment_priority(line: OrderLine) -> tuple[bool, date, int]:
+    return (
+        line.has_invoiced_shipment,
+        line.actual_ex_factory_date or date.min,
+        line.source_row or 0,
+    )
+
+
 @dataclass(frozen=True)
 class PfRules:
     """PF 的客户差异策略；不保存 workbook 或 session 状态。"""
@@ -222,6 +230,27 @@ class PfRules:
     ) -> Decimal | None:
         del document_type
         return line.prices.get(segment)
+
+    def pi_order_lines(self, lines: tuple[OrderLine, ...]) -> tuple[OrderLine, ...]:
+        """每个客户订单行只计一次，沿用最近已开票出货行的价格与溯源。
+
+        按实际匹配的客户PO行分组，不按 SAP 合并不同 Item。无客户PO行号
+        时不猜测行身份。日期相同或均缺失时，以 PO RECORD 后行优先。
+        """
+        selected: list[OrderLine] = []
+        indices: dict[tuple[str, int], int] = {}
+        for line in lines:
+            if line.customer_po_source_row is None:
+                selected.append(line)
+                continue
+            key = (line.customer_po_no or line.po_no, line.customer_po_source_row)
+            index = indices.get(key)
+            if index is None:
+                indices[key] = len(selected)
+                selected.append(line)
+            elif _pi_shipment_priority(line) >= _pi_shipment_priority(selected[index]):
+                selected[index] = line
+        return tuple(selected)
 
     def pi_no_for_lines(
         self,
