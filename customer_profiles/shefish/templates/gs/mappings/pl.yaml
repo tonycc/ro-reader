@@ -1,0 +1,104 @@
+document: PL
+header:
+  invoice_no: D5
+  document_date: J5
+  packing_list_of: D6
+  ship_to: D7
+  ship_to_line2: D8
+  ship_to_line3: D9
+  ship_to_line4: D10
+  shipped_by: D11
+  from_port: D12
+  destination: H12
+  shipping_marks_label: A13
+  shipping_mark_1: D14
+header_fixed:
+  packing_list_of: Fishing Tackle
+  ship_to: 'She Fish '
+  ship_to_line2: The Fishing Brands, LLC
+  ship_to_line3: 2915 N Le Compte Rd
+  ship_to_line4: Springfield, MO 65803
+  shipped_by: SEA
+  from_port: QINGDAO
+  destination: USA
+  shipping_marks_label: (SHIPPING MARKS)
+  shipping_mark_1: 'The Fishing Brands
+
+    SheFish
+
+    Item #                  Batch Code
+
+    PO#
+
+    Case Pack Qty           Made in China
+
+
+    '
+table_header_row:
+- 19
+- 20
+- 21
+lines:
+  start_row: 22
+  style_source_row: 22
+  columns:
+    carton_from: A
+    carton_to: B
+    po_no: C
+    sap: D
+    description: E
+    quantity: F
+    carton_count: G
+    net_weight: H
+    gross_weight: I
+    cbm: J
+totals:
+  quantity: F23
+  carton_count: G23
+  net_weight: H23
+  gross_weight: I23
+  cbm: J23
+preview_content:
+  title: PACKING LIST
+  template_fields:
+    title: F1
+    seller_info:
+    - A1
+    - A2
+  column_labels:
+    carton_from: carton_from
+    carton_to: carton_to
+    po_no: po_no
+    sap: sap
+    description: description
+    quantity: quantity
+    carton_count: carton_count
+    net_weight: net_weight
+    gross_weight: gross_weight
+    cbm: cbm
+  merged_headers: true
+  layout:
+    top:
+      left:
+      - seller_info
+      center:
+      - title
+      right: []
+    info:
+      left:
+      - invoice_no
+      - packing_list_of
+      - ship_to
+      - ship_to_line2
+      - ship_to_line3
+      - ship_to_line4
+      - shipped_by
+      - from_port
+      - destination
+      - shipping_marks_label
+      - shipping_mark_1
+      right:
+      - document_date
+template_version: shefish_2026.1
+template: templates/gs/pl.xlsx
+sheet: PL

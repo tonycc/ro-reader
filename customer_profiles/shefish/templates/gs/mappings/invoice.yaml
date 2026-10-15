@@ -1,0 +1,96 @@
+document: INVOICE
+header:
+  invoice_no: F10
+  document_date: F11
+  incoterm: B10
+  payment_terms: B11
+  bill_to: B14
+  ship_to: F14
+  port_of_loading: B18
+  final_destination: B19
+  manufacturer: F18
+  manufacturer_address: F19
+  manufacturer_address_2: F20
+  eta: F12
+  manufacturer_address_3: F21
+header_fixed:
+  incoterm: DDP USA
+  payment_terms: Net 60 days
+  bill_to: E MAX SPORT PTE. LTD.
+  ship_to: E MAX SPORT PTE. LTD.
+  port_of_loading: Qingdao, China
+  final_destination: USA
+  manufacturer: GLOBALSINO PTE.LTD.
+  manufacturer_address: '10 KAKI BUKIT ROAD 2, #01-37, '
+  manufacturer_address_2: FIRST EAST CENTRE,
+  manufacturer_address_3: SINGAPORE 417868
+table_header_row: 23
+lines:
+  start_row: 24
+  style_source_row: 24
+  row_fixed:
+    A: CHINA
+  columns:
+    sap: B
+    upc: C
+    description: D
+    unit_price: E
+    quantity: F
+    amount: G
+totals:
+  quantity: F28
+  subtotal: G28
+  amount: G29
+  signature:
+    cell: F31
+    value_mode: fixed
+    value: Cindy
+  signature_date:
+    cell: F32
+    value_mode: current_date
+preview_content:
+  title: INVOICE
+  template_fields:
+    title: E5
+    seller_info:
+    - A5
+    - A6
+  terms_fields:
+  - incoterm
+  - payment_terms
+  - port_of_loading
+  - final_destination
+  column_labels:
+    A: Country of The Origin
+    sap: Item Number
+    upc: UPC
+    description: Description
+    unit_price: USD Unit Price
+    quantity: Quantity
+    amount: USD Amount
+  layout:
+    top:
+      left:
+      - seller_info
+      center:
+      - title
+      right: []
+    info:
+      left:
+      - incoterm
+      - payment_terms
+      - bill_to
+      - port_of_loading
+      - final_destination
+      right:
+      - invoice_no
+      - document_date
+      - eta
+      - ship_to
+      - manufacturer
+      - manufacturer_address
+      - manufacturer_address_2
+      - manufacturer_address_3
+template_version: shefish_2026.1
+template: templates/gs/invoice.xlsx
+sheet: INVOICE format

@@ -1,0 +1,94 @@
+document: PI
+header:
+  pi_no: G6
+  document_date: G7
+  incoterm: B6
+  payment_terms: B7
+  bill_to: B9
+  ship_to: G9
+  port_of_loading: B13
+  final_destination: B14
+  manufacturer: G13
+  manufacturer_address: G14
+  manufacturer_address_2: G15
+header_fixed:
+  incoterm: DDP USA
+  payment_terms: Net 60 days
+  bill_to: GLOBALSINO PTE.LTD.
+  ship_to: GLOBALSINO PTE.LTD.
+  port_of_loading: Qingdao, China
+  final_destination: USA
+  manufacturer: GUANGDONG GLOBALSINO OUTDOOR SPORTS EQUIPMENT LIMITED
+  manufacturer_address: 'NO.40 BAIJIA STREET '
+  manufacturer_address_2: HIGH-TECH INDUSTRIAL DEVELOPMENT ZONE QINGYUAN GUANGDONG
+    CHINA
+table_header_row: 17
+lines:
+  start_row: 18
+  style_source_row: 18
+  row_fixed:
+    A: CHINA
+  columns:
+    item_number: B
+    upc: C
+    description: D
+    unit_price: E
+    quantity: F
+    amount: G
+    confirmed_ex_factory_date: H
+totals:
+  quantity: F22
+  subtotal: G22
+  amount: G23
+  signature:
+    cell: F25
+    value_mode: fixed
+    value: Cindy
+  signature_date:
+    cell: F26
+    value_mode: model_date
+preview_content:
+  title: PI
+  template_fields:
+    title: A4
+    seller_info:
+    - A1
+    - A2
+  terms_fields:
+  - incoterm
+  - payment_terms
+  - port_of_loading
+  - final_destination
+  column_labels:
+    A: Country of The Origin
+    item_number: Item Number
+    upc: UPC
+    description: Description
+    unit_price: USD Unit Price
+    quantity: Quantity
+    amount: USD Amount
+    confirmed_ex_factory_date: EX-FACTORY DATE
+  layout:
+    top:
+      left:
+      - seller_info
+      center:
+      - title
+      right: []
+    info:
+      left:
+      - incoterm
+      - payment_terms
+      - bill_to
+      - port_of_loading
+      - final_destination
+      right:
+      - pi_no
+      - document_date
+      - ship_to
+      - manufacturer
+      - manufacturer_address
+      - manufacturer_address_2
+template_version: shefish_2026.1
+template: templates/sk/pi.xlsx
+sheet: ' Standard PI format'

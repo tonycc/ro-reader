@@ -38,7 +38,7 @@ def test_default_registry_exposes_ro_profile() -> None:
     assert registry.default_profile_id == "ro"
     assert registry.default.profile_id == "ro"
     assert registry.default.display_name == "Rather Outdoors"
-    assert [profile.profile_id for profile in registry.list()] == ["ro", "pf"]
+    assert [profile.profile_id for profile in registry.list()] == ["ro", "pf", "shefish"]
     assert registry.default.assets.schema_path.exists()
     assert registry.default.assets.root.name == "ro"
     assert registry.default.schema.sheet("PO record").header_row == 4

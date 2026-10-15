@@ -1,0 +1,84 @@
+# SHEFISH 用 Item Number 关联三张表，不要求 SAP 或订单行号。
+sheets:
+  DATA BASE:
+    header_row: 1
+    first_data_row: 2
+  PO record:
+    name: PO RECORD 2026
+    header_row: 1
+    first_data_row: 2
+    required_fields: [po_no, sap]
+  客户PO:
+    name: New PO
+    header_row: 1
+    first_data_row: 2
+
+field_aliases:
+  DATA BASE:
+    sap: Item Number
+    description: COMBO DESCRIPTION
+    gs_model: GS MODEL
+    category: Category
+    moq: MOQ
+    fob_lt: FOB LT
+    inner_case_value: inner case value
+    carton_qty: round value
+    net_weight: N/W
+    gross_weight: G/W
+    length: L
+    width: W
+    height: H
+    cbm: CBM
+    packing_type: 包装
+    rfid: RFID
+    sub_category: SUB-CATEGORY
+    main_part_no: 主件编号
+  PO record:
+    po_no: PO#
+    pi_no: PI#
+    sap: Item Number
+    upc: UPC
+    description: COMBO DESCRIPTION
+    quantity: QTY
+    category: CATEGORY
+    inv_no: INV#
+    sk_ym_invoice_no: FACTORY DOC NO.
+    balance_qty: BALANCE QTY
+    order_date: ORDER DATE
+    required_ex_factory_date: PO REQUIRED EX-FACTORYDATE(-60days)
+    final_ex_factory_date: FINAL CONFIRMED EX-FACTORY DATE
+    actual_ex_factory_date: ACTUAL EX FACTORY
+    eta: ETA
+    carton_count: CTNS
+    net_weight: N/W
+    gross_weight: G/W
+    length: L
+    width: W
+    height: H
+    total_cbm: TOTAL CBM
+    carton_qty_export: 外箱
+  客户PO:
+    purchasing_document: PO#
+    material: Item Number
+    upc: UPC
+    description: Description
+    order_quantity: Qty/Ea
+    document_date: PO Issue Date
+    net_price: Unit Cost
+    carton_qty: Units per Case Pk
+
+# 模板批注明确指定的现行列；调价后通过工作区字段映射更新，不套用 PF options。
+data_base_price_columns:
+  SK/combo: SK REEL FOB 2026
+  SK/reel: SK REEL FOB 2026
+  YM/combo: YM ROD FOB 2026
+  YM/rod: YM ROD FOB 2026
+  GS PTE/combo: GS PTE COMBO FOB 2026
+  GS PTE/rod: GS PTE ROD FOB 2026
+  GS PTE/reel: GS PTE REEL FOB 2026
+  EMAX PTE/combo: EMAX PTE COMBO DDP 2026
+  EMAX PTE/rod: EMAX PTE ROD DDP 2026
+  EMAX PTE/reel: EMAX PTE REEL DDP 2026
+
+price_columns: {}
+invoice_amount_columns: {}

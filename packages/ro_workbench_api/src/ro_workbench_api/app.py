@@ -53,7 +53,7 @@ from ro_generator.models import (
     GenerationResult,
     ValidationMessage,
 )
-from ro_generator.profiles import GenerationContext
+from ro_generator.profiles import CustomerProfile, GenerationContext
 from ro_generator.schema_inspect import inspect_schema, sheet_header_candidates
 from ro_generator.source_index import SourceIndex
 from ro_generator.workbench_service import (
@@ -522,16 +522,18 @@ def _workspace_http_error(error: BaseException) -> HTTPException:
     return HTTPException(status, detail={"code": code, "message": _workspace_error_message(error)})
 
 
-def _profile_summary(profile: object) -> dict[str, object]:
-    profile_id = getattr(profile, "profile_id", "")
+def _profile_summary(profile: CustomerProfile) -> dict[str, object]:
+    profile_id = profile.profile_id
     descriptions = {
         "ro": "Rather Outdoors 单据流程",
         "pf": "PF 单据流程（含 MOQ 与整箱提醒）",
+        "shefish": "SHEFISH 单据流程（GS 采购单分别出具给 SK、YM）",
     }
     return {
         "id": profile_id,
-        "display_name": getattr(profile, "display_name", profile_id),
-        "version": getattr(profile, "version", ""),
+        "display_name": profile.display_name,
+        "version": profile.version,
+        "sellers": list(profile.capabilities.sellers),
         "available": True,
         "description": descriptions.get(profile_id),
     }
@@ -1241,6 +1243,7 @@ def preview_document(
     return {
         "status": result.status,
         "preview": preview_data,
+        "previews": [_document_preview_to_dict(item) for item in result.previews],
         "errors": [_msg_to_dict(m) for m in result.errors],
         "warnings": [_msg_to_dict(m) for m in result.warnings],
         "missing_inputs": list(result.missing_inputs),

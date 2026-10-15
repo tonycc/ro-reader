@@ -186,6 +186,7 @@ export interface PreviewSourceEntry {
 }
 
 export interface PreviewResponse {
+  previews?: PreviewPayload[]
   status: string
   preview: PreviewPayload | null
   errors: ValidationIssue[]; warnings: ValidationIssue[]

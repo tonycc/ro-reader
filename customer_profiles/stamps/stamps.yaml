@@ -1,4 +1,4 @@
-# 卖方公章：RO / PF 共用。只叠在 Invoice、PL 的 PDF 上；缺文件不阻断导出。
+# 卖方公章：RO / PF / SHEFISH 共用。只叠在 Invoice、PL 的 PDF 上；缺文件不阻断导出。
 documents:
   - INVOICE
   - PL

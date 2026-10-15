@@ -266,6 +266,9 @@ def _generated_file_paths(result: GenerationResult) -> tuple[Path, ...]:
     output = Path(result.output_file)
     if output.is_dir():
         return tuple(output / filename for filename in result.files)
+    if output.suffix.lower() == ".zip":
+        # 单据变体可能已自行打包；批量导出收集其原始文件，避免 ZIP 套 ZIP。
+        return tuple(output.parent / filename for filename in result.files)
     return (output,)
 
 

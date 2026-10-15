@@ -122,6 +122,7 @@ class DocumentLine:
     gross_weight_source_rule: str | None = None
     item_number: str = ""  # PO 模板 Item Number，实际来源由 line mapping 规则决定
     cp_item: str = ""  # 客户PO "Item" 列值，SK/YM PI 模板 PO item Line Number 来源
+    upc: str | None = None
     cost_breakdown: tuple[CostBreakdownItem, ...] = ()
     # 本单据类型下 unit_price 的取值解析记录（PF options 版本规则）；None 表示
     # 未启用版本规则，来源摘要回退到 Profile 静态列描述。
@@ -157,6 +158,7 @@ class DocumentModel:
     pi_no: str | None = None  # PI 编号：SK 用 E10 PO，YM 用 YM PO，GS/EMAX 用客户 PO
     invoice_no: str | None = None
     etd_on_board: date | None = None  # PO record "ETD ON BOARD"，PF GS Invoice 表头
+    eta: date | None = None
     total_carton_count: Decimal | None = None
     total_net_weight: Decimal | None = None
     total_gross_weight: Decimal | None = None
@@ -255,6 +257,7 @@ def _assemble_lines(
     packing: bool = False,
     use_po_record_description: bool = False,
     seller: str = "",
+    price_seller: str | None = None,
 ) -> tuple[list[DocumentLine] | None, list[ValidationMessage]]:
     """价格段校验 + INV# 过滤 + DocumentLine 装配（四类单据共用）。
 
@@ -286,6 +289,14 @@ def _assemble_lines(
         price_source = original_line.price_sources.get(
             (price_source_document(document_type), seller)
         )
+        if price_seller is not None:
+            category_name = {1: "combo", 2: "rod", 3: "reel"}.get(original_line.category, "")
+            price_source = ResolvedPrice(
+                kind="profile_column",
+                column=current_schema().data_base_price_columns.get(
+                    f"{price_seller}/{category_name}"
+                ),
+            )
         if price_source is not None and price_source.kind == "missing":
             dedupe_key = (price_source.option_key or "", price_source.version_label or "")
             if dedupe_key not in reported_price_versions:
@@ -402,6 +413,11 @@ def _assemble_lines(
                 item_line_no=item_line_value,
                 item_number=item_num_value,
                 cp_item=original_line.cp_item,
+                upc=(
+                    original_line.customer_po_upc
+                    if document_type in {"PI", "PO"}
+                    else original_line.po_record_upc
+                ),
                 sap=original_line.sap,
                 description=line_description,
                 category=original_line.category,
@@ -650,15 +666,19 @@ def build_po_model(
     seller: str,
     buyer: str,
     po_no: str,
+    price_seller: str | None = None,
 ) -> BuildResult:
     """PO：与 PI 结构相同，使用完整 PO 数量。"""
     doc_lines, messages = _assemble_lines(
         lines,
-        _price_segment("PO", seller, buyer),
+        (price_seller, current_rules().buyer_for(price_seller) or "")
+        if price_seller is not None
+        else _price_segment("PO", seller, buyer),
         invoice_no=None,
         po_no=po_no,
         document_type="PO",
         seller=seller,
+        price_seller=price_seller,
     )
     if doc_lines is None:
         return BuildResult(model=None, messages=tuple(messages))
@@ -781,6 +801,7 @@ def build_invoice_model(
             cost_breakdown=cost_breakdown,
             invoice_no=inv_no,
             etd_on_board=_resolve_model_etd_on_board(invoice_source_lines),
+            eta=next((line.eta for line in invoice_source_lines if line.eta), None),
             ship_to=ship_to,
             manufacturer_address=manufacturer_address,
             final_destination=final_destination,

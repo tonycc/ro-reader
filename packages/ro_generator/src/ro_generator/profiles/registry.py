@@ -8,6 +8,7 @@ from ro_generator.errors import DuplicateProfileError, InvalidProfileError, Prof
 from ro_generator.profiles.base import CustomerProfile
 from ro_generator.profiles.pf import create_pf_profile
 from ro_generator.profiles.ro import create_ro_profile
+from ro_generator.profiles.shefish import create_shefish_profile
 
 
 class ProfileRegistry:
@@ -52,6 +53,9 @@ class ProfileRegistry:
 
 
 def default_profile_registry() -> ProfileRegistry:
-    """返回包含 RO 与 PF、并以 RO 为默认值的注册表。"""
+    """返回内置客户注册表，RO 保持默认值。"""
 
-    return ProfileRegistry((create_ro_profile(), create_pf_profile()), default_profile_id="ro")
+    return ProfileRegistry(
+        (create_ro_profile(), create_pf_profile(), create_shefish_profile()),
+        default_profile_id="ro",
+    )

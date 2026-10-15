@@ -20,6 +20,7 @@ from ro_generator.profiles.runtime import (
     current_schema,
     profile_scope,
 )
+from ro_generator.profiles.shefish import create_shefish_profile
 
 __all__ = [
     "CustomerProfile",
@@ -30,6 +31,7 @@ __all__ = [
     "ProfileRegistry",
     "create_pf_profile",
     "create_ro_profile",
+    "create_shefish_profile",
     "current_profile",
     "current_rules",
     "current_schema",

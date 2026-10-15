@@ -43,6 +43,16 @@ class ProfileAssets:
         return self.mapping_root / seller_dir / "mappings" / mapping_filename
 
 
+@dataclass(frozen=True)
+class DocumentVariant:
+    """同一单据操作下的独立采购对象、价格段及模板。"""
+
+    key: str
+    label: str
+    mapping_document: str
+    price_seller: str
+
+
 @runtime_checkable
 class CustomerRules(Protocol):
     """客户差异规则的最小协议。
@@ -91,6 +101,14 @@ class CustomerRules(Protocol):
 
     def category_for_value(self, value: object) -> int | None:
         """把当前客户的 Category 表达转换为核心统一类别编号。"""
+
+    def factory_sellers_for_category(self, category: int | None) -> tuple[str, ...]:
+        """一个产品可以分别向多个组件工厂采购。"""
+
+    def document_variants(
+        self, document_type: str, seller: str, lines: tuple[OrderLine, ...]
+    ) -> tuple[DocumentVariant, ...]:
+        """返回一次操作需同时预览/导出的单据；空元组沿用单模板。"""
 
     def shipment_quantity_for_row(
         self,

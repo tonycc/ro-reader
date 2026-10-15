@@ -1,10 +1,10 @@
 # RO 单据工作台产品说明
 
-> 状态：当前实现基准，最近核对于 2026-08-21。
+> 状态：当前实现基准，最近核对于 2026-10-15。
 
 ## 1. 产品概述
 
-RO 单据工作台是支持 Customer Profile 的本地单据装配工具，当前内置 `ro` 和 `pf`。它把 Excel 数据检查、单据预览和导出放在同一个工作空间中，减少人工查表和复制。
+RO 单据工作台是支持 Customer Profile 的本地单据装配工具，当前内置 `ro`、`pf`、`shefish`。它把 Excel 数据检查、单据预览和导出放在同一个工作空间中，减少人工查表和复制。
 
 对外的核心业务单据是 PI、PO、Invoice 和 Packing List；核心包还使用 `CI`、`RO_PL` 表示 SK/YM 的 RO 版商业发票和装箱单。
 
@@ -34,7 +34,7 @@ RO 单据工作台是支持 Customer Profile 的本地单据装配工具，当�
 
 ### 3.2 当前链段
 
-合法链段由核心包 `schema.SELLER_TO_BUYER` 定义：
+合法链段由当前 Profile 的规则定义。RO 的默认链段为：
 
 ```text
 SK → YM → GS PTE → EMAX PTE → PF
@@ -50,6 +50,8 @@ SK → YM → GS PTE → EMAX PTE → PF
 SK/YM 不提供 PO 模板。
 
 上表是 RO Profile 的完整能力矩阵。PF Profile 复用同一贸易链，GS PTE/EMAX PTE 支持 PI、PO、INVOICE、PL，SK/YM 仅支持 PI。这里的 `PF` 既可能表示 RO 链段中的最终买方，也可能表示机器 ID 为 `pf` 的 Customer Profile，两者不得混用。
+
+SHEFISH 的销售链段为 SK → GS PTE → EMAX PTE → SHEFISH。GS PTE/EMAX PTE 支持 PI、PO、INVOICE、PL，SK 支持 PI、INVOICE、PL。GS PTE 的采购同时向 SK、YM 分别出具 PO：组合产品按轮子、杆子分别取价；单轮只向 SK、单杆只向 YM 采购。两份 PO 一起预览，并以带 `_SK` / `_YM` 后缀的文件打包导出。当前没有 YM 出具的 SHEFISH 模板。
 
 ## 4. 体验原则
 
@@ -96,6 +98,7 @@ base 文件、缓存、临时导出和 PDF 转换都在用户机器上完成。�
 - PF Profile 的独立 schema、模板和规则。
 - PF 客户订单 MOQ/整箱 high warning。
 - PF 客户 PO 先行流程：订单未进入 `PO RECORD 26` 时仍可检查并生成 PI/PO。
+- SHEFISH 的 Item Number 关联、UPC、12 份独立模板和 GS 双工厂采购单；发票数量按 INV# 的月份读取，发票号保留原值。
 
 ### 5.2 当前不支持
 

@@ -10,6 +10,7 @@ base workbook 有三张逻辑 Sheet，实际名称由当前 Profile schema 决�
 | --- | --- | --- | --- |
 | RO | `DATA BASE`（4/5） | `PO record`（4/5） | `客户PO`（1/2） |
 | PF | `DATA BASE TEMPLATE`（2/3） | `PO RECORD 26`（1/2） | `new PO template`（1/2） |
+| SHEFISH | `DATA BASE`（1/2） | `PO RECORD 2026`（1/2） | `New PO`（1/2） |
 
 真实名称、别名和价格列以 `customer_profiles/<profile_id>/base_schema.yaml` 为准。不要在 Python 中重复硬编码可配置的表头名称。PF 的月份表头 `2601`–`2612` 可能以 Excel 数字形式存在，只在 reader 边界转为字符串。
 
@@ -27,8 +28,9 @@ SK → YM → GS PTE → EMAX PTE → PF
 
 - RO：GS PTE/EMAX PTE 支持 PI、PO、INVOICE、PL；SK/YM 支持 PI、INVOICE、PL、CI、RO_PL，没有 PO。
 - PF：GS PTE/EMAX PTE 支持 PI、PO、INVOICE、PL；SK/YM 仅支持 PI。
-- SK/YM 工厂主体：Category 1/2 → YM，Category 3 → SK。
-- 配对 mapping 使用同一模板时渲染为双 Sheet workbook（RO）；使用不同模板时分别渲染并打 ZIP（PF）。
+- SHEFISH：GS PTE/EMAX PTE 支持 PI、PO、INVOICE、PL；SK 支持 PI、INVOICE、PL。GS PO 通过 `DocumentVariant` 同时生成 SK/YM 两份，分别筛选组件工厂并取价。
+- RO/PF 工厂主体：Category 1/2 → YM，Category 3 → SK。SHEFISH 的 Combo 同时属于 SK/YM，单杆属于 YM，单轮属于 SK；能力矩阵仍限制可出具单据的主体。
+- 配对 mapping 使用同一模板时渲染为双 Sheet workbook（RO）；使用不同模板时分别渲染并打 ZIP（PF/SHEFISH）。
 
 ## 业务规则
 
@@ -37,6 +39,9 @@ SK → YM → GS PTE → EMAX PTE → PF
 - RO 票据数量：`PO record.SHIP QTY`；PF 票据数量：按 `INV#` 的 YYMM 读取 `2601`–`2612` 月度列。
 - RO SK/YM 发票号：`SK/YM INVOICE NO.`；GS PTE：`INV#`；EMAX PTE：`INV#` 加 `-P`。
 - PF GS/EMAX 发票号保持 `INV#` 原值。
+- SHEFISH 以 `Item Number` 作为内部商品关联键；PO record 的必需字段由 schema `required_fields` 显式声明为 `po_no`、`sap`，实际列为 `PO#`、`Item Number`，不要求不存在的订单行号。
+- SHEFISH PI/PO 的数量、描述、UPC、日期取 `New PO`；EMAX PI 编号取 `PO RECORD 2026.PI#`，缺失阻断；其他 PI 编号和 PO 编号取客户 PO#。出厂日期取 `FINAL CONFIRMED EX-FACTORY DATE`，不以样例日期或当前日期补齐。
+- SHEFISH Invoice/PL 的编号取 `INV#` 原值，数量严格取同名 YYMM 月份列；不存在或未填该月时不借用其他月份。价格取 DATA BASE 的 Profile 配置列，不取 PO record 价格缓存。
 - `amount = quantity × unit_price`。
 - 缺单价时 `unit_price`、`amount` 为 `None`，任一行缺金额则 `total_amount` 为 `None`，预览和 Excel 均留空并保留高严重度缺价告警；真实零单价与缺价严格区分。
 - `CTNS = quantity / 外箱`。
@@ -50,7 +55,7 @@ SK → YM → GS PTE → EMAX PTE → PF
 
 ## Invoice 票据组
 
-工作台只把 `SHIP QTY > 0` 且有发票标识的行纳入票据组。分组、跨 PO 聚合和主体发票号选择都属于核心包职责，入口位于：
+工作台只把当前 Profile 解析的出货数量大于 0 且有发票标识的行纳入票据组。分组、跨 PO 聚合和主体发票号选择都属于核心包职责，入口位于：
 
 - `invoice_groups.py`
 - `invoice_inspection.py`

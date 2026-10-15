@@ -194,6 +194,10 @@ class OrderLine:
     po_record_description: str | None = None
     customer_po_description: str | None = None  # 客户PO "Material Description" 列
     customer_po_document_date: date | None = None  # 客户PO "PO Creation Date" 列
+    customer_po_upc: str | None = None
+    po_record_upc: str | None = None
+    pi_no: str | None = None
+    eta: date | None = None
     sk_ym_invoice_no: str | None = None  # SK/YM INVOICE NO.
     reel_sap: str | None = None
     reel_description: str | None = None

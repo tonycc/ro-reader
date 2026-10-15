@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from ro_generator.models import OrderLine
 from ro_generator.profiles.runtime import current_profile, current_rules
 from ro_generator.schema import SELLERS
-from ro_generator.seller_filter import factory_seller_for_line
+from ro_generator.seller_filter import factory_sellers_for_line
 
 
 @dataclass(frozen=True)
@@ -132,7 +132,7 @@ def _seller_invoice_numbers(
         if profile is not None and not profile.capabilities.supports(seller, "INVOICE"):
             continue
         for _, line, _ in entries:
-            if seller in {"SK", "YM"} and factory_seller_for_line(line) != seller:
+            if seller in {"SK", "YM"} and seller not in factory_sellers_for_line(line):
                 continue
             invoice_number = _clean(
                 rules.invoice_no_for_line(line, document_type="INVOICE", seller=seller)

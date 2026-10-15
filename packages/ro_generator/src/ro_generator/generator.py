@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from contextlib import suppress
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, Literal, cast
 
@@ -60,6 +60,7 @@ from ro_generator.profiles import (
     default_profile_registry,
     profile_scope,
 )
+from ro_generator.profiles.base import DocumentVariant
 from ro_generator.renderer import render_document, render_document_bundle
 from ro_generator.resolver import resolve_po_lines, resolve_po_rows
 from ro_generator.schema import (
@@ -129,6 +130,7 @@ class PreviewResult:
     warnings: tuple[ValidationMessage, ...] = ()
     missing_inputs: tuple[str, ...] = ()
     options: Mapping[str, object] = field(default_factory=dict)
+    previews: tuple[DocumentPreview, ...] = ()
 
 
 CODE_UNSUPPORTED_DOCUMENT: Final = "UNSUPPORTED_DOCUMENT_TYPE"
@@ -391,26 +393,30 @@ def _preview_from_snapshot(
         if len(distinct_invs) == 1 and invoice_no is None:
             invoice_no = distinct_invs[0]["value"]
 
-    # 构建 DocumentModel
-    build = build_document_model(
-        lines,
-        seller=seller,
-        buyer=buyer,
-        po_no=request.po_no,
-        invoice_no=invoice_no,
-        doc_type=doc_type,
-    )
-
+    variants = current_rules().document_variants(doc_type, seller, lines)
+    previews = []
+    errors: list[ValidationMessage] = []
     all_warnings = list(warnings_resolver)
-    doc_warnings = tuple(m for m in build.messages if m.kind == "warning")
-    all_warnings.extend(doc_warnings)
-
-    preview_data = build_preview(build)
-
+    for variant in variants or (None,):
+        build = build_document_model(
+            lines,
+            seller=seller,
+            buyer=buyer,
+            po_no=request.po_no,
+            invoice_no=invoice_no,
+            doc_type=doc_type,
+            variant=variant,
+        )
+        errors.extend(m for m in build.messages if m.kind == "blocking_error")
+        all_warnings.extend(m for m in build.messages if m.kind == "warning")
+        if build.model is not None:
+            item = build_preview(build)
+            previews.append(replace(item, title=variant.label) if variant else item)
     return PreviewResult(
-        status="success" if build.model is not None else "error",
-        preview=preview_data if build.model is not None else None,
-        errors=tuple(m for m in build.messages if m.kind == "blocking_error"),
+        status="error" if errors else "success",
+        preview=previews[0] if previews else None,
+        previews=tuple(previews) if variants else (),
+        errors=tuple(errors),
         warnings=tuple(all_warnings),
     )
 
@@ -824,7 +830,13 @@ def _generate(request: DocumentRequest, *, context: GenerationContext) -> Genera
             if not (combine_invoice_pl and doc_type in ("INVOICE", "PL", "CI", "RO_PL"))
         )
 
-        for doc_type in single_documents:
+        document_jobs = tuple(
+            (doc_type, variant)
+            for doc_type in single_documents
+            for variant in current_rules().document_variants(doc_type, active_seller, active_lines)
+            or (None,)
+        )
+        for doc_type, variant in document_jobs:
             doc_result = _generate_one(
                 active_lines,
                 seller=active_seller,
@@ -833,6 +845,7 @@ def _generate(request: DocumentRequest, *, context: GenerationContext) -> Genera
                 invoice_no=invoice_no,
                 doc_type=doc_type,
                 request=request,
+                variant=variant,
             )
             if doc_result.status == "error":
                 return GenerationResult(
@@ -870,7 +883,10 @@ def _generate(request: DocumentRequest, *, context: GenerationContext) -> Genera
             last_summary = bundle_result.summary
 
     all_warnings_t = tuple(all_warnings)
-    if request.output_format == "zip":
+    if request.output_format == "zip" or (
+        len(rendered_files) > 1
+        and any(current_rules().document_variants(doc, seller, lines) for doc in documents)
+    ):
         zip_name = build_zip_filename(po_no=request.po_no, invoice_no=invoice_no)
         zip_path = package_zip(
             files=tuple(p for _, p in rendered_files),
@@ -923,6 +939,7 @@ def build_document_model(
     po_no: str,
     invoice_no: str | None,
     doc_type: DocumentType,
+    variant: DocumentVariant | None = None,
 ) -> BuildDocumentResult:
     """构建单个单据的 DocumentModel。
 
@@ -944,6 +961,8 @@ def build_document_model(
         )
 
     lines = filter_lines_for_seller(lines, seller)
+    if variant is not None:
+        lines = filter_lines_for_seller(lines, variant.price_seller)
     if not lines:
         return BuildDocumentResult(
             model=None,
@@ -957,7 +976,7 @@ def build_document_model(
             ),
         )
 
-    mapping = _load_mapping(seller, doc_type)
+    mapping = _load_mapping(seller, variant.mapping_document if variant else doc_type)
     if mapping is None:
         return BuildDocumentResult(
             model=None,
@@ -981,7 +1000,13 @@ def build_document_model(
             )
         build_result = build_pi_model(lines, seller=seller, buyer=buyer, po_no=po_no, pi_no=pi_no)
     elif doc_type == "PO":
-        build_result = build_po_model(lines, seller=seller, buyer=buyer, po_no=po_no)
+        build_result = build_po_model(
+            lines,
+            seller=seller,
+            buyer=buyer,
+            po_no=po_no,
+            price_seller=variant.price_seller if variant else None,
+        )
     elif doc_type == "PL":
         build_result = build_pl_model(
             lines,
@@ -1036,6 +1061,7 @@ def _generate_one(
     invoice_no: str | None,
     doc_type: DocumentType,
     request: DocumentRequest,
+    variant: DocumentVariant | None = None,
 ) -> GenerationResult:
     build = build_document_model(
         lines,
@@ -1044,6 +1070,7 @@ def _generate_one(
         po_no=po_no,
         invoice_no=invoice_no,
         doc_type=doc_type,
+        variant=variant,
     )
     blocking = tuple(m for m in build.messages if m.kind == "blocking_error")
     doc_warnings = tuple(m for m in build.messages if m.kind == "warning")
@@ -1058,6 +1085,8 @@ def _generate_one(
         invoice_no=invoice_no,
         extension="xlsx",
     )
+    if variant is not None:
+        filename = f"{Path(filename).stem}_{variant.key}.xlsx"
     output_path = resolve_output_path(
         request.output_dir,
         filename,

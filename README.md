@@ -7,12 +7,12 @@ RO 单据工作台读取本地 Excel base 文件，按当前 Customer Profile �
 ## 当前能力
 
 - PO 视角：查看和编辑 `PO record` 行，预览及导出 PI/PO。
-- Invoice 视角：按发票标识聚合 `SHIP QTY > 0` 的出货行，跨 PO 检查、预览和导出发票/装箱单。
+- Invoice 视角：按发票标识聚合当前 Profile 出货数量大于 0 的行，跨 PO 检查、预览和导出发票/装箱单。
 - Excel 模板渲染：保留模板字体、边框、合并单元格、行高、列宽和打印设置。
 - PDF 导出：先生成 `.xlsx`，再使用本机 LibreOffice 无头转换。Invoice/PL 的 PDF 会叠主体印章；缺章文件不阻断导出。
 - 字段溯源：预览字段可查看源 Sheet、行、字段或计算规则。
 - 分级校验：区分阻断错误、警告和待选择输入。
-- 多客户工作区：内置 `ro` 与 `pf` Profile，可保存多个 base 文件配置并从顶部快速切换。
+- 多客户工作区：内置 `ro`、`pf`、`shefish` Profile，可保存多个 base 文件配置并从顶部快速切换。
 - PF 订单检查：按 SAP 聚合客户订单数量，提醒低于 MOQ 或不是整箱数量。
 - PF PI/PO 预览：不合规 Quantity 标红，感叹号展示后端警告原文；Invoice/PL 出货数量不标红。
 - 列对应关系：表头对不上时显示黄色提示，可在工作台把逻辑字段指到实际 Excel 列。
@@ -30,6 +30,8 @@ RO Profile 支持的主体与内部单据类型：
 `CI` / `RO_PL` 是 SK/YM 的 RO 版商业发票和装箱单。SK/YM 没有 PO 模板。
 
 PF Profile 使用同一贸易链，但能力矩阵为：GS PTE、EMAX PTE 支持 PI/PO/INVOICE/PL，SK、YM 仅支持 PI。PF 的 Invoice 与 PL 来自两个独立模板，预览分别进入独立页面，组合导出时分别生成后打入同一 ZIP。
+
+SHEFISH Profile 支持 GS PTE、EMAX PTE 的 PI/PO/INVOICE/PL，以及 SK 的 PI/INVOICE/PL。GS PTE 的 PO 按工厂同时生成 SK、YM 两份：组合产品分别取轮子价、杆子价，单杆仅进入 YM，单轮仅进入 SK；多份文件自动打成 ZIP，文件名增加 `_SK` / `_YM` 后缀。Invoice 与 PL 使用独立模板。当前未提供 YM 出具的单据模板。
 
 ## 环境要求
 
@@ -68,8 +70,9 @@ base 文件必须是 `.xlsx`，并符合所选 Profile 的三张逻辑 Sheet。�
 | --- | --- | --- | --- |
 | `ro` | `DATA BASE`（表头 4，数据 5） | `PO record`（表头 4，数据 5） | `客户PO`（表头 1，数据 2） |
 | `pf` | `DATA BASE TEMPLATE`（表头 2，数据 3） | `PO RECORD 26`（表头 1，数据 2） | `new PO template`（表头 1，数据 2） |
+| `shefish` | `DATA BASE`（表头 1，数据 2） | `PO RECORD 2026`（表头 1，数据 2） | `New PO`（表头 1，数据 2） |
 
-Sheet、表头位置和字段别名分别位于 `customer_profiles/<profile_id>/base_schema.yaml`。表头匹配前会压缩换行和多余空格；PF 的数字月份表头 `2601`–`2612` 在读取边界转换为字符串。
+Sheet、表头位置和字段别名分别位于 `customer_profiles/<profile_id>/base_schema.yaml`。表头匹配前会压缩换行和多余空格；PF/SHEFISH 的数字月份表头在读取边界转换为字符串。
 
 主要关联关系：
 
@@ -86,6 +89,8 @@ PO record.SAP Number       = DATA BASE.SAP
 在顶部“管理工作区”中新建配置，填写显示名称、Customer Profile 和 base `.xlsx` 绝对路径。先“检测路径”，再保存并“设为当前”；保存配置不会自动切换。配置由后端保存在用户配置目录，顶部工作区切换器可快速切换，任一时刻只有一个当前工作区。
 
 PF 示例应选择 `/path/to/Template PF/PO RECORD 2026.xlsx`，不是只填写模板文件夹。
+
+SHEFISH 工作区选择 Profile `SHEFISH`，绑定 `template SHEFISH/SHEFISH DATA BASE & PR.xlsx`。三张表通过 `PO#`、`Item Number` 关联，不要求 SAP 或订单行号。出货数量严格按 `INV#` 中的 YYMM 读取同名月份列；仅有发票号、没有当月出货量时不会产生票据组。
 
 ### 2. 选择业务视角
 

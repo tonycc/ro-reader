@@ -13,6 +13,7 @@ from ro_generator.errors import InvalidProfileError
 from ro_generator.models import CostBreakdownItem, DocumentType, OrderLine
 from ro_generator.profiles.base import (
     CustomerProfile,
+    DocumentVariant,
     ProfileAssets,
     ProfileCapabilities,
 )
@@ -80,6 +81,14 @@ class RoRules:
 
     def buyer_for(self, seller: str) -> str | None:
         return self.seller_to_buyer.get(seller)
+
+    def factory_sellers_for_category(self, category: int | None) -> tuple[str, ...]:
+        return {1: ("YM",), 2: ("YM",), 3: ("SK",)}.get(category or 0, ())
+
+    def document_variants(
+        self, document_type: str, seller: str, lines: tuple[OrderLine, ...]
+    ) -> tuple[DocumentVariant, ...]:
+        return ()
 
     def category_for_value(self, value: object) -> int | None:
         if isinstance(value, bool):

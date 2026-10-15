@@ -14,6 +14,7 @@ export interface ProfileSummary {
   version: string;
   available: boolean;
   description?: string;
+  sellers?: string[];
 }
 
 export interface CustomerWorkspace {

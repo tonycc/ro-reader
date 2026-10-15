@@ -55,8 +55,12 @@ def factory_seller_for_line(line: OrderLine) -> str | None:
     return factory_seller_for_category(line.po_record_category)
 
 
+def factory_sellers_for_line(line: OrderLine) -> tuple[str, ...]:
+    return current_rules().factory_sellers_for_category(line.po_record_category)
+
+
 def has_factory_categories(lines: tuple[OrderLine, ...]) -> bool:
-    return any(factory_seller_for_line(line) is not None for line in lines)
+    return any(factory_sellers_for_line(line) for line in lines)
 
 
 def filter_lines_for_seller(
@@ -65,12 +69,18 @@ def filter_lines_for_seller(
 ) -> tuple[OrderLine, ...]:
     if seller not in SK_YM_FACTORY_SELLERS or not has_factory_categories(lines):
         return lines
-    return tuple(line for line in lines if factory_seller_for_line(line) == seller)
+    return tuple(line for line in lines if seller in factory_sellers_for_line(line))
 
 
 def raw_row_factory_seller(row: dict[str, object]) -> str | None:
     category_field = current_schema().field("PO record", "category")
     return factory_seller_for_category(current_rules().category_for_value(row.get(category_field)))
+
+
+def raw_row_factory_sellers(row: dict[str, object]) -> tuple[str, ...]:
+    category_field = current_schema().field("PO record", "category")
+    category = current_rules().category_for_value(row.get(category_field))
+    return current_rules().factory_sellers_for_category(category)
 
 
 def prefilter_raw_rows(
@@ -81,9 +91,9 @@ def prefilter_raw_rows(
 ) -> tuple[dict[str, object], ...]:
     if not _should_prefilter(seller=seller, documents=documents):
         return rows
-    if not any(raw_row_factory_seller(row) is not None for row in rows):
+    if not any(raw_row_factory_sellers(row) for row in rows):
         return rows
-    return tuple(row for row in rows if raw_row_factory_seller(row) == seller)
+    return tuple(row for row in rows if seller in raw_row_factory_sellers(row))
 
 
 def raw_row_filter_for_request(
@@ -95,7 +105,7 @@ def raw_row_filter_for_request(
         return None
 
     def row_filter(row: dict[str, object]) -> bool:
-        return raw_row_factory_seller(row) == seller
+        return seller in raw_row_factory_sellers(row)
 
     return row_filter
 

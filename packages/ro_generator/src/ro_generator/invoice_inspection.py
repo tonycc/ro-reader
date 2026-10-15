@@ -11,10 +11,15 @@ from typing import TYPE_CHECKING, Final
 from ro_generator.invoice_groups import InvoiceInspection
 from ro_generator.models import OrderLine, ValidationMessage
 from ro_generator.profiles import GenerationContext
-from ro_generator.profiles.runtime import current_profile, current_schema, profile_scope
+from ro_generator.profiles.runtime import (
+    current_profile,
+    current_rules,
+    current_schema,
+    profile_scope,
+)
 from ro_generator.resolver import resolve_po_rows
 from ro_generator.schema import SELLERS
-from ro_generator.seller_filter import factory_seller_for_line
+from ro_generator.seller_filter import SK_YM_FACTORY_SELLERS, factory_sellers_for_line
 
 if TYPE_CHECKING:
     from ro_generator.workbook_snapshot import WorkbookSnapshot
@@ -199,15 +204,16 @@ def _project_line(line: OrderLine) -> InvoiceInspectionRow:
 
 
 def _sellers_for_line(line: OrderLine) -> tuple[str, ...]:
-    sellers: list[str] = []
-    if line.invoice_no:
-        sellers.extend(("GS PTE", "EMAX PTE"))
-    factory_seller = factory_seller_for_line(line)
-    if line.sk_ym_invoice_no and factory_seller:
-        sellers.append(factory_seller)
     profile = current_profile()
     active_sellers = profile.capabilities.sellers if profile is not None else SELLERS
-    return tuple(seller for seller in active_sellers if seller in sellers)
+    factories = factory_sellers_for_line(line)
+    rules = current_rules()
+    return tuple(
+        seller
+        for seller in active_sellers
+        if rules.invoice_no_for_line(line, "INVOICE", seller)
+        and (seller not in SK_YM_FACTORY_SELLERS or seller in factories)
+    )
 
 
 __all__ = [

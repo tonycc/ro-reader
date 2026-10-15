@@ -17,7 +17,12 @@ from ro_generator.models import (
     OrderLine,
     price_source_document,
 )
-from ro_generator.profiles.base import CustomerProfile, ProfileAssets, ProfileCapabilities
+from ro_generator.profiles.base import (
+    CustomerProfile,
+    DocumentVariant,
+    ProfileAssets,
+    ProfileCapabilities,
+)
 from ro_generator.profiles.manifest import (
     load_profile_assets,
     load_profile_manifest,
@@ -100,6 +105,14 @@ class PfRules:
 
     def buyer_for(self, seller: str) -> str | None:
         return self.seller_to_buyer.get(seller)
+
+    def factory_sellers_for_category(self, category: int | None) -> tuple[str, ...]:
+        return {1: ("YM",), 2: ("YM",), 3: ("SK",)}.get(category or 0, ())
+
+    def document_variants(
+        self, document_type: str, seller: str, lines: tuple[OrderLine, ...]
+    ) -> tuple[DocumentVariant, ...]:
+        return ()
 
     def category_for_value(self, value: object) -> int | None:
         if isinstance(value, int) and not isinstance(value, bool) and value in {1, 2, 3}:

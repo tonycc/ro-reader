@@ -446,7 +446,7 @@ const columnHeaderRows = computed<PreviewHeaderCell[][]>(() => {
 .info-right { min-width: 0; }
 .kv-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .kv-table td { padding: 2px 0 4px 10px; vertical-align: top; }
-.kv-table td:first-child { color: var(--muted); font-weight: 800; white-space: nowrap; padding-left: 0; }
+.kv-table td:first-child { color: var(--muted); font-weight: 800; white-space: normal; overflow-wrap: anywhere; padding-left: 0; }
 .info-left .kv-table td:first-child { width: 126px; }
 .info-right .kv-table td:first-child {
   width: 226px; padding-right: 12px; white-space: normal;

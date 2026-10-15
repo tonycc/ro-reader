@@ -4,6 +4,8 @@
 >
 > 适用范围：本地单用户桌面应用，不引入登录、账号、权限或云端同步。
 
+当前另已接入第三个 Profile `shefish`：三张表以 Item Number 关联，含 12 份模板/mapping、月度出货和 GS 向 SK/YM 同时采购的双单据。具体支持矩阵见 [产品说明](ro-document-generator-product-plan.md)，字段来源见 [字段规则](../单据模板字段取值规则汇总.md#shefish-customer-profile-规则)。
+
 ## 1. 背景
 
 工作台最初只面向 RO 客户，因此旧实现存在以下单客户假设；这些假设现已通过 Profile/Workspace 机制解除：

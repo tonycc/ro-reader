@@ -36,7 +36,7 @@ const invoiceDocLabels: Record<string, string> = {
 const docOrder = ["PI", "PO"];
 
 function invoiceDocOrderForSeller(seller: string): string[] {
-  if (seller === "SK" || seller === "YM") {
+  if (wb.profileId === "ro" && (seller === "SK" || seller === "YM")) {
     return ["INVOICE", "PL", "CI", "RO_PL"];
   }
   return ["INVOICE", "PL"];

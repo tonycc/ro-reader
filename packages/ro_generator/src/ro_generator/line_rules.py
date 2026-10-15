@@ -46,6 +46,11 @@ class LineFieldOverride(TypedDict, total=False):
 
 
 LINE_FIELD_SPECS: Final[dict[str, LineFieldSpec]] = {
+    "upc": LineFieldSpec(
+        rule="客户订单的 UPC，保持标识原值",
+        source_sheet=SHEET_CUSTOMER_PO,
+        source_field="upc",
+    ),
     "po_no": LineFieldSpec(
         rule="客户PO 的 Purchasing Document 列",
         source_sheet=SHEET_CUSTOMER_PO,
@@ -189,6 +194,11 @@ LINE_FIELD_SPECS: Final[dict[str, LineFieldSpec]] = {
 # —————————————————————————————————————
 
 _INVOICE_PL_OVERRIDES: Final[dict[str, LineFieldOverride]] = {
+    "upc": {
+        "rule": "出货记录的 UPC，按发票号筛选",
+        "source_sheet": SHEET_PO_RECORD,
+        "source_field": "upc",
+    },
     "quantity": {
         "rule": "Invoice/PL 使用 PO record 的月度出货数量",
         "source_sheet": SHEET_PO_RECORD,
@@ -358,6 +368,29 @@ _PROFILE_LINE_OVERRIDES: Final[dict[tuple[str, str, str, str], LineFieldOverride
 }
 
 
+for _seller in ("GS PTE", "EMAX PTE", "SK"):
+    for _document in ("PI", "PO"):
+        _PROFILE_LINE_OVERRIDES[("shefish", _document, _seller, "description")] = {
+            "rule": "New PO 的 Description 列，按 Item Number 关联",
+            "source_sheet": SHEET_CUSTOMER_PO,
+            "source_field": "description",
+        }
+    _PROFILE_LINE_OVERRIDES[("shefish", "PL", _seller, "carton_count")] = {
+        "rule": "本月出货数量 / DATA BASE round value",
+        "source_sheet": SHEET_DATA_BASE,
+        "source_field": "carton_qty",
+        "source_type": "computed",
+        "computed": True,
+    }
+    _PROFILE_LINE_OVERRIDES[("shefish", "PL", _seller, "cbm")] = {
+        "rule": "DATA BASE 单箱 CBM（或 L × W × H / 1,000,000）× 本月出货箱数",
+        "source_sheet": SHEET_DATA_BASE,
+        "source_field": "cbm",
+        "source_type": "computed",
+        "computed": True,
+    }
+
+
 def get_line_field_spec(field_name: str) -> LineFieldSpec:
     return LINE_FIELD_SPECS.get(
         field_name,
@@ -410,6 +443,13 @@ def _resolve_unit_price_spec(
                 source_field=column,
             )
     data_base_sheet = current_schema().sheet("DATA BASE").name
+    if price_source is not None and price_source.kind == "profile_column":
+        return replace(
+            spec,
+            source_sheet=data_base_sheet,
+            source_field=price_source.column,
+            rule=f"DATA BASE 的 {price_source.column} 列",
+        )
     if price_source is not None and price_source.kind == "options":
         date_text = price_source.line_date.isoformat() if price_source.line_date else "缺失"
         bp_text = (
@@ -443,9 +483,9 @@ def _resolve_unit_price_spec(
     category_name = CATEGORY_NAMES.get(category or -1, "")
     buyer = current_rules().buyer_for(seller) or ""
     price_seller = current_rules().price_segment(document_type, seller, buyer)[0]
-    configured_columns = current_rules().data_base_price_columns
-    if document_type in {"INVOICE", "PL"} and current_rules().invoice_data_base_price_columns:
-        configured_columns = current_rules().invoice_data_base_price_columns
+    configured_columns = current_schema().data_base_price_columns
+    if document_type in {"INVOICE", "PL"} and current_schema().invoice_data_base_price_columns:
+        configured_columns = current_schema().invoice_data_base_price_columns
     column = configured_columns.get(f"{price_seller}/{category_name}")
     if column:
         rule = f"DATA BASE 的 {column} 列"

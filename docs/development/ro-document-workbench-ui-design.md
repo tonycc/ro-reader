@@ -110,7 +110,7 @@ PF 会在这里显示两类非阻断 high warning：
 ### 6.1 两种作用域
 
 - `po`：PI、PO。
-- `invoice`：RO 的 INVOICE_PL，以及 PF 的独立 INVOICE、PL；SK/YM 额外支持 CI_PL。
+- `invoice`：RO 的 INVOICE_PL，以及 PF/SHEFISH 的独立 INVOICE、PL；RO 的 SK/YM 额外支持 CI_PL。
 
 切换作用域时分别恢复已选 PO/票据组和主体。
 
@@ -120,11 +120,13 @@ PF 会在这里显示两类非阻断 high warning：
 
 - `INVOICE_PL` 在前端并行请求 `INVOICE` 和 `PL`。
 - `CI_PL` 在前端并行请求 `CI` 和 `RO_PL`。
-- PF Profile 的 Invoice 与 PL 使用不同模板，预览页分别请求并展示单个文档，不使用 `INVOICE_PL` 合并页。
+- PF/SHEFISH Profile 的 Invoice 与 PL 使用不同模板，预览页分别请求并展示单个文档，不使用 `INVOICE_PL` 合并页。
+- SHEFISH GS PTE 的 PO 请求返回 `previews` 数组，分别展示 SK、YM 采购单；前端只展开后端结果，不拆分商品或计算组件价。Excel/PDF 导出仍提交一次 PO 请求，多文件由核心包打 ZIP。
+- 主体选项来自 `/api/profiles` 的 `sellers` 能力元数据；SHEFISH 不显示未提供模板的 YM 出具方，GS PO 中的 YM 采购单仍正常展示。
 
 每张单据独立保留 preview、errors 和 warnings；一张失败不应隐藏另一张结果。
 
-组合导出的物理文件由核心包决定：RO 的同模板 Invoice/PL 合并为双 Sheet workbook；PF 的两个独立模板分别生成并打 ZIP。导出页仍只表达“组合选择”，不判断模板是否相同；预览页按 Profile 的单据页面规则展示。预览页 Excel / PDF 两个导出按钮在请求进行中都禁用，但只有被点击的那个显示「导出中…」。
+组合导出的物理文件由核心包决定：RO 的同模板 Invoice/PL 合并为双 Sheet workbook；PF/SHEFISH 的两个独立模板分别生成并打 ZIP。导出页仍只表达“组合选择”，不判断模板是否相同；预览页按 Profile 的单据页面规则展示。预览页 Excel / PDF 两个导出按钮在请求进行中都禁用，但只有被点击的那个显示「导出中…」。
 
 ### 6.3 PreviewPayload
 

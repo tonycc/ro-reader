@@ -1,0 +1,94 @@
+document: INVOICE
+header:
+  invoice_no: F6
+  document_date: F7
+  incoterm: B6
+  payment_terms: B7
+  bill_to: B10
+  ship_to: F10
+  port_of_loading: B14
+  final_destination: B15
+  manufacturer: F14
+  manufacturer_address: F15
+  manufacturer_address_2: F16
+  eta: F8
+header_fixed:
+  incoterm: DDP USA
+  payment_terms: Net 60 days
+  bill_to: GLOBALSINO PTE.LTD.
+  ship_to: GLOBALSINO PTE.LTD.
+  port_of_loading: Qingdao, China
+  final_destination: USA
+  manufacturer: GUANGDONG GLOBALSINO OUTDOOR SPORTS EQUIPMENT LIMITED
+  manufacturer_address: 'NO.40 BAIJIA STREET '
+  manufacturer_address_2: HIGH-TECH INDUSTRIAL DEVELOPMENT ZONE QINGYUAN GUANGDONG
+    CHINA
+table_header_row: 18
+lines:
+  start_row: 19
+  style_source_row: 19
+  row_fixed:
+    A: CHINA
+  columns:
+    sap: B
+    upc: C
+    description: D
+    unit_price: E
+    quantity: F
+    amount: G
+totals:
+  quantity: F23
+  subtotal: G23
+  amount: G24
+  signature:
+    cell: F26
+    value_mode: fixed
+    value: Cindy
+  signature_date:
+    cell: F27
+    value_mode: current_date
+preview_content:
+  title: INVOICE
+  template_fields:
+    title: A4
+    seller_info:
+    - A1
+    - A2
+  terms_fields:
+  - incoterm
+  - payment_terms
+  - port_of_loading
+  - final_destination
+  column_labels:
+    A: Country of The Origin
+    sap: Item Number
+    upc: UPC
+    description: Description
+    unit_price: USD Unit Price
+    quantity: Quantity
+    amount: USD Amount
+  layout:
+    top:
+      left:
+      - seller_info
+      center:
+      - title
+      right: []
+    info:
+      left:
+      - incoterm
+      - payment_terms
+      - bill_to
+      - port_of_loading
+      - final_destination
+      right:
+      - invoice_no
+      - document_date
+      - eta
+      - ship_to
+      - manufacturer
+      - manufacturer_address
+      - manufacturer_address_2
+template_version: shefish_2026.1
+template: templates/sk/invoice.xlsx
+sheet: INVOICE format

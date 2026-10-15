@@ -30,6 +30,7 @@ class SheetConfig:
     first_data_row: int
     # 分组标签行（如 PF DATA BASE 行1 的价格组标签）；None 表示该 sheet 无分组行。
     group_header_row: int | None = None
+    required_fields: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -319,6 +320,9 @@ def load_base_schema(path: str | Path | None = None) -> BaseSchema:
                     header_row=int(cfg.get("header_row", 4)),
                     first_data_row=int(cfg.get("first_data_row", 5)),
                     group_header_row=int(group_row) if group_row is not None else None,
+                    required_fields=(
+                        tuple(cfg["required_fields"]) if "required_fields" in cfg else None
+                    ),
                 )
 
     # field aliases (three sheets)

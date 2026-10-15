@@ -8,7 +8,7 @@
 
 - `README.md`：安装、使用、CLI/API 和开发入口。
 - `docs/product/ro-document-generator-product-plan.md`：当前产品能力与范围。
-- `docs/product/multi-customer-workspace-design.md`：已确认的多客户工作区设计；`ro`、`pf` 两个 Profile 已接入，实施状态以对应实施方案为准。
+- `docs/product/multi-customer-workspace-design.md`：已确认的多客户工作区设计；`ro`、`pf`、`shefish` 三个 Profile 已接入。
 - `docs/development/ro-document-workbench-ui-design.md`：当前前端行为。
 - `docs/development/implementation-guide.md`：当前工程结构和修改流程。
 - `docs/development/multi-customer-workspace-implementation-plan.md`：多客户工作区 Phase 4.5–7 的实施记录与验收门槛；Phase 8 仍为目标级。
@@ -108,6 +108,7 @@ uv run pyinstaller packages/ro_workbench_launcher/ro-workbench.spec --noconfirm
 - 合成 fixture：`tests/fixtures/synthetic_base.xlsx`，由生成脚本创建并被 gitignore。
 - 真实业务 Excel 不入库。
 - PF 真实文件只用于本机只读验收；自动回归使用 `test_pf_snapshot.py` 和 `test_order_constraints.py` 的合成 workbook。
+- SHEFISH 真实文件只用于本机只读验收；自动回归使用 `tests/fixtures/generate_shefish_base.py` 生成合成 workbook。
 - 测试应覆盖 combo/rod/reel、Profile 实际 Sheet、主体过滤、RO SHIP QTY、PF 月度数量、多发票号、缺 SAP、客户 PO 先行、MOQ/整箱、模板插行、票据组、PDF 错误路径、Invoice/PL PDF 印章和 API session 边界。
 
 ## 文档维护

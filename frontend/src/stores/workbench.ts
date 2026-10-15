@@ -287,17 +287,23 @@ export const useWorkbench = defineStore("workbench", () => {
                 base_file: baseFile.value, po_no: selectedPo.value,
                 seller: requestSeller, invoice_no: selectedInvoiceNo.value, document,
               });
-          return toPreviewDocument(document, result, requestSeller);
+          return result.previews?.length
+            ? result.previews.map((preview, index) => ({
+                ...toPreviewDocument(document, { ...result, preview }, requestSeller),
+                id: `${requestSeller}-${document}-${index}`,
+              }))
+            : [toPreviewDocument(document, result, requestSeller)];
         } catch (e) {
-          return toFailedPreviewDocument(document, requestSeller, e);
+          return [toFailedPreviewDocument(document, requestSeller, e)];
         }
       }));
       if (requestSerial !== previewRequestSerial) return;
-      previewDocuments.value = results;
-      previewData.value = results.find((doc) => doc.preview)?.preview ?? null;
-      previewSourceEntries.value = results.flatMap((doc) => doc.preview?.source_entries ?? []);
-      blockingErrors.value = results.flatMap((doc) => doc.errors);
-      warnings.value = results.flatMap((doc) => doc.warnings);
+      const documents = results.flat();
+      previewDocuments.value = documents;
+      previewData.value = documents.find((doc) => doc.preview)?.preview ?? null;
+      previewSourceEntries.value = documents.flatMap((doc) => doc.preview?.source_entries ?? []);
+      blockingErrors.value = uniqueIssues(documents.flatMap((doc) => doc.errors));
+      warnings.value = uniqueIssues(documents.flatMap((doc) => doc.warnings));
     } catch (e) {
       if (requestSerial !== previewRequestSerial) return;
       previewError.value = e instanceof ApiError ? e.message : `预览失败：${e}`;
@@ -473,11 +479,12 @@ export const useWorkbench = defineStore("workbench", () => {
     if (scope === "invoice") {
       const entry = invoiceEntry.value;
       selectedSeller.value = selectedInvoiceSeller.value || entry?.sellers[0] || "";
-      const isSinglePfDocument = profileId.value === "pf"
+      const hasSeparateInvoices = profileId.value !== "ro";
+      const isSingleDocument = hasSeparateInvoices
         && (previewDocType.value === "INVOICE" || previewDocType.value === "PL");
-      previewDocType.value = isSinglePfDocument
+      previewDocType.value = isSingleDocument
         ? previewDocType.value
-        : profileId.value === "pf" ? "INVOICE" : "INVOICE_PL";
+        : hasSeparateInvoices ? "INVOICE" : "INVOICE_PL";
     } else {
       selectedSeller.value = selectedPoSeller.value || poEntry.value?.sellers[0] || "";
       previewDocType.value = ["PI", "PO"].includes(previewDocType.value) ? previewDocType.value : "PI";
@@ -565,6 +572,16 @@ export const useWorkbench = defineStore("workbench", () => {
       errors,
       warnings: [...result.warnings, ...softPreviewIssues],
     };
+  }
+
+  function uniqueIssues(issues: ValidationIssue[]): ValidationIssue[] {
+    const seen = new Set<string>();
+    return issues.filter(issue => {
+      const key = JSON.stringify([issue.kind, issue.code, issue.message, issue.sheet, issue.row, issue.field]);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }
 
   function toFailedPreviewDocument(document: string, seller: string, error: unknown): PreviewDocumentResult {

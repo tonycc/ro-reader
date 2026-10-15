@@ -1,0 +1,111 @@
+document: INVOICE
+header:
+  invoice_no: F6
+  document_date: F7
+  incoterm: B6
+  payment_terms: B7
+  bill_to: B10
+  ship_to: F10
+  port_of_loading: B15
+  final_destination: B16
+  manufacturer: F15
+  manufacturer_address: F16
+  manufacturer_address_2: F17
+  eta: F8
+  bill_to_line2: B11
+  bill_to_line3: B12
+  bill_to_line4: B13
+  ship_to_line2: F11
+  ship_to_line3: F12
+  ship_to_line4: F13
+header_fixed:
+  incoterm: DDP USA
+  payment_terms: Net 60 days
+  bill_to: 'She Fish '
+  ship_to: 'She Fish '
+  port_of_loading: Qingdao, China
+  final_destination: USA
+  manufacturer: E MAX SPORT PTE. LTD.
+  manufacturer_address: 8 KAKI BUKIT AVENUE 4
+  manufacturer_address_2: '#08-32,PREMIER @ KAKI BUKIT, SINGAPORE 415875'
+  bill_to_line2: The Fishing Brands, LLC
+  bill_to_line3: 2915 N Le Compte Rd
+  bill_to_line4: Springfield, MO 65803
+  ship_to_line2: The Fishing Brands, LLC
+  ship_to_line3: 2915 N Le Compte Rd
+  ship_to_line4: Springfield, MO 65803
+table_header_row: 19
+lines:
+  start_row: 20
+  style_source_row: 20
+  row_fixed:
+    A: CHINA
+  columns:
+    sap: B
+    upc: C
+    description: D
+    unit_price: E
+    quantity: F
+    amount: G
+totals:
+  quantity: F24
+  subtotal: G24
+  amount: G25
+  signature:
+    cell: F27
+    value_mode: fixed
+    value: Cindy
+  signature_date:
+    cell: F28
+    value_mode: current_date
+preview_content:
+  title: INVOICE
+  template_fields:
+    title: A4
+    seller_info:
+    - A1
+    - A2
+  terms_fields:
+  - incoterm
+  - payment_terms
+  - port_of_loading
+  - final_destination
+  column_labels:
+    A: Country of The Origin
+    sap: Item Number
+    upc: UPC
+    description: Description
+    unit_price: USD Unit Price
+    quantity: Quantity
+    amount: USD Amount
+  layout:
+    top:
+      left:
+      - seller_info
+      center:
+      - title
+      right: []
+    info:
+      left:
+      - incoterm
+      - payment_terms
+      - bill_to
+      - bill_to_line2
+      - bill_to_line3
+      - bill_to_line4
+      - port_of_loading
+      - final_destination
+      right:
+      - invoice_no
+      - document_date
+      - eta
+      - ship_to
+      - ship_to_line2
+      - ship_to_line3
+      - ship_to_line4
+      - manufacturer
+      - manufacturer_address
+      - manufacturer_address_2
+template_version: shefish_2026.1
+template: templates/emax/invoice.xlsx
+sheet: INVOICE format

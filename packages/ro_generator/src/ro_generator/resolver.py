@@ -324,7 +324,7 @@ def _build_product_index_from_rows(
         prices: dict[str, Decimal] = {}
         cat_name = CATEGORY_NAMES.get(category, "")
         if cat_name:
-            for price_key, col_name in active_rules.data_base_price_columns.items():
+            for price_key, col_name in active_schema.data_base_price_columns.items():
                 seller_cat = price_key.split("/")
                 if len(seller_cat) == 2 and seller_cat[1] == cat_name:
                     p = _decimal_from_row(row, col_name)
@@ -332,7 +332,7 @@ def _build_product_index_from_rows(
                         prices[price_key] = p
 
         invoice_prices: dict[str, Decimal] = {}
-        for price_key, col_name in active_rules.invoice_data_base_price_columns.items():
+        for price_key, col_name in active_schema.invoice_data_base_price_columns.items():
             p = _decimal_from_row(row, col_name)
             if p is not None:
                 invoice_prices[price_key] = p
@@ -345,7 +345,7 @@ def _build_product_index_from_rows(
                 data_base_prices[col_name] = p
 
         component_prices: dict[str, Decimal] = {}
-        for price_key, col_name in active_rules.data_base_component_price_columns.items():
+        for price_key, col_name in active_schema.data_base_component_price_columns.items():
             p = _decimal_from_row(row, col_name)
             if p is not None:
                 component_prices[price_key] = p
@@ -525,8 +525,8 @@ def _resolve_row(
                 message=f"SAP {sap!r} 在所有链段下均无可用价格",
                 sheet=_db_sheet(),
                 row=None,
-                field=next(iter(current_rules().data_base_price_columns.values()))
-                if current_rules().data_base_price_columns
+                field=next(iter(current_schema().data_base_price_columns.values()))
+                if current_schema().data_base_price_columns
                 else "price",
                 severity="high",
             )
@@ -630,6 +630,10 @@ def _resolve_row(
             item_line_no=item_line_no,
             field_name=_cp("document_date"),
         ),
+        customer_po_upc=_str_or_none(qty_row.get(_cp("upc"))) if qty_row else None,
+        po_record_upc=_str_or_none(row.get(_po("upc"))),
+        pi_no=_str_or_none(row.get(_po("pi_no"))),
+        eta=_date_or_none(row.get(_po("eta"))),
         sk_ym_invoice_no=_str_or_none(row.get(_po("sk_ym_invoice_no"))),
         reel_sap=_str_or_none(row.get(_po("reel_sap"))) or product.reel_sap,
         reel_description=_str_or_none(row.get(_po("reel_description"))) or product.reel_description,
@@ -988,7 +992,7 @@ def _collect_po_record_prices(row: dict[str, object]) -> dict[tuple[str, str], D
     """从当前 PO record 行读取按主体聚合的单价（SK/YM 共用同一列）。"""
     prices: dict[tuple[str, str], Decimal] = {}
     rules = current_rules()
-    for seller, col_name in rules.po_price_columns.items():
+    for seller, col_name in current_schema().price_columns.items():
         buyer = rules.buyer_for(seller)
         if buyer is None:
             continue

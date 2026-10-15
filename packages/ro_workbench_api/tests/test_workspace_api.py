@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, cast
@@ -60,13 +62,49 @@ def test_profiles_and_first_bootstrap() -> None:
     profiles = _json(client.get("/api/profiles"))
     assert profiles["profiles"][0]["id"] == "ro"
     assert profiles["profiles"][0]["available"] is True
-    assert [profile["id"] for profile in profiles["profiles"]] == ["ro", "pf"]
+    assert [profile["id"] for profile in profiles["profiles"]] == ["ro", "pf", "shefish"]
     assert profiles["profiles"][1]["description"] == "PF 单据流程（含 MOQ 与整箱提醒）"
 
     bootstrap = _json(client.get("/api/bootstrap"))
     assert bootstrap["needs_setup"] is True
     assert bootstrap["current_workspace_id"] is None
     assert bootstrap["session_id"] is None
+
+
+def test_shefish_workspace_preview_export_and_bootstrap(tmp_path: Path) -> None:
+    base = tmp_path / "shefish.xlsx"
+    subprocess.run(
+        [sys.executable, str(FIXTURE.with_name("generate_shefish_base.py")), str(base)], check=True
+    )
+    created = client.post(
+        "/api/workspaces",
+        json={
+            "display_name": "SHEFISH",
+            "profile_id": "shefish",
+            "base_file": str(base),
+        },
+    )
+    assert created.status_code == 200, created.text
+    workspace_id = created.json()["id"]
+    activated = client.post(f"/api/workspaces/{workspace_id}/activate")
+    assert activated.status_code == 200, activated.text
+    payload = activated.json()
+    assert payload["workspace"]["profile_id"] == "shefish"
+    headers = {"X-Session-Id": payload["session_id"]}
+    request = {"base_file": str(base), "po_no": "TEST-PO-01", "seller": "GS PTE", "document": "PO"}
+    preview = client.post("/api/po/TEST-PO-01/preview", json=request, headers=headers)
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["status"] == "success"
+    assert len(preview.json()["previews"]) == 2
+    assert preview.json()["previews"][1]["lines"][0]["unit_price"] == "$4.00"
+    exported = client.post("/api/po/TEST-PO-01/export", json=request, headers=headers)
+    assert exported.status_code == 200, exported.text
+    assert exported.json()["status"] == "success", exported.text
+    assert len(exported.json()["files"]) == 2
+    assert exported.json()["output_file"].endswith(".zip")
+    bootstrap = client.get("/api/bootstrap").json()
+    assert bootstrap["current_workspace_id"] == workspace_id
+    assert bootstrap["session_id"] == payload["session_id"]
 
 
 def test_workspace_crud_and_path_validation() -> None:

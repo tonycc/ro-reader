@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick } from "vue";
 import { useWorkbench } from "../../stores/workbench";
+import { useWorkspace } from "../../stores/workspace";
 import PreviewDocumentPanel from "./PreviewDocumentPanel.vue";
 import type {
   PreviewSourceEntry,
@@ -8,6 +9,7 @@ import type {
 } from "../../stores/api";
 
 const wb = useWorkbench();
+const workspace = useWorkspace();
 const showSourceSummary = ref(false);
 
 const popoverVisible = ref(false);
@@ -16,7 +18,10 @@ const popoverStyle = ref<Record<string, string>>({});
 const activeFieldEl = ref<HTMLElement | null>(null);
 const issuePanelOpen = ref(false);
 
-const sellers = ["SK", "YM", "GS PTE", "EMAX PTE"] as const;
+const sellers = computed(() => {
+  const available = workspace.profiles.find(profile => profile.id === wb.profileId)?.sellers;
+  return ["SK", "YM", "GS PTE", "EMAX PTE"].filter(seller => !available || available.includes(seller));
+});
 const docTypes = computed(() => {
   if (wb.previewScope !== "invoice") {
     return [
@@ -25,9 +30,9 @@ const docTypes = computed(() => {
     ];
   }
 
-  // PF 的 Invoice 与 PL 使用不同模板，预览时保持两个独立页面；RO
+  // 新客户的 Invoice 与 PL 使用不同模板，预览时保持两个独立页面；RO
   // 仍保留历史上的组合预览入口，避免改变既有工作流。
-  if (wb.profileId === "pf") {
+  if (wb.profileId !== "ro") {
     return [
       { key: "INVOICE" as const, label: "Invoice" },
       { key: "PL" as const, label: "PL" },

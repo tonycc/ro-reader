@@ -49,6 +49,15 @@ _SPLIT_CONTINUATION_FIELDS: Final[frozenset[str]] = frozenset(
 )
 
 HEADER_FIELD_SPECS: Final[dict[str, HeaderFieldSpec]] = {
+    "eta": HeaderFieldSpec(
+        label="ETA to warehouse",
+        source_type="base_field",
+        source_sheet=SHEET_PO_RECORD,
+        source_field="eta",
+        rule="出货记录的 ETA，按发票号筛选",
+        model_attr="eta",
+        render_keys=("eta",),
+    ),
     "invoice_no": HeaderFieldSpec(
         label="Invoice No.",
         source_type="base_field",
@@ -465,6 +474,30 @@ _PROFILE_HEADER_OVERRIDES: Final[dict[tuple[str, str, str, str], HeaderFieldOver
         "model_attr": "manufacturer_company_address_2",
     },
 }
+
+
+for _seller in ("GS PTE", "EMAX PTE", "SK"):
+    for _document in ("PI", "PO"):
+        _PROFILE_HEADER_OVERRIDES[("shefish", _document, _seller, "document_date")] = {
+            "source_type": "base_field",
+            "source_sheet": SHEET_CUSTOMER_PO,
+            "source_field": "document_date",
+            "rule": "New PO 的 PO Issue Date",
+            "model_attr": "document_date",
+        }
+    _PROFILE_HEADER_OVERRIDES[("shefish", "PI", _seller, "pi_no")] = {
+        "source_sheet": SHEET_PO_RECORD if _seller == "EMAX PTE" else SHEET_CUSTOMER_PO,
+        "source_field": "pi_no" if _seller == "EMAX PTE" else "purchasing_document",
+        "rule": "PO RECORD 2026 的 PI#，缺失时阻断" if _seller == "EMAX PTE" else "New PO 的 PO#",
+        "model_attr": "pi_no",
+    }
+    for _document in ("INVOICE", "PL"):
+        _PROFILE_HEADER_OVERRIDES[("shefish", _document, _seller, "invoice_no")] = {
+            "source_sheet": SHEET_PO_RECORD,
+            "source_field": "inv_no",
+            "rule": "PO RECORD 2026 的 INV# 原值",
+            "model_attr": "invoice_no",
+        }
 
 
 def resolve_header_field_spec(

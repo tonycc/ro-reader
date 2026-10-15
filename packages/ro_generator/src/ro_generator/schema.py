@@ -103,6 +103,11 @@ def required_headers_for(
             active.field("客户PO", "order_quantity"),
         ),
     }
+    for logical_name, config in active.sheets.items():
+        if config.required_fields is not None:
+            headers[logical_name] = tuple(
+                active.field(logical_name, key) for key in config.required_fields
+            )
     # options 价格版本表：必需表头为全部 "{卖方前缀}-{单据后缀}" 键列。
     options_key = active.price_options.sheet if active.price_options is not None else None
     if options_key and options_key in active.sheets and active.price_options is not None:

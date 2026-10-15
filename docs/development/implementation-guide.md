@@ -12,6 +12,7 @@ packages/
 frontend/                Vue 3 工作台
 customer_profiles/ro/    RO Profile 的 Excel 模板、mapping、base schema
 customer_profiles/pf/    PF Profile 的 Excel 模板、mapping、base schema
+customer_profiles/shefish/ SHEFISH Profile 的 Excel 模板、mapping、base schema
 tests/fixtures/          合成 base 生成脚本
 docs/                    当前产品、UI、工程和字段规则
 .github/workflows/       Python、前端/E2E、启动器 CI
@@ -146,7 +147,9 @@ customer_profiles/ro/templates/<seller>/
     ro_pl.yaml       # 仅 sk/ym
 ```
 
-PF 使用相同目录层级，但只有 GS/EMAX 的 PI/PO/Invoice/PL 及 SK/YM PI。当前 RO 为 12 个 workbook/18 份 mapping，PF 为 10 个 workbook/10 份 mapping。
+PF 使用相同目录层级，但只有 GS/EMAX 的 PI/PO/Invoice/PL 及 SK/YM PI。当前 RO 为 12 个 workbook/18 份 mapping，PF 为 10 个 workbook/10 份 mapping，SHEFISH 为 12 个 workbook/12 份 mapping，合计 34 个 workbook、40 份 mapping。
+
+SHEFISH 的 GS PO 用 `po.yaml` / `po_ym.yaml` 对应 SK/YM 模板。Profile 的 `document_variants` 返回模板键、文件后缀和取价工厂，generator 统一用于预览和导出；多文件即使请求 `xlsx` 或 `pdf` 也返回 ZIP。`PreviewResult.preview` 保留首份以兼容旧调用方，`previews` 提供完整列表，API 只序列化该结果。`/api/profiles` 额外返回 `sellers` 供 UI 展示可用主体。
 
 ### 8.1 修改模板
 
@@ -293,3 +296,5 @@ uv run python scripts/verify_release_metadata.py
 - [多客户工作区实施方案](multi-customer-workspace-implementation-plan.md)
 
 Phase 7 已完成 PF schema、规则、10 份模板/mapping、客户 PO 先行、月度出货、原始发票号、MOQ/整箱提醒、分离 Invoice/PL 打包和真实文件验收。PF 原始业务目录只用于核对，运行时资产位于 `customer_profiles/pf/`；用户工作区应绑定具体 base `.xlsx` 文件。
+
+SHEFISH 已作为第三个 Profile 接入，运行时资产位于 `customer_profiles/shefish/`。模板副本移除了样例订单、公式、外链与字段批注；原始 base 和模板保持只读。自动回归使用 `generate_shefish_base.py` 生成合成数据，`test_shefish.py` 覆盖价格/月份/UPC、双采购单、模板插行和原始发票号，`workspace-http.spec.ts` 覆盖工作区创建、双预览、打包导出和刷新恢复。

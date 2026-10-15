@@ -38,7 +38,7 @@ from ro_generator.resolver import (
     resolve_po_rows,
 )
 from ro_generator.schema import SELLERS
-from ro_generator.seller_filter import factory_seller_for_line, has_factory_categories, int_or_none
+from ro_generator.seller_filter import factory_sellers_for_line, has_factory_categories, int_or_none
 from ro_generator.validator import validate_workbook_structure
 from ro_generator.workbook_reader import ROW_NUMBER_KEY, SheetData, WorkbookReader
 
@@ -526,7 +526,7 @@ def _exportable_documents_for_seller(
 def _lines_for_invoice_options(lines: tuple[OrderLine, ...], seller: str) -> tuple[OrderLine, ...]:
     if seller not in {"SK", "YM"} or not has_factory_categories(lines):
         return lines
-    return tuple(line for line in lines if factory_seller_for_line(line) == seller)
+    return tuple(line for line in lines if seller in factory_sellers_for_line(line))
 
 
 # —————————————————————————————————————
