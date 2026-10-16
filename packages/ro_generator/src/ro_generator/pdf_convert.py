@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from xml.etree import ElementTree
 
 from ro_generator.errors import PdfConversionError, SofficeNotFoundError
 
@@ -69,6 +70,36 @@ def find_soffice() -> Path | None:
     return None
 
 
+def _conversion_env(profile_dir: Path) -> dict[str, str] | None:
+    """让 macOS 的 headless Fontconfig 找到本机字体，配置/缓存只存在于本次转换。
+
+    部分 LibreOffice macOS 版本的无头后端只发现自带拉丁字体，中文会成为
+    空白字形。显式的 FONTCONFIG_FILE 由使用者负责，其他平台沿用原环境。
+    """
+    if sys.platform != "darwin" or os.environ.get("FONTCONFIG_FILE"):
+        return None
+
+    config = ElementTree.Element("fontconfig")
+    # Fontconfig 优先使用第一个可写 cachedir，先声明本次临时目录。
+    ElementTree.SubElement(config, "cachedir").text = str(profile_dir / "font-cache")
+    # 保留显式 FONTCONFIG_PATH 下的匹配规则（若有），不改写用户配置。
+    for directory in os.environ.get("FONTCONFIG_PATH", "").split(os.pathsep):
+        if directory:
+            ElementTree.SubElement(config, "include", ignore_missing="yes").text = str(
+                Path(directory).resolve() / "fonts.conf"
+            )
+    for font_dir in (
+        Path("/System/Library/Fonts"),
+        Path("/Library/Fonts"),
+        Path.home() / "Library" / "Fonts",
+    ):
+        if font_dir.is_dir():
+            ElementTree.SubElement(config, "dir").text = str(font_dir)
+    config_path = profile_dir / "fonts.conf"
+    ElementTree.ElementTree(config).write(config_path, encoding="utf-8", xml_declaration=True)
+    return {**os.environ, "FONTCONFIG_FILE": str(config_path)}
+
+
 def convert_to_pdf(xlsx_path: str | Path, *, timeout: float = _CONVERT_TIMEOUT_SECONDS) -> Path:
     """用 LibreOffice 无头模式把 .xlsx 转成同名 .pdf，返回 pdf 路径。
 
@@ -94,7 +125,7 @@ def convert_to_pdf(xlsx_path: str | Path, *, timeout: float = _CONVERT_TIMEOUT_S
             str(soffice),
             "--headless",
             "--nologo",
-            "--nofirststartwizard",
+            "--norestore",
             f"-env:UserInstallation={Path(profile_dir).as_uri()}",
             "--convert-to",
             "pdf",
@@ -103,10 +134,22 @@ def convert_to_pdf(xlsx_path: str | Path, *, timeout: float = _CONVERT_TIMEOUT_S
             str(xlsx_path),
         ]
         try:
-            proc = subprocess.run(cmd, capture_output=True, timeout=timeout, check=False)
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                timeout=timeout,
+                check=False,
+                env=_conversion_env(Path(profile_dir)),
+            )
         except subprocess.TimeoutExpired as exc:
+            recovery_hint = (
+                "；请先手动打开 LibreOffice，完成首次启动或权限确认后重试。"
+                "若仍超时，请检查 LibreOffice 是否可正常打开该 Excel 文件。"
+                if sys.platform == "darwin"
+                else ""
+            )
             raise PdfConversionError(
-                f"LibreOffice 转换超时（>{timeout:.0f}s）：{xlsx_path.name}"
+                f"LibreOffice 转换超时（>{timeout:.0f}s）：{xlsx_path.name}{recovery_hint}"
             ) from exc
         except OSError as exc:
             raise PdfConversionError(f"无法启动 LibreOffice：{exc}") from exc

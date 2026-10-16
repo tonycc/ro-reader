@@ -10,13 +10,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from math import isfinite
 from pathlib import Path
 from typing import Final, cast
 
 import yaml
 from openpyxl import load_workbook
-from openpyxl.utils import column_index_from_string
+from openpyxl.utils import column_index_from_string, get_column_letter
 from openpyxl.utils.cell import coordinate_from_string
+from openpyxl.worksheet.cell_range import CellRange
 from openpyxl.worksheet.worksheet import Worksheet
 
 from ro_generator.errors import MappingError, TemplateError
@@ -72,6 +74,8 @@ class CostBreakdownSection:
     style_source_row: int
     columns: dict[str, str]
     reserved_rows: int = 1
+    caption_range: str | None = None
+    header_height: float | None = None
 
 
 @dataclass(frozen=True)
@@ -80,6 +84,8 @@ class CellStyles:
 
     bold: tuple[str, ...] = ()
     underline: tuple[str, ...] = ()
+    # 单行抬头范围 -> 最小行高（pt）；合并范围并换行，避免文本溢出打印区。
+    wrapped_header_ranges: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -331,11 +337,29 @@ def _parse_cost_breakdown_section(
                 f"cost_breakdown.columns.{key} {letter!r} 不是合法列字母：{yaml_path}"
             ) from exc
         columns[key] = letter
+    caption_range = section.get("caption_range")
+    if caption_range is not None:
+        try:
+            if not isinstance(caption_range, str):
+                raise ValueError("not a range")
+            caption_range = str(CellRange(caption_range.strip().upper()))
+        except (TypeError, ValueError) as exc:
+            raise MappingError(f"cost_breakdown.caption_range 无效范围：{yaml_path}") from exc
+    header_height = section.get("header_height")
+    if header_height is not None and (
+        isinstance(header_height, bool)
+        or not isinstance(header_height, (int, float))
+        or not isfinite(header_height)
+        or not 0 < header_height <= 409.5
+    ):
+        raise MappingError(f"cost_breakdown.header_height 必须是有效行高：{yaml_path}")
     return CostBreakdownSection(
         start_row=start_row,
         style_source_row=style_source_row,
         columns=columns,
         reserved_rows=reserved_rows,
+        caption_range=caption_range,
+        header_height=float(header_height) if header_height is not None else None,
     )
 
 
@@ -461,6 +485,8 @@ def _validate_against_template(
         max_row = ws.max_row
         max_col = ws.max_column
 
+        _validate_wrapped_header_ranges(mapping, ws)
+
         # 1. header 单元格
         for field_name, addr in mapping.header.items():
             _check_cell_reference(addr, max_row, max_col, f"header.{field_name}")
@@ -511,6 +537,9 @@ def _validate_against_template(
         for field_name, addr in mapping.notes.items():
             _check_cell_reference(addr, max_row, max_col, f"notes.{field_name}")
 
+        if mapping.cost_breakdown is not None:
+            _validate_cost_breakdown_layout(mapping, ws)
+
         # 6. 可选表格表头行
         for r in mapping.table_header_row:
             if r > max_row:
@@ -531,6 +560,68 @@ def _validate_against_template(
         )
     finally:
         wb.close()
+
+
+def _validate_cost_breakdown_layout(mapping: TemplateMapping, ws: Worksheet) -> None:
+    section = mapping.cost_breakdown
+    assert section is not None
+    if section.header_height is not None and not 1 < section.start_row <= ws.max_row:
+        raise MappingError("cost_breakdown 表头必须位于模板内")
+    if section.caption_range is None:
+        return
+    region = CellRange(section.caption_range)
+    # 说明必须在主表/合计之后、成本表头之前；只合并说明右侧的空白格。
+    footer_row = max(
+        [mapping.lines.start_row, mapping.lines.style_source_row]
+        + [coordinate_from_string(spec.cell)[1] for spec in mapping.totals.values()]
+    )
+    if (
+        region.title is not None
+        or region.min_row != region.max_row
+        or not footer_row < region.min_row < section.start_row - 1
+        or region.max_row > ws.max_row
+        or region.max_col > ws.max_column
+    ):
+        raise MappingError("cost_breakdown.caption_range 必须是成本表头之前的单行说明范围")
+    anchor = f"{get_column_letter(region.min_col)}{region.min_row}"
+    if not isinstance(ws[anchor].value, str) or not ws[anchor].value.strip():
+        raise MappingError("cost_breakdown.caption_range 左上角必须有说明文案")
+    for merged in ws.merged_cells.ranges:
+        # 该区域要在主表扩行后才合并，不能保留模板中不会随插行移动的旧合并区。
+        if not region.isdisjoint(merged):
+            raise MappingError(f"cost_breakdown.caption_range 合并范围冲突：{merged}")
+    occupied = set(mapping.header.values()) | set(mapping.notes.values())
+    for row, col in region.cells:
+        cell = ws.cell(row, col)
+        if cell.coordinate in occupied or (cell.coordinate != anchor and cell.value is not None):
+            raise MappingError(f"cost_breakdown.caption_range 会覆盖单元格：{cell.coordinate}")
+
+
+def _validate_wrapped_header_ranges(mapping: TemplateMapping, ws: Worksheet) -> None:
+    """只允许合并抬头值后的空白格，不覆盖模板内容或其他映射字段。"""
+    occupied = set(mapping.header.values()) | set(mapping.notes.values())
+    occupied.update(spec.cell for spec in mapping.totals.values())
+    regions = [CellRange(ref) for ref in mapping.style.wrapped_header_ranges]
+    for region in regions:
+        anchor = f"{get_column_letter(region.min_col)}{region.min_row}"
+        if (
+            region.title is not None
+            or region.min_row != region.max_row
+            or region.max_row >= mapping.lines.start_row
+            or region.max_row > ws.max_row
+            or region.max_col > ws.max_column
+            or anchor not in mapping.header.values()
+        ):
+            raise MappingError(f"style.wrapped_header_ranges 必须是模板内的单行抬头范围：{region}")
+        for other in (*ws.merged_cells.ranges, *regions):
+            if region != other and not region.isdisjoint(other):
+                raise MappingError(f"style.wrapped_header_ranges 合并范围冲突：{region} / {other}")
+        for row, col in region.cells:
+            cell = ws.cell(row, col)
+            if cell.coordinate != anchor and (
+                cell.value is not None or cell.coordinate in occupied
+            ):
+                raise MappingError(f"style.wrapped_header_ranges 会覆盖单元格：{cell.coordinate}")
 
 
 def _resolve_preview_header_labels(
@@ -938,12 +1029,31 @@ def _parse_style(raw: object, yaml_path: Path) -> CellStyles:
     style:
       bold: [A1, B4]        # 加粗的单元格地址
       underline: [H6, F6]   # 下划线的单元格地址
+      wrapped_header_ranges: {G11:I11: 30}  # 合并/换行，最小行高 pt
     """
     if not isinstance(raw, dict):
         return CellStyles()
     bold = _parse_cell_list(raw.get("bold"), yaml_path)
     underline = _parse_cell_list(raw.get("underline"), yaml_path)
-    return CellStyles(bold=tuple(bold), underline=tuple(underline))
+    wrapped = raw.get("wrapped_header_ranges", {})
+    if not isinstance(wrapped, dict):
+        raise MappingError(f"style.wrapped_header_ranges 必须是 dict：{yaml_path}")
+    ranges: dict[str, float] = {}
+    for ref, height in wrapped.items():
+        if (
+            not isinstance(ref, str)
+            or isinstance(height, bool)
+            or not isinstance(height, (int, float))
+            or not isfinite(height)
+            or not 0 < height <= 409.5
+        ):
+            raise MappingError(f"style.wrapped_header_ranges 需要范围和有效行高：{yaml_path}")
+        try:
+            region = CellRange(ref.strip().upper())
+        except (TypeError, ValueError) as exc:
+            raise MappingError(f"style.wrapped_header_ranges 无效范围：{ref}") from exc
+        ranges[str(region)] = float(height)
+    return CellStyles(bold=tuple(bold), underline=tuple(underline), wrapped_header_ranges=ranges)
 
 
 def _parse_cell_list(raw: object, yaml_path: Path) -> list[str]:

@@ -29,6 +29,7 @@ from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.cell import coordinate_from_string
 from openpyxl.workbook.workbook import Workbook
+from openpyxl.worksheet.cell_range import CellRange
 from openpyxl.worksheet.properties import PageSetupProperties
 from openpyxl.worksheet.worksheet import Worksheet
 
@@ -203,6 +204,15 @@ _PLACEHOLDER_LABELS: dict[str, str] = {
 
 def _write_styles(ws: Worksheet, mapping: TemplateMapping) -> None:
     """按 mapping.style 声明应用单元格样式。"""
+    for region, min_height in mapping.style.wrapped_header_ranges.items():
+        ws.merge_cells(region)
+        cell = ws[region.split(":")[0]]
+        alignment = copy(cell.alignment)
+        alignment.wrap_text = True
+        alignment.shrink_to_fit = False
+        cell.alignment = alignment
+        dimension = ws.row_dimensions[cell.row]
+        dimension.height = max(dimension.height or 0, min_height)
     for addr in mapping.style.bold:
         cell = ws[addr]
         cell.font = Font(
@@ -567,6 +577,21 @@ def _write_cost_breakdown(
     style_source_row = section.style_source_row + row_offset
     reserved_rows = section.reserved_rows
     columns = section.columns
+
+    # 主表扩行已完成，说明/表头按实际偏移定位。不要提前合并：insert_rows
+    # 不会平移 merged_cells，提前合并会使说明与成本表头错位。
+    if section.caption_range is not None:
+        region = CellRange(section.caption_range)
+        region.shift(row_shift=row_offset)
+        ws.merge_cells(str(region))
+        caption = ws.cell(region.min_row, region.min_col)
+        alignment = copy(caption.alignment)
+        alignment.wrap_text = True
+        alignment.shrink_to_fit = False
+        caption.alignment = alignment  # type: ignore[assignment]
+    if section.header_height is not None:
+        dimension = ws.row_dimensions[start_row - 1]
+        dimension.height = max(dimension.height or 0, section.header_height)
 
     def clear_row(row: int) -> None:
         for column in columns.values():

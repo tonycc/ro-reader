@@ -1,5 +1,5 @@
 document: INVOICE
-template_version: pf_2026.2
+template_version: pf_2026.4
 template: templates/gs/invoice.xlsx
 sheet: Sheet1
 header:
@@ -35,6 +35,9 @@ header_fixed:
   final_destination: USA
   manufacturer_code: "134102"
 table_header_row: 19
+style:
+  wrapped_header_ranges:
+    G11:H11: 42
 lines:
   start_row: 20
   style_source_row: 20
@@ -49,6 +52,8 @@ lines:
     quantity: G
     amount: H
 cost_breakdown:
+  caption_range: A29:H29
+  header_height: 30
   start_row: 31
   style_source_row: 31
   reserved_rows: 1

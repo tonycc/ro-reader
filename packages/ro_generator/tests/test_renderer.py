@@ -17,6 +17,7 @@ from openpyxl.utils import column_index_from_string
 from openpyxl.utils.cell import coordinate_from_string
 from openpyxl.worksheet.worksheet import Worksheet
 from ro_generator.document_model import (
+    DocumentCostBreakdownLine,
     DocumentModel,
     build_invoice_model,
     build_pi_model,
@@ -25,6 +26,7 @@ from ro_generator.document_model import (
 )
 from ro_generator.errors import TemplateError
 from ro_generator.models import OrderLine, Product
+from ro_generator.pdf_convert import convert_to_pdf, find_soffice
 from ro_generator.renderer import _insert_styled_row, render_document
 from ro_generator.schema import (
     ENTITY_EMAX_PTE,
@@ -43,6 +45,7 @@ SK_PL_MAPPING = RO_TEMPLATES / "sk" / "mappings" / "pl.yaml"
 EMAX_PI_MAPPING = RO_TEMPLATES / "emax" / "mappings" / "pi.yaml"
 EMAX_PO_MAPPING = RO_TEMPLATES / "emax" / "mappings" / "po.yaml"
 EMAX_PL_MAPPING = RO_TEMPLATES / "emax" / "mappings" / "pl.yaml"
+PF_GS_MAPPINGS = REPO_ROOT / "customer_profiles" / "pf" / "templates" / "gs" / "mappings"
 
 
 def _print_area_end(ws: Worksheet) -> str:
@@ -50,6 +53,119 @@ def _print_area_end(ws: Worksheet) -> str:
     assert raw, "rendered sheet must declare a print area"
     end = str(raw).split("!")[-1].replace("$", "").split(":")[-1]
     return end
+
+
+@pytest.mark.parametrize("document,region", [("pi", "G11:I11"), ("invoice", "G11:H11")])
+def test_pf_gs_ship_to_address_wraps_inside_print_area(tmp_path, document, region):
+    mapping = load_template_mapping(PF_GS_MAPPINGS / f"{document}.yaml")
+    # 三行明细也验证插行不会破坏抬头布局。
+    model = build_three_line_invoice()
+    model = replace(model, document_type=mapping.document)
+    result = render_document(model, mapping, tmp_path / f"{document}.xlsx")
+    workbook = load_workbook(result.output_path)
+    try:
+        sheet = workbook[mapping.sheet]
+        assert region in sheet.merged_cells
+        assert sheet["G11"].alignment.wrap_text is True
+        assert sheet.row_dimensions[11].height >= 30
+        assert sheet["G11"].value == mapping.header_fixed["ship_to_line2"]
+        assert sheet["G12"].value == "SINGAPORE 415875"
+        last_column, _ = coordinate_from_string(_print_area_end(sheet))
+        assert column_index_from_string(last_column) >= column_index_from_string(
+            region.split(":")[1][0]
+        )
+    finally:
+        workbook.close()
+
+
+@pytest.mark.skipif(find_soffice() is None, reason="本机未安装 LibreOffice，跳过真实转换")
+@pytest.mark.parametrize("document", ["pi", "invoice"])
+def test_pf_gs_pdf_contains_both_complete_street_addresses(tmp_path, document):
+    from pypdf import PdfReader
+
+    mapping = load_template_mapping(PF_GS_MAPPINGS / f"{document}.yaml")
+    model = replace(build_three_line_invoice(), document_type=mapping.document)
+    result = render_document(model, mapping, tmp_path / f"{document}.xlsx")
+    reader = PdfReader(convert_to_pdf(result.output_path))
+    assert len(reader.pages) == 1
+    extracted = reader.pages[0].extract_text()
+    text = "".join(extracted.split())
+    # 两个区域分别完整出现，不能只因 Bill to 完整就漏过 Ship to 截断。
+    address = "".join(mapping.header_fixed["ship_to_line2"].split())
+    assert text.count(address) == 2
+    # 文本提取不能排除 PDF 裁切：另以 workbook 布局断言及浏览器下载的渲染图验收。
+
+
+def _pf_invoice_with_costs(line_count: int, component_count: int) -> DocumentModel:
+    model = build_overflowing_invoice()
+    lines = model.lines[:line_count]
+    assert all(line.amount is not None for line in lines)
+    return replace(
+        model,
+        lines=lines,
+        total_quantity=sum((line.quantity for line in lines), Decimal(0)),
+        total_amount=sum((line.amount for line in lines if line.amount is not None), Decimal(0)),
+        cost_breakdown=tuple(
+            DocumentCostBreakdownLine(
+                po_no=model.po_no,
+                item_line_no=str(10 + (index // 2) * 10),
+                item_number=f"21-4464{index // 2}",
+                description=f"CB{index // 2}00.B2 - {'RODS' if index % 2 == 0 else 'REELS'}",
+                unit_price=Decimal("20.8") if index % 2 == 0 else Decimal("12"),
+                component="RODS" if index % 2 == 0 else "REELS",
+            )
+            for index in range(component_count)
+        ),
+    )
+
+
+@pytest.mark.parametrize("line_count,component_count", [(1, 0), (3, 2), (10, 20)])
+def test_pf_gs_cost_caption_and_headers_follow_inserted_rows(tmp_path, line_count, component_count):
+    mapping = load_template_mapping(PF_GS_MAPPINGS / "invoice.yaml")
+    model = _pf_invoice_with_costs(line_count, component_count)
+    result = render_document(model, mapping, tmp_path / "invoice.xlsx")
+    workbook = load_workbook(result.output_path)
+    try:
+        sheet = workbook[mapping.sheet]
+        offset = line_count - 1
+        caption_row, header_row, cost_row = 29 + offset, 30 + offset, 31 + offset
+        assert f"A{caption_row}:H{caption_row}" in sheet.merged_cells
+        assert sheet[f"A{caption_row}"].value == mapping.preview_content["cost_breakdown"]["title"]
+        assert sheet[f"A{caption_row}"].alignment.wrap_text is True
+        assert sheet.row_dimensions[caption_row].height >= 27.75
+        assert sheet.row_dimensions[header_row].height >= 30
+        assert sheet[f"C{header_row}"].value == "PO item Line Number"
+        assert sheet[f"F{header_row}"].value == "USD unit price breakdown"
+        assert sheet[f"H{22 + offset}"].value == float(model.total_amount)
+        for index, item in enumerate(model.cost_breakdown):
+            assert sheet[f"E{cost_row + index}"].value == item.description
+            assert sheet[f"F{cost_row + index}"].value == float(item.unit_price)
+        if component_count == 0:
+            assert sheet[f"E{cost_row}"].value is None
+        assert coordinate_from_string(_print_area_end(sheet))[1] >= max(
+            header_row, cost_row + component_count - 1
+        )
+    finally:
+        workbook.close()
+
+
+@pytest.mark.skipif(find_soffice() is None, reason="本机未安装 LibreOffice，跳过真实转换")
+def test_pf_gs_invoice_sequential_pdf_exports(tmp_path):
+    """正式版验收通过 RO_SOFFICE_PATH 选中，不以 PATH 中的开发版代替。"""
+    from pypdf import PdfReader
+
+    mapping = load_template_mapping(PF_GS_MAPPINGS / "invoice.yaml")
+    title = mapping.preview_content["cost_breakdown"]["title"]
+    for line_count, component_count in [(1, 0), (3, 2), (10, 20)]:
+        model = _pf_invoice_with_costs(line_count, component_count)
+        result = render_document(model, mapping, tmp_path / f"invoice-{line_count}.xlsx")
+        pdf = convert_to_pdf(result.output_path, timeout=30)
+        reader = PdfReader(pdf)
+        assert len(reader.pages) == 1
+        text = "".join(reader.pages[0].extract_text().split())
+        assert "".join(title.split()) in text
+        assert text.count("RODS") == component_count // 2
+        assert text.count("REELS") == component_count // 2
 
 
 # ————————————————————————————————————————

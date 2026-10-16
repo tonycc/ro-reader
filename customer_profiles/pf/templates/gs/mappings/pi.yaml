@@ -1,5 +1,5 @@
 document: PI
-template_version: pf_2026.2
+template_version: pf_2026.3
 template: templates/gs/pi.xlsx
 sheet: Sheet1
 header:
@@ -36,6 +36,9 @@ header_fixed:
   final_destination: USA
   manufacturer_code: "134102"
 table_header_row: 19
+style:
+  wrapped_header_ranges:
+    G11:I11: 30
 lines:
   start_row: 20
   style_source_row: 20

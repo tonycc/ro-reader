@@ -163,6 +163,10 @@ SHEFISH 的 GS PO 用 `po.yaml` / `po_ym.yaml` 对应 SK/YM 模板。Profile 的
 6. 打开渲染结果做视觉检查，尤其是打印区、合并单元格和插入行后的底部区域。
 7. 更新字段规则文档。
 
+局部抬头长文本可在 YAML 的 `style.wrapped_header_ranges` 声明「单行范围 → 最小行高（pt）」，由 renderer 合并、换行并保留原字体，不需要缩小字体或扩大打印区。范围首格必须是 header 值单元格，且位于明细之前；loader 阻止跨行、越界、交叉合并或覆盖其他内容/映射字段。PF GS PI 使用 `G11:I11: 30`，Invoice 使用 `G11:H11: 42`，确保 Ship To 完整地址位于打印区内。
+
+PF GS Invoice 的成本拆分说明使用 `cost_breakdown.caption_range: A29:H29`，表头使用 `header_height: 30`（pt）。说明保留模板文案、字体与行高，只合并其右侧空白格并换行。renderer 在主表扩行后按 `row_offset` 定位并合并；`insert_rows()` 不会移动合并范围，因此输入模板的该区域必须未合并。loader 限定说明位于主表合计之后、成本表头之前，不允许覆盖其他内容/字段。回归覆盖无组件、两组件及主表/成本表同时扩行。
+
 ### 8.2 插入行陷阱
 
 `openpyxl.Worksheet.insert_rows()` 不移动 `row_dimensions`。正确顺序是：
@@ -195,6 +199,10 @@ DocumentModel → renderer → .xlsx → LibreOffice → .pdf
 ```
 
 `find_soffice()` 按环境变量、PATH 和平台常见路径查找。转换使用临时 `UserInstallation`，失败转换为核心错误类型。渲染后会按实际内容重设 `print_area`，并用 `fitToWidth=1` / `fitToHeight=1` 缩放到一页，避免模板样例打印区或空列导致 PDF 分页、表头切断。
+
+转换使用 `--headless --nologo --norestore`，不使用已被 LibreOffice 忽略的 `--nofirststartwizard`（见[官方启动参数](https://help.libreoffice.org/latest/en-GB/text/shared/guide/start_parameters.html)）。macOS 正式版首次启动/权限状态可能影响无头启动；超时时明确建议手动打开 LibreOffice 完成确认后重试，仍失败则检查其能否正常打开 Excel。程序不自动修改系统权限、不接管用户 GUI、不静默切到其他转换器，也不放宽 120 秒超时。正式版验收必须用 `RO_SOFFICE_PATH` 指向实际安装的可执行文件，不能把 PATH 中开发版的成功当作正式版通过；需同时核对连续导出、PDF 内容和逐页渲染图。
+
+macOS 的部分 LibreOffice 无界面后端仅发现自带拉丁字体，会把 `需填: 出厂日期` 等中文提示渲染为空白字形。转换进程通过临时 Fontconfig 配置补充系统、全局和当前用户的字体目录，字体缓存随本次 profile 清理；不安装字体，不修改源 Excel、LibreOffice 安装目录或系统设置。显式设置的 `FONTCONFIG_FILE` 优先，`FONTCONFIG_PATH` 内的配置仍会包含；Windows/Linux 保持原字体发现方式。回归测试除检查 PDF 文件头外，还验证真实转换后的中文文本和 GS 两侧完整地址；最终验收仍须检查 PDF 渲染图，文本提取成功不能排除视觉裁切。
 
 Invoice/PL 的 PDF 在转换成功后按出具方叠主体印章（SK 圆章直径 4cm，GS/EMAX 圆章直径 3cm，YM 长条章 6×2.5cm），锚在页面右下；PI/PO/CI/RO_PL 不盖。印章资源在 `customer_profiles/stamps/`，RO 与 PF 共用。缺印章文件或叠图失败时保留未盖章 PDF，不阻断导出。Excel 导出不加章。
 

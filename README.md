@@ -43,6 +43,8 @@ SHEFISH Profile 支持 GS PTE、EMAX PTE 的 PI/PO/INVOICE/PL，以及 SK 的 PI
 
 如果 `soffice` 不在标准安装位置，可设置 `RO_SOFFICE_PATH`。没有 LibreOffice 时，PDF 导出返回 `PDF_CONVERTER_UNAVAILABLE`，Excel 导出不受影响。
 
+macOS 正式版若 PDF 导出超时，请先手动打开 LibreOffice，完成首次启动或权限确认后重试；若仍失败，检查 LibreOffice 能否正常打开导出的 Excel。工作台不会自动修改系统权限或切换转换器。
+
 ## 开发模式启动
 
 ```bash

@@ -287,7 +287,8 @@ class TestPreviewDocumentHeaders:
     def test_pf_gs_pi_declares_material_column_and_customer_creation_date(self) -> None:
         mapping = load_template_mapping(PF_GS_PI_MAPPING)
 
-        assert mapping.template_version == "pf_2026.2"
+        assert mapping.template_version == "pf_2026.3"
+        assert mapping.style.wrapped_header_ranges == {"G11:I11": 30}
         assert mapping.lines.columns.item_number == "D"
         assert mapping.lines.columns.sap is None
         assert dict(mapping.preview_column_labels)["item_number"] == "Item Number"
@@ -359,7 +360,11 @@ class TestPreviewDocumentHeaders:
         workbook = load_workbook(PF_TEMPLATES / "gs" / "invoice.xlsx")
         sheet = workbook["Sheet1"]
         try:
-            assert mapping.template_version == "pf_2026.2"
+            assert mapping.template_version == "pf_2026.4"
+            assert mapping.style.wrapped_header_ranges == {"G11:H11": 42}
+            assert mapping.cost_breakdown is not None
+            assert mapping.cost_breakdown.caption_range == "A29:H29"
+            assert mapping.cost_breakdown.header_height == 30
             for addr in ("E20", "A29", "B30", "C30", "F30", "B31", "E31", "F31"):
                 font = sheet[addr].font
                 assert font.name == "Arial", addr
@@ -466,6 +471,55 @@ def good_yaml(tmp_path: Path, template_file: Path) -> Path:
     return write_yaml(yaml_path, good_yaml_content(str(template_file)))
 
 
+def test_wrapped_header_range_loads(good_yaml):
+    good_yaml.write_text(
+        good_yaml.read_text() + "style:\n  wrapped_header_ranges:\n    H6:J6: 30\n"
+    )
+    assert load_template_mapping(good_yaml).style.wrapped_header_ranges == {"H6:J6": 30}
+
+
+@pytest.mark.parametrize(
+    "declaration",
+    [
+        "[]",
+        "{bad: 30}",
+        "{H6:J6: 0}",
+        "{H6:J6: -1}",
+        "{H6:J6: .nan}",
+        "{H6:J6: true}",
+        "{H6:J6: 500}",
+        "{H6:J7: 30}",
+        "{H6:K6: 30}",
+        "{G6:J6: 30}",
+        "{H18:J18: 30}",
+        "{H6:I6: 30, H6:J6: 30}",
+    ],
+)
+def test_wrapped_header_range_rejects_invalid_layout(good_yaml, declaration):
+    good_yaml.write_text(
+        good_yaml.read_text() + f"style:\n  wrapped_header_ranges: {declaration}\n"
+    )
+    with pytest.raises(MappingError, match="wrapped_header_ranges"):
+        load_template_mapping(good_yaml)
+
+
+@pytest.mark.parametrize("conflict", ["content", "mapping", "merge"])
+def test_wrapped_header_range_does_not_overwrite_other_content(good_yaml, template_file, conflict):
+    content = good_yaml.read_text() + "style:\n  wrapped_header_ranges:\n    H6:J6: 30\n"
+    workbook = load_workbook(template_file)
+    if conflict == "content":
+        workbook.active["I6"] = "keep me"
+    elif conflict == "mapping":
+        content = content.replace("invoice_no: H6", "invoice_no: H6\n  invoice_date: I6")
+    else:
+        workbook.active.merge_cells("I6:J6")
+    workbook.save(template_file)
+    workbook.close()
+    good_yaml.write_text(content)
+    with pytest.raises(MappingError, match="wrapped_header_ranges"):
+        load_template_mapping(good_yaml)
+
+
 # ————————————————————————————————————————
 # 加载与基础解析
 # ————————————————————————————————————————
@@ -553,6 +607,76 @@ totals:
     def test_invalid_yaml_syntax(self, tmp_path: Path) -> None:
         path = write_yaml(tmp_path / "mapping.yaml", "key: : invalid")
         with pytest.raises(MappingError, match="YAML 解析失败"):
+            load_template_mapping(path)
+
+
+class TestCostBreakdownLayout:
+    def _mapping(self, tmp_path: Path, old: str, new: str) -> Path:
+        source = PF_TEMPLATES / "gs" / "mappings" / "invoice.yaml"
+        content = source.read_text().replace(
+            "template: templates/gs/invoice.xlsx",
+            f"template: {PF_TEMPLATES / 'gs' / 'invoice.xlsx'}",
+        )
+        assert old in content
+        return write_yaml(tmp_path / "mapping.yaml", content.replace(old, new))
+
+    @pytest.mark.parametrize(
+        "region",
+        [
+            "false",
+            "'@@'",
+            "A29:H30",
+            "A29:K29",
+            "A20:H20",
+            "A30:H30",
+            "B29:H29",
+            "'Sheet1!A29:H29'",
+        ],
+    )
+    def test_invalid_caption_range(self, tmp_path: Path, region: str) -> None:
+        path = self._mapping(tmp_path, "caption_range: A29:H29", f"caption_range: {region}")
+        with pytest.raises(MappingError, match="caption_range"):
+            load_template_mapping(path)
+
+    @pytest.mark.parametrize("height", ["0", "-1", "410", ".nan", ".inf", "true", "'30'"])
+    def test_invalid_header_height(self, tmp_path: Path, height: str) -> None:
+        path = self._mapping(tmp_path, "header_height: 30", f"header_height: {height}")
+        with pytest.raises(MappingError, match="header_height"):
+            load_template_mapping(path)
+
+    def test_caption_cannot_overwrite_mapped_note(self, tmp_path: Path) -> None:
+        path = self._mapping(
+            tmp_path, "preview_content:", "notes: {important: H29}\npreview_content:"
+        )
+        with pytest.raises(MappingError, match="会覆盖单元格"):
+            load_template_mapping(path)
+
+    def test_layout_is_optional(self, tmp_path: Path) -> None:
+        path = self._mapping(tmp_path, "  caption_range: A29:H29\n  header_height: 30\n", "")
+        mapping = load_template_mapping(path)
+        assert mapping.cost_breakdown is not None
+        assert mapping.cost_breakdown.caption_range is None
+        assert mapping.cost_breakdown.header_height is None
+
+    @pytest.mark.parametrize("region", ["A29:H29", "G29:I29"])
+    def test_caption_cannot_keep_preexisting_merge(self, tmp_path: Path, region: str) -> None:
+        template = tmp_path / "template.xlsx"
+        workbook = load_workbook(PF_TEMPLATES / "gs" / "invoice.xlsx")
+        workbook["Sheet1"].merge_cells(region)
+        workbook.save(template)
+        workbook.close()
+        path = self._mapping(tmp_path, str(PF_TEMPLATES / "gs" / "invoice.xlsx"), str(template))
+        with pytest.raises(MappingError, match="合并范围冲突"):
+            load_template_mapping(path)
+
+    def test_caption_cannot_overwrite_static_cell(self, tmp_path: Path) -> None:
+        template = tmp_path / "template.xlsx"
+        workbook = load_workbook(PF_TEMPLATES / "gs" / "invoice.xlsx")
+        workbook["Sheet1"]["H29"] = "Keep this note"
+        workbook.save(template)
+        workbook.close()
+        path = self._mapping(tmp_path, str(PF_TEMPLATES / "gs" / "invoice.xlsx"), str(template))
+        with pytest.raises(MappingError, match="会覆盖单元格"):
             load_template_mapping(path)
 
 
