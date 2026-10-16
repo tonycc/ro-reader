@@ -121,3 +121,12 @@ uv run pyinstaller packages/ro_workbench_launcher/ro-workbench.spec --noconfirm
 ## 提交规范
 
 使用 Conventional Commits。允许的 type：`feat`、`fix`、`refactor`、`test`、`docs`、`chore`、`spike`。标题上限 100 字符。
+
+## Cursor Cloud specific instructions
+
+Cloud Agent 每次启动会执行环境 `start`：API 在 `127.0.0.1:54321`（`uvicorn --reload`），Vite 在 `127.0.0.1:6173`。端口已在监听时不要再起一份；`start` 可以重复执行。
+
+- Python 用 uv 安装的 3.11，命令使用 `uv run`。Node 22 在 `/usr/local/bin`；登录 shell 里的 `pnpm` 是 9.15.9，与 CI 的 pnpm 9 一致。
+- PDF 使用已安装的 `soffice`（LibreOffice Calc）。缺少转换器时接口返回 `PDF_CONVERTER_UNAVAILABLE`，不要把它当成单据数据错误。
+- 合成 fixture 由环境 `install` 写到 `tests/fixtures/synthetic_base.xlsx`（gitignore）。分支切换后如果文件不见了，再运行 `uv run python tests/fixtures/generate_synthetic_base.py`。
+- 开发机可能已有名为「合成 RO」的当前工作区，指向这份合成 fixture。pytest 与 Playwright 通过 `RO_WORKBENCH_CONFIG_DIR` 隔离，不会读写该配置。
