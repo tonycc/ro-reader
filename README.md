@@ -247,7 +247,14 @@ pnpm run test:e2e
 pnpm run test:e2e:http
 ```
 
-截至 2026-09-22，Python 套件收集 659 个测试（无跳过）；默认 Playwright 回归包含 29 个场景（含单据预览表头与 Excel 模板一致性、PF MOQ/整箱提醒及客户 PO 只读投影），另有 1 个隔离真实 HTTP 验收场景。CI 分别覆盖 Python、前端/E2E，以及 macOS/Windows 启动器构建。发布版本见根目录 `VERSION`，当前为 `1.3.0`。
+Python 回归覆盖核心装配、API 和启动器；Playwright 覆盖单据预览、导出及隔离真实 HTTP 工作区流程。测试数量以当前收集结果为准。CI 分别覆盖 Python、前端/E2E，以及 macOS/Windows 启动器构建。发布版本见根目录 `VERSION`，当前为 `1.5.0`。
+
+## 1.5.0 更新
+
+- 新增 SHEFISH 客户工作区及 12 份单据模板，GS 采购订单可分别导出 SK/YM 工厂单据。
+- PF PI 按客户订单行去重完整订单数量，保留不同订单行；缺价时单价、金额和总额留空并告警，真实零单价正常显示。
+- 修复 PF GS PI/Invoice 长地址、中文缺值提示及 Invoice 成本拆分说明的 PDF 显示，完善 macOS LibreOffice 转换环境与超时恢复提示。
+- PF/SHEFISH 的 9 份 GS 模板明确指定公司标题字体，避免连续 PDF 导出时装饰字体替换不稳定；保留字号、粗体及其他版式。
 
 ## 桌面构建与用户测试
 
@@ -310,6 +317,8 @@ Compress-Archive `
 ```
 
 CI 生成的包内会额外放入面向用户的 `README.txt`。它由 workflow 在构建时生成，不是根目录 `README.md` 的自动副本；修改用户安装说明时需要同步检查 `.github/workflows/build-launcher.yml`。
+
+正式发行使用 GitHub Releases。发布前等待同一提交的 Python、前端/E2E 和 macOS/Windows 打包检查通过，再从该次构建下载 DMG 与 Windows ZIP，核对包内版本和内容，将两份安装包及 `SHA256SUMS.txt` 上传至对应 `v<VERSION>` 标签的 Release。Actions artifact 仅保留 3 天，不作为长期下载地址。
 
 ### 用户测试注意事项
 
