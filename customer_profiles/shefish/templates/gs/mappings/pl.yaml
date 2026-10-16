@@ -99,6 +99,9 @@ preview_content:
       - shipping_mark_1
       right:
       - document_date
-template_version: shefish_2026.1
+template_version: shefish_2026.2
+style:
+  header_fonts:
+    A1: Arial
 template: templates/gs/pl.xlsx
 sheet: PL

@@ -204,6 +204,15 @@ _PLACEHOLDER_LABELS: dict[str, str] = {
 
 def _write_styles(ws: Worksheet, mapping: TemplateMapping) -> None:
     """按 mapping.style 声明应用单元格样式。"""
+    for addr, name in mapping.style.header_fonts.items():
+        cell = ws[addr]
+        font = copy(cell.font)
+        font.name = name
+        # 旧字体的字符集、族分类和主题关联不能参与新字体的匹配。
+        font.charset = None
+        font.family = None
+        font.scheme = None
+        cell.font = font
     for region, min_height in mapping.style.wrapped_header_ranges.items():
         ws.merge_cells(region)
         cell = ws[region.split(":")[0]]

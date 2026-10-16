@@ -91,6 +91,9 @@ preview_content:
       - manufacturer_address
       - manufacturer_address_2
       - manufacturer_address_3
-template_version: shefish_2026.1
+template_version: shefish_2026.2
+style:
+  header_fonts:
+    A5: Arial
 template: templates/gs/invoice.xlsx
 sheet: INVOICE format

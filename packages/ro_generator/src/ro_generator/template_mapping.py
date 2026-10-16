@@ -16,8 +16,10 @@ from typing import Final, cast
 
 import yaml
 from openpyxl import load_workbook
+from openpyxl.cell.cell import MergedCell
 from openpyxl.utils import column_index_from_string, get_column_letter
 from openpyxl.utils.cell import coordinate_from_string
+from openpyxl.utils.exceptions import CellCoordinatesException
 from openpyxl.worksheet.cell_range import CellRange
 from openpyxl.worksheet.worksheet import Worksheet
 
@@ -86,6 +88,8 @@ class CellStyles:
     underline: tuple[str, ...] = ()
     # 单行抬头范围 -> 最小行高（pt）；合并范围并换行，避免文本溢出打印区。
     wrapped_header_ranges: dict[str, float] = field(default_factory=dict)
+    # 抬头单元格 -> 显式字体名；避免缺失装饰字体触发不稳定的替换。
+    header_fonts: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -486,6 +490,15 @@ def _validate_against_template(
         max_col = ws.max_column
 
         _validate_wrapped_header_ranges(mapping, ws)
+        for addr in mapping.style.header_fonts:
+            _check_cell_reference(addr, max_row, max_col, "style.header_fonts")
+            cell = ws[addr]
+            if cell.row >= mapping.lines.start_row or isinstance(cell, MergedCell):
+                raise MappingError(f"style.header_fonts 必须引用明细之前的可写抬头单元格：{addr}")
+            for ref in mapping.style.wrapped_header_ranges:
+                region = CellRange(ref)
+                if addr in region and (cell.row, cell.column) != (region.min_row, region.min_col):
+                    raise MappingError(f"style.header_fonts 不能引用待合并的非首格：{addr}")
 
         # 1. header 单元格
         for field_name, addr in mapping.header.items():
@@ -915,7 +928,7 @@ def _check_cell_reference(
 ) -> None:
     try:
         col_letter, row = coordinate_from_string(addr.strip())
-    except ValueError as exc:
+    except (ValueError, CellCoordinatesException) as exc:
         raise MappingError(f"{ctx} 单元格地址不合法：{addr!r}") from exc
     col_idx = column_index_from_string(col_letter)
     allowed_max_row = max_row + row_slack
@@ -1030,6 +1043,7 @@ def _parse_style(raw: object, yaml_path: Path) -> CellStyles:
       bold: [A1, B4]        # 加粗的单元格地址
       underline: [H6, F6]   # 下划线的单元格地址
       wrapped_header_ranges: {G11:I11: 30}  # 合并/换行，最小行高 pt
+      header_fonts: {A1: Arial}  # 仅覆盖抬头字体，不改变字号等其他属性
     """
     if not isinstance(raw, dict):
         return CellStyles()
@@ -1053,7 +1067,20 @@ def _parse_style(raw: object, yaml_path: Path) -> CellStyles:
         except (TypeError, ValueError) as exc:
             raise MappingError(f"style.wrapped_header_ranges 无效范围：{ref}") from exc
         ranges[str(region)] = float(height)
-    return CellStyles(bold=tuple(bold), underline=tuple(underline), wrapped_header_ranges=ranges)
+    raw_fonts = raw.get("header_fonts", {})
+    if not isinstance(raw_fonts, dict):
+        raise MappingError(f"style.header_fonts 必须是 dict：{yaml_path}")
+    fonts: dict[str, str] = {}
+    for addr, name in raw_fonts.items():
+        if not isinstance(addr, str) or not isinstance(name, str) or not name.strip():
+            raise MappingError(f"style.header_fonts 需要单元格地址和非空字体名：{yaml_path}")
+        fonts[addr.strip().upper()] = name.strip()
+    return CellStyles(
+        bold=tuple(bold),
+        underline=tuple(underline),
+        wrapped_header_ranges=ranges,
+        header_fonts=fonts,
+    )
 
 
 def _parse_cell_list(raw: object, yaml_path: Path) -> list[str]:

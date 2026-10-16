@@ -1,5 +1,5 @@
 document: PI
-template_version: pf_2026.3
+template_version: pf_2026.4
 template: templates/gs/pi.xlsx
 sheet: Sheet1
 header:
@@ -37,6 +37,8 @@ header_fixed:
   manufacturer_code: "134102"
 table_header_row: 19
 style:
+  header_fonts:
+    A1: Arial
   wrapped_header_ranges:
     G11:I11: 30
 lines:

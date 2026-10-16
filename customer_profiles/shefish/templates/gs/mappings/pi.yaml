@@ -100,6 +100,9 @@ preview_content:
       - manufacturer
       - manufacturer_address
       - manufacturer_address_2
-template_version: shefish_2026.1
+template_version: shefish_2026.2
+style:
+  header_fonts:
+    A1: Arial
 template: templates/gs/pi.xlsx
 sheet: Sheet1

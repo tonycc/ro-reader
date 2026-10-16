@@ -61,6 +61,18 @@ def _font_is_red(font: Font) -> bool:
     return bool(color.type == "indexed" and color.indexed == 10)
 
 
+def test_header_fonts_are_limited_to_affected_gs_templates():
+    paths = list((REPO_ROOT / "customer_profiles").glob("*/templates/*/mappings/*.yaml"))
+    assert len(paths) == 40
+    for path in paths:
+        mapping = load_template_mapping(path)
+        affected = path.parent.parent.name == "gs" and path.parts[-5] in {"pf", "shefish"}
+        if affected:
+            assert len(mapping.style.header_fonts) == 1, path
+        else:
+            assert mapping.style.header_fonts == {}, path
+
+
 class TestRealGsInvoiceMapping:
     """对仓库内实际 mapping 做端到端验证。"""
 
@@ -287,7 +299,7 @@ class TestPreviewDocumentHeaders:
     def test_pf_gs_pi_declares_material_column_and_customer_creation_date(self) -> None:
         mapping = load_template_mapping(PF_GS_PI_MAPPING)
 
-        assert mapping.template_version == "pf_2026.3"
+        assert mapping.template_version == "pf_2026.4"
         assert mapping.style.wrapped_header_ranges == {"G11:I11": 30}
         assert mapping.lines.columns.item_number == "D"
         assert mapping.lines.columns.sap is None
@@ -360,7 +372,7 @@ class TestPreviewDocumentHeaders:
         workbook = load_workbook(PF_TEMPLATES / "gs" / "invoice.xlsx")
         sheet = workbook["Sheet1"]
         try:
-            assert mapping.template_version == "pf_2026.4"
+            assert mapping.template_version == "pf_2026.5"
             assert mapping.style.wrapped_header_ranges == {"G11:H11": 42}
             assert mapping.cost_breakdown is not None
             assert mapping.cost_breakdown.caption_range == "A29:H29"
@@ -378,7 +390,9 @@ class TestPreviewDocumentHeaders:
         workbook = load_workbook(mapping.template_path)
         sheet = workbook[mapping.sheet]
         try:
-            assert mapping.template_version == "pf_2026.3"
+            assert mapping.template_version == (
+                "pf_2026.4" if mapping_path == PF_GS_PL_MAPPING else "pf_2026.3"
+            )
             columns = mapping.lines.columns
             addrs = [
                 f"{letter}{mapping.lines.style_source_row}"
@@ -476,6 +490,47 @@ def test_wrapped_header_range_loads(good_yaml):
         good_yaml.read_text() + "style:\n  wrapped_header_ranges:\n    H6:J6: 30\n"
     )
     assert load_template_mapping(good_yaml).style.wrapped_header_ranges == {"H6:J6": 30}
+
+
+def test_header_fonts_load_and_normalize(good_yaml):
+    good_yaml.write_text(good_yaml.read_text() + "style:\n  header_fonts: {' a1 ': ' Arial '}\n")
+    assert load_template_mapping(good_yaml).style.header_fonts == {"A1": "Arial"}
+
+
+@pytest.mark.parametrize(
+    "declaration",
+    [
+        "[]",
+        "{A1: ''}",
+        "{A1: 12}",
+        "{12: Arial}",
+        "{bad: Arial}",
+        "{A0: Arial}",
+        "{A1:B1: Arial}",
+        "{K1: Arial}",
+        "{A18: Arial}",
+        "{A99: Arial}",
+    ],
+)
+def test_header_fonts_reject_invalid_declarations(good_yaml, declaration):
+    good_yaml.write_text(good_yaml.read_text() + f"style:\n  header_fonts: {declaration}\n")
+    with pytest.raises(MappingError, match="header_fonts"):
+        load_template_mapping(good_yaml)
+
+
+@pytest.mark.parametrize("pending_merge", [False, True])
+def test_header_fonts_reject_merged_non_anchor(good_yaml, template_file, pending_merge):
+    declaration = "style:\n  header_fonts: {I6: Arial}\n"
+    if pending_merge:
+        declaration += "  wrapped_header_ranges: {H6:J6: 30}\n"
+    else:
+        workbook = load_workbook(template_file)
+        workbook.active.merge_cells("H6:J6")
+        workbook.save(template_file)
+        workbook.close()
+    good_yaml.write_text(good_yaml.read_text() + declaration)
+    with pytest.raises(MappingError, match="header_fonts"):
+        load_template_mapping(good_yaml)
 
 
 @pytest.mark.parametrize(

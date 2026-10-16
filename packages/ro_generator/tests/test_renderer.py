@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from copy import copy
 from dataclasses import replace
 from datetime import date
 from decimal import Decimal
@@ -27,14 +28,14 @@ from ro_generator.document_model import (
 from ro_generator.errors import TemplateError
 from ro_generator.models import OrderLine, Product
 from ro_generator.pdf_convert import convert_to_pdf, find_soffice
-from ro_generator.renderer import _insert_styled_row, render_document
+from ro_generator.renderer import _insert_styled_row, _write_styles, render_document
 from ro_generator.schema import (
     ENTITY_EMAX_PTE,
     ENTITY_GS_PTE,
     ENTITY_PF,
 )
 from ro_generator.source_index import COMPUTED_SHEET
-from ro_generator.template_mapping import load_template_mapping
+from ro_generator.template_mapping import CellStyles, load_template_mapping
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RO_TEMPLATES = REPO_ROOT / "customer_profiles" / "ro" / "templates"
@@ -46,6 +47,114 @@ EMAX_PI_MAPPING = RO_TEMPLATES / "emax" / "mappings" / "pi.yaml"
 EMAX_PO_MAPPING = RO_TEMPLATES / "emax" / "mappings" / "po.yaml"
 EMAX_PL_MAPPING = RO_TEMPLATES / "emax" / "mappings" / "pl.yaml"
 PF_GS_MAPPINGS = REPO_ROOT / "customer_profiles" / "pf" / "templates" / "gs" / "mappings"
+GS_TITLE_FONT_CASES = [
+    (profile, document, "A5" if (profile, document) == ("shefish", "invoice") else "A1")
+    for profile, documents in (
+        ("pf", ("pi", "po", "invoice", "pl")),
+        ("shefish", ("pi", "po", "po_ym", "invoice", "pl")),
+    )
+    for document in documents
+]
+
+
+def test_header_font_override_preserves_typography_and_other_cells():
+    mapping = load_template_mapping(GS_INVOICE_MAPPING)
+    mapping = replace(mapping, style=CellStyles(header_fonts={"A1": "Arial"}))
+    workbook = Workbook()
+    sheet = workbook.active
+    original = Font(
+        name="华文琥珀",
+        size=26,
+        bold=True,
+        italic=True,
+        color="123456",
+        underline="single",
+        strike=True,
+        outline=True,
+        shadow=True,
+        vertAlign="baseline",
+        charset=134,
+        family=3,
+        scheme="major",
+    )
+    sheet["A1"].font = original
+    sheet["A2"].font = original
+    sheet["A1"] = "GLOBALSINO PTE.LTD."
+    sheet.row_dimensions[1].height = 40
+    _write_styles(sheet, mapping)
+    expected = copy(original)
+    expected.name = "Arial"
+    expected.charset = expected.family = expected.scheme = None
+    assert sheet["A1"].font == expected
+    assert sheet["A2"].font == original
+    assert sheet["A1"].value == "GLOBALSINO PTE.LTD."
+    assert sheet.row_dimensions[1].height == 40
+    workbook.close()
+
+
+@pytest.mark.parametrize("profile,document,addr", GS_TITLE_FONT_CASES)
+def test_gs_title_font_is_explicit_in_export(tmp_path, profile, document, addr):
+    path = REPO_ROOT / "customer_profiles" / profile / "templates/gs/mappings" / f"{document}.yaml"
+    mapping = load_template_mapping(path)
+    assert mapping.style.header_fonts == {addr: "Arial"}
+    original_bytes = mapping.template_path.read_bytes()
+    source = load_workbook(mapping.template_path)
+    model = replace(build_three_line_invoice(), document_type=mapping.document)
+    result = render_document(model, mapping, tmp_path / f"{profile}-{document}.xlsx")
+    rendered = load_workbook(result.output_path)
+    try:
+        before, after = source[mapping.sheet], rendered[mapping.sheet]
+        expected = copy(before[addr].font)
+        expected.name = "Arial"
+        expected.charset = expected.family = expected.scheme = None
+        assert after[addr].font == expected
+        assert after[addr].value == before[addr].value == "GLOBALSINO PTE.LTD."
+        assert (
+            after.row_dimensions[after[addr].row].height
+            == before.row_dimensions[before[addr].row].height
+        )
+        assert {key: dict(dim) for key, dim in after.column_dimensions.items()} == {
+            key: dict(dim) for key, dim in before.column_dimensions.items()
+        }
+        for row in before.iter_rows(max_row=mapping.lines.start_row - 1):
+            for cell in row:
+                # 写值/长地址合并可改变其他抬头，但其字体不应被标题覆盖污染。
+                if (
+                    cell.value
+                    and cell.coordinate != addr
+                    and cell.coordinate not in mapping.header.values()
+                ):
+                    assert after[cell.coordinate].font == copy(cell.font), cell.coordinate
+    finally:
+        source.close()
+        rendered.close()
+    assert mapping.template_path.read_bytes() == original_bytes
+
+
+@pytest.mark.skipif(find_soffice() is None, reason="本机未安装 LibreOffice，跳过真实转换")
+@pytest.mark.parametrize("profile,document,addr", GS_TITLE_FONT_CASES)
+def test_gs_title_font_is_stable_across_pdf_exports(tmp_path, profile, document, addr):
+    from pypdf import PdfReader
+
+    mapping = load_template_mapping(
+        REPO_ROOT / "customer_profiles" / profile / "templates/gs/mappings" / f"{document}.yaml"
+    )
+    model = replace(build_three_line_invoice(), document_type=mapping.document)
+    result = render_document(model, mapping, tmp_path / f"{profile}-{document}.xlsx")
+    signatures = []
+    for _ in range(3):
+        reader = PdfReader(convert_to_pdf(result.output_path, timeout=30))
+        title_runs = []
+
+        def collect_title(text, cm, tm, font, size, runs=title_runs):
+            if "GLOBALSINO PTE.LTD." in text and size > 10:
+                runs.append((text.strip(), font["/BaseFont"].split("+")[-1], size, cm, tm))
+
+        for page in reader.pages:
+            page.extract_text(visitor_text=collect_title)
+        assert len(title_runs) == 1
+        signatures.append((len(reader.pages), title_runs))
+    assert signatures[0] == signatures[1] == signatures[2]
 
 
 def _print_area_end(ws: Worksheet) -> str:

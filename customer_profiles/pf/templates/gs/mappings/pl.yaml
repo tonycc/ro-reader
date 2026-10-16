@@ -1,5 +1,8 @@
 document: PL
-template_version: pf_2026.3
+template_version: pf_2026.4
+style:
+  header_fonts:
+    A1: Arial
 template: templates/gs/pl.xlsx
 sheet: PL
 header:

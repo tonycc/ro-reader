@@ -167,6 +167,8 @@ SHEFISH 的 GS PO 用 `po.yaml` / `po_ym.yaml` 对应 SK/YM 模板。Profile 的
 
 PF GS Invoice 的成本拆分说明使用 `cost_breakdown.caption_range: A29:H29`，表头使用 `header_height: 30`（pt）。说明保留模板文案、字体与行高，只合并其右侧空白格并换行。renderer 在主表扩行后按 `row_offset` 定位并合并；`insert_rows()` 不会移动合并范围，因此输入模板的该区域必须未合并。loader 限定说明位于主表合计之后、成本表头之前，不允许覆盖其他内容/字段。回归覆盖无组件、两组件及主表/成本表同时扩行。
 
+GS 公司标题中缺失的装饰字体会触发 LibreOffice 的平台字体回退，连续独立转换可能选择不同字体。PF/SHEFISH 的 9 份 GS mapping 使用 `style.header_fonts` 显式指定 `Arial`（通常为 `A1`，SHEFISH Invoice 为 `A5`），仅替换原“华文琥珀”。renderer 保留字号、粗体、颜色等属性，清除旧字体的字符集、族分类和主题关联；不改原始模板或用户 base 文件，也不改变 RO 及其他主体。loader 限定为明细之前的可写单元格，并拒绝现有/待合并区域的非首格。字体仍由用户的 LibreOffice/操作系统提供，不承诺不同系统间像素一致。回归覆盖全部 9 份 mapping、未配置模板不受影响，以及各模板连续 3 次 PDF 转换的标题字体和位置一致；正式版验收须用 `RO_SOFFICE_PATH` 指定安装的 LibreOffice，再检查浏览器下载的渲染图。
+
 ### 8.2 插入行陷阱
 
 `openpyxl.Worksheet.insert_rows()` 不移动 `row_dimensions`。正确顺序是：
