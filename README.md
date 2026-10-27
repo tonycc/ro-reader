@@ -247,7 +247,12 @@ pnpm run test:e2e
 pnpm run test:e2e:http
 ```
 
-Python 回归覆盖核心装配、API 和启动器；Playwright 覆盖单据预览、导出及隔离真实 HTTP 工作区流程。测试数量以当前收集结果为准。CI 分别覆盖 Python、前端/E2E，以及 macOS/Windows 启动器构建。发布版本见根目录 `VERSION`，当前为 `1.5.0`。
+Python 回归覆盖核心装配、API 和启动器；Playwright 覆盖单据预览、导出及隔离真实 HTTP 工作区流程。测试数量以当前收集结果为准。CI 分别覆盖 Python、前端/E2E，以及 macOS/Windows 启动器构建。发布版本见根目录 `VERSION`，当前为 `1.5.1`。
+
+## 1.5.1 更新
+
+- SHEFISH 的 EMAX、GS、SK PI 按 2026-10 模板分列 `PI Number` 与 `PO Number`：PI# 取 `PO RECORD 2026.PI#`，缺失时阻断；PO# 取 `New PO.PO#`。
+- GS PI 的 Bill To / Ship To 地址拆为三行。
 
 ## 1.5.0 更新
 
