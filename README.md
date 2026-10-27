@@ -247,7 +247,11 @@ pnpm run test:e2e
 pnpm run test:e2e:http
 ```
 
-Python 回归覆盖核心装配、API 和启动器；Playwright 覆盖单据预览、导出及隔离真实 HTTP 工作区流程。测试数量以当前收集结果为准。CI 分别覆盖 Python、前端/E2E，以及 macOS/Windows 启动器构建。发布版本见根目录 `VERSION`，当前为 `1.5.1`。
+Python 回归覆盖核心装配、API 和启动器；Playwright 覆盖单据预览、导出及隔离真实 HTTP 工作区流程。测试数量以当前收集结果为准。CI 分别覆盖 Python、前端/E2E，以及 macOS/Windows 启动器构建。发布版本见根目录 `VERSION`，当前为 `1.5.2`。
+
+## 1.5.2 更新
+
+- 在 `AGENTS.md` 记录 Cloud Agent 的启动端口与工具链：API `127.0.0.1:54321`、Vite `127.0.0.1:6173`、uv Python 3.11、pnpm 9.15.9 和 `soffice`。
 
 ## 1.5.1 更新
 
