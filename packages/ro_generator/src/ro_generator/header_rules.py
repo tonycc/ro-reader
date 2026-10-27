@@ -486,10 +486,16 @@ for _seller in ("GS PTE", "EMAX PTE", "SK"):
             "model_attr": "document_date",
         }
     _PROFILE_HEADER_OVERRIDES[("shefish", "PI", _seller, "pi_no")] = {
-        "source_sheet": SHEET_PO_RECORD if _seller == "EMAX PTE" else SHEET_CUSTOMER_PO,
-        "source_field": "pi_no" if _seller == "EMAX PTE" else "purchasing_document",
-        "rule": "PO RECORD 2026 的 PI#，缺失时阻断" if _seller == "EMAX PTE" else "New PO 的 PO#",
+        "source_sheet": SHEET_PO_RECORD,
+        "source_field": "pi_no",
+        "rule": "PO RECORD 2026 的 PI#，缺失时阻断",
         "model_attr": "pi_no",
+    }
+    _PROFILE_HEADER_OVERRIDES[("shefish", "PI", _seller, "po_no")] = {
+        "source_sheet": SHEET_CUSTOMER_PO,
+        "source_field": "purchasing_document",
+        "rule": "New PO 的 PO#",
+        "model_attr": "po_no",
     }
     for _document in ("INVOICE", "PL"):
         _PROFILE_HEADER_OVERRIDES[("shefish", _document, _seller, "invoice_no")] = {

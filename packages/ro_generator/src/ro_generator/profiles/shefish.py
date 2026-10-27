@@ -102,9 +102,9 @@ class ShefishRules(RoRules):
     def pi_no_for_lines(
         self, lines: tuple[OrderLine, ...], seller: str, po_no: str
     ) -> tuple[str | None, str | None]:
-        if seller == "EMAX PTE":
-            return next((line.pi_no for line in lines if line.pi_no), None), "PI#"
-        return po_no, None
+        # SHEFISH PI Number 统一取 PO RECORD PI#；客户 PO# 由 header.po_no 另写。
+        _ = (seller, po_no)
+        return next((line.pi_no for line in lines if line.pi_no), None), "PI#"
 
     def invoice_no_for_line(self, line: OrderLine, document_type: str, seller: str) -> str | None:
         return line.invoice_no

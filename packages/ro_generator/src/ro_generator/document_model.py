@@ -155,7 +155,10 @@ class DocumentModel:
     total_quantity: Decimal
     total_amount: Decimal | None
     cost_breakdown: tuple[DocumentCostBreakdownLine, ...] = ()
-    pi_no: str | None = None  # PI 编号：SK 用 E10 PO，YM 用 YM PO，GS/EMAX 用客户 PO
+    # PI Number，由 Profile.pi_no_for_lines 解析。
+    # RO：SK 用 E10 PO，YM 用 YM PO，GS/EMAX 用客户 PO。
+    # SHEFISH：统一取 PO RECORD PI#；客户 PO# 写入 po_no。PF：客户 PO。
+    pi_no: str | None = None
     invoice_no: str | None = None
     etd_on_board: date | None = None  # PO record "ETD ON BOARD"，PF GS Invoice 表头
     eta: date | None = None

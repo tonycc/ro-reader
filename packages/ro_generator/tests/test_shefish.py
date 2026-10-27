@@ -85,6 +85,7 @@ def test_snapshot_uses_item_number_without_sap_or_item_line(context: GenerationC
 )
 def test_prices_quantity_upc_and_sources(
     context: GenerationContext,
+    tmp_path: Path,
     seller: str,
     document: DocumentType,
     prices: list[str],
@@ -116,8 +117,29 @@ def test_prices_quantity_upc_and_sources(
         assert preview.resolved_values["eta"] == "2027-01-15"
         assert preview.resolved_values["document_date"] == date.today().isoformat()
         assert any(entry["field"] == "2601" for entry in preview.source_entries)
-    if seller == "EMAX PTE" and document == "PI":
+    if document == "PI":
         assert preview.pi_no == "TEST-PI-01"
+        assert preview.po_no == "TEST-PO-01"
+        assert preview.resolved_values["po_no"] == "TEST-PO-01"
+        exported = generate(
+            DocumentRequest(
+                str(context.base_file),
+                "TEST-PO-01",
+                ("PI",),
+                seller=seller,
+                output_dir=str(tmp_path / seller),
+            ),
+            context=context,
+        )
+        assert exported.status == "success", exported.errors
+        assert exported.output_file is not None
+        pi_cell, po_cell = ("F6", "F7") if seller == "GS PTE" else ("G6", "G7")
+        workbook = load_workbook(exported.output_file)
+        sheet = workbook.active
+        assert sheet is not None
+        assert sheet[pi_cell].value == "TEST-PI-01"
+        assert sheet[po_cell].value == "TEST-PO-01"
+        workbook.close()
 
 
 def test_gs_po_previews_and_exports_both_component_factories(
@@ -158,23 +180,25 @@ def test_gs_po_previews_and_exports_both_component_factories(
                 wb.close()
 
 
-def test_missing_emax_pi_number_is_not_generated(context: GenerationContext) -> None:
+@pytest.mark.parametrize("seller", ["EMAX PTE", "GS PTE", "SK"])
+def test_missing_pi_number_is_not_generated(context: GenerationContext, seller: str) -> None:
     wb = load_workbook(context.base_file)
     for row in range(2, 5):
         wb["PO RECORD 2026"].cell(row, 2).value = None
     wb.save(context.base_file)
     wb.close()
     result = generate(
-        DocumentRequest(str(context.base_file), "TEST-PO-01", ("PI",), seller="EMAX PTE"),
+        DocumentRequest(str(context.base_file), "TEST-PO-01", ("PI",), seller=seller),
         context=context,
     )
     assert result.status == "error"
     assert result.errors[0].code == "PI_NO_MISSING"
 
 
-def test_customer_po_can_precede_record_but_cannot_invent_emax_pi(
+def test_customer_po_can_precede_record_but_cannot_invent_pi(
     context: GenerationContext,
 ) -> None:
+    """客户 PO 可先于 PO RECORD 生成 PO；三主体 PI 都依赖 PI#，记录缺失时不得编造。"""
     wb = load_workbook(context.base_file)
     wb["PO RECORD 2026"].delete_rows(2, 3)
     wb.save(context.base_file)
@@ -189,12 +213,13 @@ def test_customer_po_can_precede_record_but_cannot_invent_emax_pi(
     assert result.status == "success", result.errors
     assert len(result.previews) == 2
     assert result.previews[0].lines[0]["quantity"] == "120"
-    missing_pi = preview_from_snapshot(
-        snapshot,
-        DocumentRequest(str(context.base_file), "TEST-PO-01", ("PI",), seller="EMAX PTE"),
-        context=context,
-    )
-    assert missing_pi.errors[0].code == "PI_NO_MISSING"
+    for seller in ("EMAX PTE", "GS PTE", "SK"):
+        missing_pi = preview_from_snapshot(
+            snapshot,
+            DocumentRequest(str(context.base_file), "TEST-PO-01", ("PI",), seller=seller),
+            context=context,
+        )
+        assert missing_pi.errors[0].code == "PI_NO_MISSING"
 
 
 def test_gs_variants_honor_workspace_price_column_override(context: GenerationContext) -> None:

@@ -1,16 +1,17 @@
 document: PI
 header:
   pi_no: G6
-  document_date: G7
-  incoterm: B6
-  payment_terms: B7
-  bill_to: B9
-  ship_to: G9
-  port_of_loading: B13
-  final_destination: B14
-  manufacturer: G13
-  manufacturer_address: G14
-  manufacturer_address_2: G15
+  po_no: G7
+  document_date: G8
+  incoterm: B7
+  payment_terms: B8
+  bill_to: B10
+  ship_to: G10
+  port_of_loading: B14
+  final_destination: B15
+  manufacturer: G14
+  manufacturer_address: G15
+  manufacturer_address_2: G16
 header_fixed:
   incoterm: DDP USA
   payment_terms: Net 60 days
@@ -22,10 +23,10 @@ header_fixed:
   manufacturer_address: 'NO.40 BAIJIA STREET '
   manufacturer_address_2: HIGH-TECH INDUSTRIAL DEVELOPMENT ZONE QINGYUAN GUANGDONG
     CHINA
-table_header_row: 17
+table_header_row: 18
 lines:
-  start_row: 18
-  style_source_row: 18
+  start_row: 19
+  style_source_row: 19
   row_fixed:
     A: CHINA
   columns:
@@ -37,15 +38,15 @@ lines:
     amount: G
     confirmed_ex_factory_date: H
 totals:
-  quantity: F22
-  subtotal: G22
-  amount: G23
+  quantity: F23
+  subtotal: G23
+  amount: G24
   signature:
-    cell: F25
+    cell: F26
     value_mode: fixed
     value: Cindy
   signature_date:
-    cell: F26
+    cell: F27
     value_mode: model_date
 preview_content:
   title: PI
@@ -84,11 +85,12 @@ preview_content:
       - final_destination
       right:
       - pi_no
+      - po_no
       - document_date
       - ship_to
       - manufacturer
       - manufacturer_address
       - manufacturer_address_2
-template_version: shefish_2026.1
+template_version: shefish_2026.2
 template: templates/sk/pi.xlsx
 sheet: ' Standard PI format'

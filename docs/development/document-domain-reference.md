@@ -40,7 +40,7 @@ SK → YM → GS PTE → EMAX PTE → PF
 - RO SK/YM 发票号：`SK/YM INVOICE NO.`；GS PTE：`INV#`；EMAX PTE：`INV#` 加 `-P`。
 - PF GS/EMAX 发票号保持 `INV#` 原值。
 - SHEFISH 以 `Item Number` 作为内部商品关联键；PO record 的必需字段由 schema `required_fields` 显式声明为 `po_no`、`sap`，实际列为 `PO#`、`Item Number`，不要求不存在的订单行号。
-- SHEFISH PI/PO 的数量、描述、UPC、日期取 `New PO`；EMAX PI 编号取 `PO RECORD 2026.PI#`，缺失阻断；其他 PI 编号和 PO 编号取客户 PO#。出厂日期取 `FINAL CONFIRMED EX-FACTORY DATE`，不以样例日期或当前日期补齐。
+- SHEFISH PI/PO 的数量、描述、UPC、日期取 `New PO`；PI 表头同时写出 `PI Number`（`PO RECORD 2026.PI#`，缺失阻断）与 `PO Number`（`New PO.PO#`）；PO 单据编号仍取客户 PO#。出厂日期取 `FINAL CONFIRMED EX-FACTORY DATE`，不以样例日期或当前日期补齐。
 - SHEFISH Invoice/PL 的编号取 `INV#` 原值，数量严格取同名 YYMM 月份列；不存在或未填该月时不借用其他月份。价格取 DATA BASE 的 Profile 配置列，不取 PO record 价格缓存。
 - `amount = quantity × unit_price`。
 - 缺单价时 `unit_price`、`amount` 为 `None`，任一行缺金额则 `total_amount` 为 `None`，预览和 Excel 均留空并保留高严重度缺价告警；真实零单价与缺价严格区分。

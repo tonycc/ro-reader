@@ -1,22 +1,23 @@
 document: PI
 header:
   pi_no: G6
-  document_date: G7
-  incoterm: B6
-  payment_terms: B7
-  bill_to: B9
-  ship_to: G9
-  port_of_loading: B14
-  final_destination: B15
-  manufacturer: G14
-  manufacturer_address: G15
-  manufacturer_address_2: G16
-  bill_to_line2: B10
-  bill_to_line3: B11
-  bill_to_line4: B12
-  ship_to_line2: G10
-  ship_to_line3: G11
-  ship_to_line4: G12
+  po_no: G7
+  document_date: G8
+  incoterm: B7
+  payment_terms: B8
+  bill_to: B10
+  ship_to: G10
+  port_of_loading: B15
+  final_destination: B16
+  manufacturer: G15
+  manufacturer_address: G16
+  manufacturer_address_2: G17
+  bill_to_line2: B11
+  bill_to_line3: B12
+  bill_to_line4: B13
+  ship_to_line2: G11
+  ship_to_line3: G12
+  ship_to_line4: G13
 header_fixed:
   incoterm: DDP USA
   payment_terms: Net 60 days
@@ -33,10 +34,10 @@ header_fixed:
   ship_to_line2: The Fishing Brands, LLC
   ship_to_line3: 2915 N Le Compte Rd
   ship_to_line4: Springfield, MO 65803
-table_header_row: 18
+table_header_row: 19
 lines:
-  start_row: 19
-  style_source_row: 19
+  start_row: 20
+  style_source_row: 20
   row_fixed:
     A: CHINA
   columns:
@@ -48,15 +49,15 @@ lines:
     amount: G
     confirmed_ex_factory_date: H
 totals:
-  quantity: F23
-  subtotal: G23
-  amount: G24
+  quantity: F24
+  subtotal: G24
+  amount: G25
   signature:
-    cell: F26
+    cell: F27
     value_mode: fixed
     value: Cindy
   signature_date:
-    cell: F27
+    cell: F28
     value_mode: model_date
 preview_content:
   title: PI
@@ -98,6 +99,7 @@ preview_content:
       - final_destination
       right:
       - pi_no
+      - po_no
       - document_date
       - ship_to
       - ship_to_line2
@@ -106,6 +108,6 @@ preview_content:
       - manufacturer
       - manufacturer_address
       - manufacturer_address_2
-template_version: shefish_2026.1
+template_version: shefish_2026.2
 template: templates/emax/pi.xlsx
 sheet: PI format
